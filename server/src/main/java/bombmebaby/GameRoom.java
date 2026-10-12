@@ -1,0 +1,260 @@
+package bombmebaby;
+
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Random;
+
+/** All room mutation happens under this monitor, including network actions and ticks. */
+final class GameRoom {
+    enum Phase { WAITING, PLAYING, FINISHED }
+    record Pickup(int id, double x, double z) {}
+    record Obstacle(double x, double z, double radius) {}
+
+    final String code;
+    final List<PlayerState> players = new ArrayList<>();
+    final List<Pickup> orbs = new ArrayList<>();
+    final List<Pickup> cores = new ArrayList<>();
+    final List<Obstacle> obstacles = List.of(
+        new Obstacle(-3, -2, 1.15), new Obstacle(3, 2, 1.15),
+        new Obstacle(-3, 3, 0.9), new Obstacle(3, -3, 0.9));
+    final Random random = new Random();
+    Phase phase = Phase.WAITING;
+    long tick;
+    private int nextPickupId = 1;
+    private long lastOrbAt;
+
+    GameRoom(String code) { this.code = code; }
+
+    synchronized boolean join(PlayerState player) {
+        if (phase == Phase.PLAYING || players.size() >= 4 || players.contains(player)) return false;
+        players.add(player);
+        player.room = this;
+        player.ready = false;
+        broadcast(data("type", "ROOM_STATE", "room", roomInfo()));
+        return true;
+    }
+
+    synchronized void leave(PlayerState player) {
+        if (!players.contains(player)) return;
+        if (phase == Phase.PLAYING && player.alive) eliminate(player, "left", System.currentTimeMillis());
+        players.remove(player);
+        player.room = null;
+        player.ready = false;
+        checkGameOver();
+        broadcast(data("type", "ROOM_STATE", "room", roomInfo()));
+    }
+
+    synchronized void ready(PlayerState player, boolean value) {
+        if (phase == Phase.PLAYING) { reject(player,"MATCH_IN_PROGRESS"); return; }
+        player.ready = value;
+        broadcast(data("type", "ROOM_STATE", "room", roomInfo()));
+        if (players.size() >= 2 && players.stream().allMatch(p -> p.ready && p.connected)) start(System.currentTimeMillis());
+    }
+
+    private void start(long now) {
+        phase = Phase.PLAYING;
+        tick = 0;
+        orbs.clear(); cores.clear();
+        double[][] spawns = {{-9,-9},{9,9},{-9,9},{9,-9}};
+        for (int i = 0; i < players.size(); i++) {
+            PlayerState p = players.get(i);
+            p.x = spawns[i][0]; p.z = spawns[i][1]; p.dx = 0; p.dz = 0;
+            p.hp = 100; p.size = 1; p.baseSize = 1; p.kills = 0;
+            p.alive = true; p.charging = false; p.shieldUntil = 0;
+            p.shieldReadyAt = 0; p.boostUntil = 0; p.boostReadyAt = 0;
+            p.ready = false;
+        }
+        for (int i = 0; i < 24; i++) spawnOrb();
+        lastOrbAt = now;
+        broadcast(data("type", "GAME_START", "room", code));
+        broadcast(snapshot(now));
+    }
+
+    synchronized void action(PlayerState p, String type, double dx, double dz, long now) {
+        if (phase != Phase.PLAYING || !p.alive || !p.connected) { reject(p,"ACTION_UNAVAILABLE"); return; }
+        switch (type) {
+            case "MOVE" -> {
+                if (!Double.isFinite(dx) || !Double.isFinite(dz)) { reject(p,"INVALID_MOVEMENT"); return; }
+                double length = Math.hypot(dx, dz);
+                p.dx = length > 1 ? dx / length : dx;
+                p.dz = length > 1 ? dz / length : dz;
+            }
+            case "CHARGE_START" -> {
+                if (!p.charging) { p.charging = true; p.chargeSince = now; }
+                else reject(p,"ALREADY_CHARGING");
+            }
+            case "EXPLODE" -> {
+                if (p.charging) explode(p, now);
+                else reject(p,"NOT_CHARGING");
+            }
+            case "USE_SHIELD" -> {
+                if (now >= p.shieldReadyAt) {
+                    p.shieldUntil = now + GameRules.SHIELD_MS;
+                    p.shieldReadyAt = now + GameRules.SHIELD_COOLDOWN_MS;
+                    broadcast(data("type", "SHIELD_ACTIVATED", "playerId", p.id));
+                } else reject(p,"SHIELD_COOLDOWN");
+            }
+            case "USE_BOOST" -> {
+                if (now >= p.boostReadyAt) {
+                    p.boostUntil = now + GameRules.BOOST_MS;
+                    p.boostReadyAt = now + GameRules.BOOST_COOLDOWN_MS;
+                    p.size = Math.max(p.baseSize, p.size - 0.23);
+                    double ox = p.x - p.dx * 0.8, oz = p.z - p.dz * 0.8;
+                    if (orbs.size() < 36 && free(ox, oz, 0.2)) orbs.add(new Pickup(nextPickupId++, ox, oz));
+                    broadcast(data("type", "BOOST_ACTIVATED", "playerId", p.id));
+                } else reject(p,"BOOST_COOLDOWN");
+            }
+            default -> { }
+        }
+    }
+
+    synchronized void update(long now, double dt) {
+        if (phase != Phase.PLAYING) return;
+        tick++;
+        for (PlayerState p : players) {
+            if (!p.alive) continue;
+            if (!p.connected && now - p.disconnectedAt >= GameRules.RECONNECT_MS) {
+                eliminate(p, "disconnect", now);
+                checkGameOver();
+                continue;
+            }
+            if (p.connected) {
+                double speed = 5.2 / Math.sqrt(p.size) * (now < p.boostUntil ? 1.85 : 1);
+                double nx = GameRules.clamp(p.x + p.dx * speed * dt, -GameRules.ARENA, GameRules.ARENA);
+                double nz = GameRules.clamp(p.z + p.dz * speed * dt, -GameRules.ARENA, GameRules.ARENA);
+                if (free(nx, p.z, GameRules.PLAYER_RADIUS * p.size)) p.x = nx;
+                if (free(p.x, nz, GameRules.PLAYER_RADIUS * p.size)) p.z = nz;
+                pickup(p, now);
+            }
+            if (p.charging && now - p.chargeSince >= GameRules.MAX_CHARGE_MS) explode(p, now);
+        }
+        if (phase != Phase.PLAYING) return;
+        pickupCores();
+        if (now - lastOrbAt >= 750 && orbs.size() < 28) { spawnOrb(); lastOrbAt = now; }
+        if (tick % 2 == 0) broadcast(snapshot(now));
+    }
+
+    private void pickup(PlayerState p, long now) {
+        for (int i = orbs.size() - 1; i >= 0; i--) {
+            Pickup o = orbs.get(i);
+            if (GameRules.distance(p.x,p.z,o.x,o.z) < 0.55 * p.size + 0.35) {
+                orbs.remove(i);
+                p.size = Math.min(GameRules.MAX_SIZE, p.size + 0.12);
+                p.hp = Math.min(100, p.hp + 3);
+                broadcast(data("type","ENERGY_PICKED","playerId",p.id,"pickupId",o.id));
+            }
+        }
+    }
+
+    private void pickupCores() {
+        for (int i = cores.size() - 1; i >= 0; i--) {
+            Pickup core = cores.get(i);
+            PlayerState closest = null;
+            double bestDistance = Double.POSITIVE_INFINITY;
+            for (PlayerState p : players) {
+                if (!p.alive || !p.connected) continue;
+                double distance = GameRules.distance(p.x,p.z,core.x,core.z);
+                if (distance < 0.55 * p.size + 0.45 && distance < bestDistance) {
+                    closest = p;
+                    bestDistance = distance;
+                }
+            }
+            if (closest == null) continue;
+            cores.remove(i);
+            closest.baseSize = Math.min(GameRules.MAX_BASE, closest.baseSize + 0.1);
+            closest.size = Math.max(closest.size, closest.baseSize);
+            broadcast(data("type","CORE_PICKED","playerId",closest.id,"pickupId",core.id));
+        }
+    }
+
+    private void explode(PlayerState source, long now) {
+        source.charging = false;
+        double charge = GameRules.clamp((now - source.chargeSince) / (double) GameRules.MAX_CHARGE_MS, 0, 1);
+        double radius = GameRules.blastRadius(source.size, charge);
+        double damageDone = 0;
+        for (PlayerState target : players) {
+            if (target == source || !target.alive) continue;
+            double distance = GameRules.distance(source.x,source.z,target.x,target.z);
+            double damage = GameRules.damage(source.size,charge,distance,radius);
+            if (damage <= 0) continue;
+            if (now < target.shieldUntil) {
+                damageDone += damage * 0.5;
+                broadcast(data("type","DAMAGE_REFLECTED","from",target.id,"to",source.id,"amount",damage * 0.5));
+            } else {
+                target.hp = Math.max(0, target.hp - damage);
+                broadcast(data("type","PLAYER_DAMAGED","playerId",target.id,"by",source.id,"amount",damage));
+                if (target.hp <= 0) { source.kills++; eliminate(target, "explosion", now); }
+            }
+        }
+        source.hp = Math.max(0, source.hp - damageDone);
+        source.size = source.baseSize;
+        broadcast(data("type","PLAYER_EXPLODE","playerId",source.id,"x",source.x,"z",source.z,"radius",radius));
+        if (source.hp <= 0) eliminate(source, "reflection", now);
+        checkGameOver();
+    }
+
+    private void eliminate(PlayerState p, String reason, long now) {
+        if (!p.alive) return;
+        p.alive = false; p.hp = 0; p.charging = false; p.dx = 0; p.dz = 0;
+        Pickup core = new Pickup(nextPickupId++, p.x, p.z);
+        cores.add(core);
+        broadcast(data("type","PLAYER_ELIMINATED","playerId",p.id,"reason",reason));
+        broadcast(data("type","CORE_SPAWNED","pickupId",core.id,"x",core.x,"z",core.z));
+    }
+
+    private void checkGameOver() {
+        if (phase != Phase.PLAYING) return;
+        List<PlayerState> survivors = players.stream().filter(p -> p.alive).toList();
+        if (survivors.size() <= 1) {
+            phase = Phase.FINISHED;
+            broadcast(data("type","GAME_OVER","winnerId",survivors.isEmpty() ? "" : survivors.get(0).id,"room",code));
+            broadcast(data("type","ROOM_STATE","room",roomInfo()));
+        }
+    }
+
+    private void spawnOrb() {
+        for (int i = 0; i < 40; i++) {
+            double x = -11 + random.nextDouble() * 22;
+            double z = -11 + random.nextDouble() * 22;
+            if (free(x,z,0.25)) { orbs.add(new Pickup(nextPickupId++,x,z)); return; }
+        }
+    }
+
+    private boolean free(double x, double z, double radius) {
+        if (Math.abs(x) + radius > GameRules.ARENA || Math.abs(z) + radius > GameRules.ARENA) return false;
+        for (Obstacle o : obstacles)
+            if (GameRules.distance(x,z,o.x,o.z) < radius + o.radius) return false;
+        return true;
+    }
+
+    synchronized Map<String,Object> roomInfo() {
+        return data("code",code,"phase",phase.name(),"players",players.stream().map(p -> data(
+            "id",p.id,"name",p.name,"ready",p.ready,"connected",p.connected)).toList());
+    }
+
+    synchronized Map<String,Object> snapshot(long now) {
+        List<Map<String,Object>> states = players.stream().map(p -> data(
+            "id",p.id,"name",p.name,"x",p.x,"z",p.z,"hp",p.hp,"size",p.size,
+            "baseSize",p.baseSize,"alive",p.alive,"connected",p.connected,
+            "charging",p.charging,"charge",p.charging ? GameRules.clamp((now-p.chargeSince)/8000.0,0,1) : 0,
+            "shield",now < p.shieldUntil,"shieldCooldown",Math.max(0,p.shieldReadyAt-now)/1000.0,
+            "boost",now < p.boostUntil,"boostCooldown",Math.max(0,p.boostReadyAt-now)/1000.0,
+            "kills",p.kills)).toList();
+        return data("type","STATE_UPDATE","tick",tick,"phase",phase.name(),"players",states,
+            "orbs",orbs,"cores",cores,"obstacles",obstacles);
+    }
+
+    private void broadcast(Object message) { for (PlayerState p : players) p.send(message); }
+
+    private void reject(PlayerState player, String code) {
+        player.send(data("type","ERROR","code",code));
+    }
+
+    static Map<String,Object> data(Object... entries) {
+        Map<String,Object> result = new LinkedHashMap<>();
+        for (int i = 0; i < entries.length; i += 2) result.put((String) entries[i], entries[i+1]);
+        return result;
+    }
+}

@@ -1,0 +1,14 @@
+server/target/
+unity/Library/
+unity/Temp/
+unity/Obj/
+unity/Build/
+unity/Builds/
+unity/Logs/
+unity/UserSettings/
+.DS_Store
+*.iml
+.idea/
+__pycache__/
+*.pyc
+legacy/
