@@ -117,7 +117,7 @@ public final class BombServer {
                     send(GameRoom.data("type","WELCOME","playerId",player.id,"resumeToken",player.resumeToken));
                     if (player.room != null) {
                         send(GameRoom.data("type","ROOM_STATE","room",player.room.roomInfo()));
-                        if (player.room.phase == GameRoom.Phase.PLAYING) send(player.room.snapshot(System.currentTimeMillis()));
+                        if (player.room.phase == GameRoom.Phase.PLAYING) send(player.room.snapshot(System.currentTimeMillis(), player));
                     }
                     return;
                 }

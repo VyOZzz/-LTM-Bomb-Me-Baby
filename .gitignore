@@ -6,8 +6,17 @@ unity/Build/
 unity/Builds/
 unity/Logs/
 unity/UserSettings/
+LTM-Bomb-Me-Baby/Library/
+LTM-Bomb-Me-Baby/Temp/
+LTM-Bomb-Me-Baby/Obj/
+LTM-Bomb-Me-Baby/Build/
+LTM-Bomb-Me-Baby/Builds/
+LTM-Bomb-Me-Baby/Logs/
+LTM-Bomb-Me-Baby/UserSettings/
 .DS_Store
 *.iml
+*.csproj
+*.sln
 .idea/
 __pycache__/
 *.pyc

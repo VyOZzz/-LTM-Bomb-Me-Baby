@@ -15,12 +15,18 @@ public sealed class BombNetwork : IDisposable {
     StreamWriter writer;
     volatile bool running;
     long sequence;
+    long sentBytes;
+    long receivedBytes;
+    int sentMessages;
+    int receivedMessages;
     string host, name;
     int port;
     public string ResumeToken { get; set; }
     public bool Connected { get; private set; }
-    public int SentMessages { get; private set; }
-    public int ReceivedMessages { get; private set; }
+    public int SentMessages => Volatile.Read(ref sentMessages);
+    public int ReceivedMessages => Volatile.Read(ref receivedMessages);
+    public long SentBytes => Interlocked.Read(ref sentBytes);
+    public long ReceivedBytes => Interlocked.Read(ref receivedBytes);
 
     public void Connect(string host, int port, string name) {
         Dispose();
@@ -47,7 +53,8 @@ public sealed class BombNetwork : IDisposable {
                         string line;
                         while (running && (line = reader.ReadLine()) != null) {
                             inbox.Enqueue(line);
-                            ReceivedMessages++;
+                            Interlocked.Increment(ref receivedMessages);
+                            Interlocked.Add(ref receivedBytes, Encoding.UTF8.GetByteCount(line) + 1);
                         }
                     }
                 }
@@ -67,7 +74,12 @@ public sealed class BombNetwork : IDisposable {
         message.clientTime = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         lock (writeLock) {
             if (writer == null) return;
-            try { writer.WriteLine(JsonUtility.ToJson(message)); SentMessages++; }
+            try {
+                string json = JsonUtility.ToJson(message);
+                writer.WriteLine(json);
+                Interlocked.Increment(ref sentMessages);
+                Interlocked.Add(ref sentBytes, Encoding.UTF8.GetByteCount(json) + 1);
+            }
             catch (IOException) { Connected = false; }
         }
     }
