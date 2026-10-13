@@ -1,8 +1,9 @@
 package bombmebaby;
 
 final class GameRules {
-    static final double ARENA = 12.0;
-    static final double PLAYER_RADIUS = 0.48;
+    static final double ARENA = 20.0;
+    // Slightly smaller than the rendered sphere so movement near scenery feels forgiving.
+    static final double PLAYER_RADIUS = 0.40;
     static final double MAX_SIZE = 2.6;
     static final double MAX_BASE = 1.4;
     static final long MAX_CHARGE_MS = 8_000;
@@ -23,12 +24,14 @@ final class GameRules {
     }
 
     static double blastRadius(double size, double charge) {
-        return 1.5 + size * 1.15 + charge * 1.25;
+        double chargedPower = Math.pow(clamp(charge, 0, 1), 1.55);
+        return 0.85 + size * 0.55 + chargedPower * 3.6;
     }
 
     static double damage(double size, double charge, double distance, double radius) {
         if (distance > radius) return 0;
-        double power = 7 + 25 * (size - 1) + 26 * charge;
+        double chargedPower = Math.pow(clamp(charge, 0, 1), 1.35);
+        double power = 7 + 25 * (size - 1) + 34 * chargedPower;
         return Math.max(0, power * (1 - 0.75 * distance / radius));
     }
 }

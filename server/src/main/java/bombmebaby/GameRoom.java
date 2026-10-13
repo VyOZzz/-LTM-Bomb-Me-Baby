@@ -11,19 +11,25 @@ final class GameRoom {
     enum Phase { WAITING, PLAYING, FINISHED }
     record Pickup(int id, double x, double z) {}
     record Obstacle(double x, double z, double radius) {}
+    record Bush(double x, double z, double radius) {}
 
     final String code;
     final List<PlayerState> players = new ArrayList<>();
     final List<Pickup> orbs = new ArrayList<>();
     final List<Pickup> cores = new ArrayList<>();
     final List<Obstacle> obstacles = List.of(
-        new Obstacle(-3, -2, 1.15), new Obstacle(3, 2, 1.15),
-        new Obstacle(-3, 3, 0.9), new Obstacle(3, -3, 0.9));
+        new Obstacle(-5, -3, 1.3), new Obstacle(5, 4, 1.4),
+        new Obstacle(-6, 7, 1.1), new Obstacle(7, -6, 1.2));
+    final List<Bush> bushes = List.of(
+        new Bush(-11, -6, 1.4), new Bush(-10, 10, 1.6),
+        new Bush(11, 9, 1.5), new Bush(12, -10, 1.7),
+        new Bush(0, 10, 1.3), new Bush(0, -11, 1.3));
     final Random random = new Random();
     Phase phase = Phase.WAITING;
     long tick;
     private int nextPickupId = 1;
     private long lastOrbAt;
+    private boolean soloRound;
 
     GameRoom(String code) { this.code = code; }
 
@@ -50,14 +56,15 @@ final class GameRoom {
         if (phase == Phase.PLAYING) { reject(player,"MATCH_IN_PROGRESS"); return; }
         player.ready = value;
         broadcast(data("type", "ROOM_STATE", "room", roomInfo()));
-        if (players.size() >= 2 && players.stream().allMatch(p -> p.ready && p.connected)) start(System.currentTimeMillis());
+        if (!players.isEmpty() && players.stream().allMatch(p -> p.ready && p.connected)) start(System.currentTimeMillis());
     }
 
     private void start(long now) {
         phase = Phase.PLAYING;
+        soloRound = players.size() == 1;
         tick = 0;
         orbs.clear(); cores.clear();
-        double[][] spawns = {{-9,-9},{9,9},{-9,9},{9,-9}};
+        double[][] spawns = {{-16,-16},{16,16},{-16,16},{16,-16}};
         for (int i = 0; i < players.size(); i++) {
             PlayerState p = players.get(i);
             p.x = spawns[i][0]; p.z = spawns[i][1]; p.dx = 0; p.dz = 0;
@@ -66,10 +73,10 @@ final class GameRoom {
             p.shieldReadyAt = 0; p.boostUntil = 0; p.boostReadyAt = 0;
             p.ready = false;
         }
-        for (int i = 0; i < 24; i++) spawnOrb();
+        for (int i = 0; i < 48; i++) spawnOrb();
         lastOrbAt = now;
         broadcast(data("type", "GAME_START", "room", code));
-        broadcast(snapshot(now));
+        broadcastSnapshots(now);
     }
 
     synchronized void action(PlayerState p, String type, double dx, double dz, long now) {
@@ -102,7 +109,7 @@ final class GameRoom {
                     p.boostReadyAt = now + GameRules.BOOST_COOLDOWN_MS;
                     p.size = Math.max(p.baseSize, p.size - 0.23);
                     double ox = p.x - p.dx * 0.8, oz = p.z - p.dz * 0.8;
-                    if (orbs.size() < 36 && free(ox, oz, 0.2)) orbs.add(new Pickup(nextPickupId++, ox, oz));
+                    if (orbs.size() < 72 && free(ox, oz, 0.2)) orbs.add(new Pickup(nextPickupId++, ox, oz));
                     broadcast(data("type", "BOOST_ACTIVATED", "playerId", p.id));
                 } else reject(p,"BOOST_COOLDOWN");
             }
@@ -132,8 +139,8 @@ final class GameRoom {
         }
         if (phase != Phase.PLAYING) return;
         pickupCores();
-        if (now - lastOrbAt >= 750 && orbs.size() < 28) { spawnOrb(); lastOrbAt = now; }
-        if (tick % 2 == 0) broadcast(snapshot(now));
+        if (now - lastOrbAt >= 650 && orbs.size() < 64) { spawnOrb(); lastOrbAt = now; }
+        if (tick % 2 == 0) broadcastSnapshots(now);
     }
 
     private void pickup(PlayerState p, long now) {
@@ -207,6 +214,10 @@ final class GameRoom {
     private void checkGameOver() {
         if (phase != Phase.PLAYING) return;
         List<PlayerState> survivors = players.stream().filter(p -> p.alive).toList();
+        // Solo rooms are a gameplay-test mode: one living player must not end
+        // the round after every explosion. A solo round still finishes if the
+        // player is eliminated or disconnects and no survivors remain.
+        if (soloRound && survivors.size() == 1) return;
         if (survivors.size() <= 1) {
             phase = Phase.FINISHED;
             broadcast(data("type","GAME_OVER","winnerId",survivors.isEmpty() ? "" : survivors.get(0).id,"room",code));
@@ -216,8 +227,10 @@ final class GameRoom {
 
     private void spawnOrb() {
         for (int i = 0; i < 40; i++) {
-            double x = -11 + random.nextDouble() * 22;
-            double z = -11 + random.nextDouble() * 22;
+            double margin = 1.0;
+            double span = (GameRules.ARENA - margin) * 2;
+            double x = -GameRules.ARENA + margin + random.nextDouble() * span;
+            double z = -GameRules.ARENA + margin + random.nextDouble() * span;
             if (free(x,z,0.25)) { orbs.add(new Pickup(nextPickupId++,x,z)); return; }
         }
     }
@@ -234,16 +247,37 @@ final class GameRoom {
             "id",p.id,"name",p.name,"ready",p.ready,"connected",p.connected)).toList());
     }
 
-    synchronized Map<String,Object> snapshot(long now) {
+    synchronized Map<String,Object> snapshot(long now) { return snapshot(now, null); }
+
+    synchronized Map<String,Object> snapshot(long now, PlayerState viewer) {
         List<Map<String,Object>> states = players.stream().map(p -> data(
             "id",p.id,"name",p.name,"x",p.x,"z",p.z,"hp",p.hp,"size",p.size,
             "baseSize",p.baseSize,"alive",p.alive,"connected",p.connected,
+            "visible",viewer == null || canSee(viewer,p),
             "charging",p.charging,"charge",p.charging ? GameRules.clamp((now-p.chargeSince)/8000.0,0,1) : 0,
             "shield",now < p.shieldUntil,"shieldCooldown",Math.max(0,p.shieldReadyAt-now)/1000.0,
             "boost",now < p.boostUntil,"boostCooldown",Math.max(0,p.boostReadyAt-now)/1000.0,
             "kills",p.kills)).toList();
         return data("type","STATE_UPDATE","tick",tick,"phase",phase.name(),"players",states,
             "orbs",orbs,"cores",cores,"obstacles",obstacles);
+    }
+
+    synchronized boolean canSee(PlayerState viewer, PlayerState target) {
+        if (viewer == null || viewer == target) return true;
+        int targetBush = bushAt(target.x, target.z);
+        return targetBush < 0 || bushAt(viewer.x, viewer.z) == targetBush;
+    }
+
+    private int bushAt(double x, double z) {
+        for (int i = 0; i < bushes.size(); i++) {
+            Bush bush = bushes.get(i);
+            if (GameRules.distance(x,z,bush.x,bush.z) <= bush.radius) return i;
+        }
+        return -1;
+    }
+
+    private void broadcastSnapshots(long now) {
+        for (PlayerState player : players) player.send(snapshot(now, player));
     }
 
     private void broadcast(Object message) { for (PlayerState p : players) p.send(message); }

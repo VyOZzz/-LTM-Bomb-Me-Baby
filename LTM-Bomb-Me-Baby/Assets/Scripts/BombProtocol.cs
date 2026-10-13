@@ -67,6 +67,7 @@ using System;
     public float baseSize;
     public bool alive;
     public bool connected;
+    public bool visible;
     public bool charging;
     public float charge;
     public bool shield;

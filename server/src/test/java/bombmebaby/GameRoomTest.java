@@ -4,6 +4,25 @@ import static org.junit.jupiter.api.Assertions.*;
 import org.junit.jupiter.api.Test;
 
 class GameRoomTest {
+    @Test void oneReadyPlayerCanStartForSoloTesting() {
+        GameRoom room = new GameRoom("SOLO01");
+        PlayerState player = new PlayerState("Solo", null);
+        room.join(player);
+
+        room.ready(player,true);
+
+        assertEquals(GameRoom.Phase.PLAYING, room.phase);
+        assertTrue(player.alive);
+        assertEquals(100, player.hp);
+        assertEquals(48, room.orbs.size());
+
+        room.action(player,"CHARGE_START",0,0,1000);
+        room.action(player,"EXPLODE",0,0,2000);
+
+        assertEquals(GameRoom.Phase.PLAYING, room.phase);
+        assertFalse(player.charging);
+    }
+
     @Test void requiresTwoReadyPlayersAndResetsRound() {
         GameRoom room = new GameRoom("ABC123");
         PlayerState a = new PlayerState("A", null);
@@ -14,7 +33,32 @@ class GameRoomTest {
         room.ready(b,true);
         assertEquals(GameRoom.Phase.PLAYING, room.phase);
         assertEquals(100, a.hp);
-        assertEquals(24, room.orbs.size());
+        assertEquals(48, room.orbs.size());
+    }
+
+    @Test void chargeHasAVisibleEffectOnBlastRadius() {
+        double quickTap = GameRules.blastRadius(1, 0.02);
+        double fullCharge = GameRules.blastRadius(1, 1);
+
+        assertTrue(quickTap < 1.5);
+        assertTrue(fullCharge > quickTap * 3);
+    }
+
+    @Test void bushesHidePlayersWithoutBlockingMovement() {
+        GameRoom room = startedRoom();
+        PlayerState hidden = room.players.get(0), viewer = room.players.get(1);
+        hidden.x = -11; hidden.z = -6;
+        viewer.x = 0; viewer.z = 0;
+
+        assertFalse(room.canSee(viewer, hidden));
+
+        viewer.x = -11; viewer.z = -6;
+        assertTrue(room.canSee(viewer, hidden));
+
+        hidden.x = -13; hidden.z = -6;
+        room.action(hidden,"MOVE",1,0,1000);
+        room.update(1050,.25);
+        assertTrue(hidden.x > -13);
     }
 
     @Test void explosionDealsMinimumDamageAndResetsSize() {
