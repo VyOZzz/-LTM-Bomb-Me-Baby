@@ -54,6 +54,9 @@ def main():
         state = a.until("STATE_UPDATE")
         assert len(state["players"]) == 2
         assert len(state["orbs"]) > 0
+        assert state["mapId"] in {"meadow", "crater", "crossroads"}
+        assert state["arenaSize"] >= 46
+        assert len(state["bushes"]) > 0
         a.send("MOVE", directionX=1, directionZ=0)
         a.send("CHARGE_START")
         a.send("EXPLODE")

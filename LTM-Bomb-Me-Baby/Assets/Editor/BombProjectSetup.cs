@@ -126,7 +126,7 @@ public static class BombProjectSetup {
         cameraObject.tag = "MainCamera";
         Camera camera = cameraObject.AddComponent<Camera>();
         camera.orthographic = true;
-        camera.orthographicSize = 12.5f;
+        camera.orthographicSize = 10.5f;
         camera.clearFlags = CameraClearFlags.SolidColor;
         camera.backgroundColor = new Color(.035f, .055f, .085f);
         cameraObject.transform.position = new Vector3(0, 22, -22);

@@ -5,9 +5,11 @@ using UnityEngine;
 
 public sealed class BombGame : MonoBehaviour {
     static readonly Vector3 CameraOffset = new Vector3(0, 22, -22);
+    const float CameraSize = 10.5f;
 
     sealed class Avatar {
         public GameObject body;
+        public Transform rollingVisual;
         public GameObject shield;
         public GameObject chargeAura;
         public TrailRenderer boostTrail;
@@ -19,7 +21,11 @@ public sealed class BombGame : MonoBehaviour {
     readonly Dictionary<string, Avatar> avatars = new Dictionary<string, Avatar>();
     readonly Dictionary<int, GameObject> orbViews = new Dictionary<int, GameObject>();
     readonly Dictionary<int, GameObject> coreViews = new Dictionary<int, GameObject>();
-    readonly Color[] playerColors = { new Color(1,.34f,.26f), new Color(.24f,.74f,1), new Color(1,.75f,.2f), new Color(.53f,.96f,.43f) };
+    readonly Color[] playerColors = {
+        new Color(1,.34f,.26f), new Color(.24f,.74f,1), new Color(1,.75f,.2f), new Color(.53f,.96f,.43f),
+        new Color(.76f,.38f,1), new Color(1,.42f,.76f), new Color(.18f,.92f,.76f), new Color(1,.58f,.18f),
+        new Color(.62f,.76f,1), new Color(.92f,.95f,.35f)
+    };
     string host = "127.0.0.1", port = "7777", playerName = "Bom";
     string joinCode = "", myId = "", status = "Nhập tên rồi kết nối tới server.", phase = "MENU", winnerId = "";
     RoomData room;
@@ -31,7 +37,11 @@ public sealed class BombGame : MonoBehaviour {
     [SerializeField] Transform actorsRoot;
     [SerializeField] Transform pickupsRoot;
     [SerializeField] Transform effectsRoot;
-    GameObject[] walls;
+    GameObject authoredEnvironment;
+    GameObject runtimeMapRoot;
+    BushData[] activeBushes = Array.Empty<BushData>();
+    string activeMapId = "", activeMapName = "";
+    float activeArenaSize;
     GUIStyle titleStyle, bodyStyle, smallStyle;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
@@ -45,12 +55,15 @@ public sealed class BombGame : MonoBehaviour {
         if (actorsRoot == null) actorsRoot = FindSceneRoot("Players");
         if (pickupsRoot == null) pickupsRoot = FindSceneRoot("Pickups");
         if (effectsRoot == null) effectsRoot = FindSceneRoot("Effects");
+        authoredEnvironment = GameObject.Find("Environment");
     }
 
     void Start() {
         Application.targetFrameRate = 60;
         Application.runInBackground = true;
-        if (gameCamera == null) BuildArena();
+        if (gameCamera == null) BuildPresentation();
+        gameCamera.orthographic = true;
+        gameCamera.orthographicSize = CameraSize;
     }
 
     static Transform FindSceneRoot(string objectName) {
@@ -73,7 +86,16 @@ public sealed class BombGame : MonoBehaviour {
         if (phase == "PLAYING" && network.Connected && !string.IsNullOrEmpty(myId)) HandleInput();
         foreach (Avatar avatar in avatars.Values) {
             if (avatar.body == null) continue;
-            avatar.body.transform.position = Vector3.Lerp(avatar.body.transform.position, avatar.target, 22 * Time.deltaTime);
+            Vector3 previous = avatar.body.transform.position;
+            float smoothing = 1 - Mathf.Exp(-22 * Time.deltaTime);
+            avatar.body.transform.position = Vector3.Lerp(previous, avatar.target, smoothing);
+            Vector3 travel = avatar.body.transform.position - previous;
+            travel.y = 0;
+            if (avatar.rollingVisual != null && travel.sqrMagnitude > .000001f) {
+                float radius = Mathf.Max(.05f, avatar.body.transform.localScale.x * .5f);
+                Vector3 axis = Vector3.Cross(Vector3.up, travel.normalized);
+                avatar.rollingVisual.Rotate(axis, travel.magnitude / radius * Mathf.Rad2Deg, Space.World);
+            }
             if (avatar.state != null) {
                 float scale = avatar.state.size;
                 avatar.body.transform.localScale = Vector3.Lerp(avatar.body.transform.localScale, Vector3.one * scale, 10 * Time.deltaTime);
@@ -164,7 +186,7 @@ public sealed class BombGame : MonoBehaviour {
                 break;
             case "GAME_START":
                 phase = "PLAYING"; winnerId = ""; charging = false;
-                status = "Trận đấu bắt đầu!";
+                status = "Trận đấu bắt đầu" + (string.IsNullOrEmpty(msg.mapName) ? "!" : ": " + msg.mapName);
                 break;
             case "STATE_UPDATE":
                 phase = msg.phase;
@@ -195,6 +217,7 @@ public sealed class BombGame : MonoBehaviour {
     }
 
     void ApplySnapshot(ServerMessage snapshot) {
+        ApplyMap(snapshot);
         if (snapshot.players == null) return;
         HashSet<string> seen = new HashSet<string>();
         for (int i = 0; i < snapshot.players.Length; i++) {
@@ -203,15 +226,27 @@ public sealed class BombGame : MonoBehaviour {
             bool shouldRender = p.id == myId || p.visible;
             if (!shouldRender && !avatars.ContainsKey(p.id)) continue;
             if (!avatars.TryGetValue(p.id, out Avatar a)) {
-                GameObject body = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                GameObject body = new GameObject("Bomb " + p.name);
                 body.name = "Bomb " + p.name;
                 if (actorsRoot != null) body.transform.SetParent(actorsRoot, false);
-                body.GetComponent<Renderer>().material = MaterialFor(playerColors[i % playerColors.Length]);
+                Color playerColor = playerColors[i % playerColors.Length];
+                GameObject rollingVisual = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                rollingVisual.name = "Rolling ball";
+                rollingVisual.transform.SetParent(body.transform, false);
+                rollingVisual.GetComponent<Renderer>().material = MaterialFor(playerColor);
+                Destroy(rollingVisual.GetComponent<Collider>());
+                GameObject rollBand = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+                rollBand.name = "Roll band";
+                rollBand.transform.SetParent(rollingVisual.transform, false);
+                rollBand.transform.localScale = new Vector3(1.015f,.025f,1.015f);
+                rollBand.GetComponent<Renderer>().material = MaterialFor(Color.Lerp(playerColor,Color.white,.58f));
+                Destroy(rollBand.GetComponent<Collider>());
                 GameObject fuse = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
                 fuse.transform.SetParent(body.transform, false);
                 fuse.transform.localPosition = new Vector3(0,.53f,0);
                 fuse.transform.localScale = new Vector3(.09f,.2f,.09f);
                 fuse.GetComponent<Renderer>().material = MaterialFor(new Color(.12f,.12f,.17f));
+                Destroy(fuse.GetComponent<Collider>());
                 GameObject shield = GameObject.CreatePrimitive(PrimitiveType.Sphere);
                 shield.name = "Shield";
                 shield.transform.SetParent(body.transform, false);
@@ -229,7 +264,10 @@ public sealed class BombGame : MonoBehaviour {
                 boostTrail.minVertexDistance = .12f;
                 boostTrail.material = TransparentMaterial(new Color(.2f,.85f,1,.65f));
                 boostTrail.emitting = false;
-                a = new Avatar { body = body, shield = shield, chargeAura = chargeAura, boostTrail = boostTrail };
+                a = new Avatar {
+                    body = body, rollingVisual = rollingVisual.transform, shield = shield,
+                    chargeAura = chargeAura, boostTrail = boostTrail
+                };
                 avatars.Add(p.id,a);
                 body.transform.position = new Vector3(p.x,.55f,p.z);
             }
@@ -244,6 +282,59 @@ public sealed class BombGame : MonoBehaviour {
         }
         SyncPickups(snapshot.orbs, orbViews, .19f, new Color(.35f,1,.54f));
         SyncPickups(snapshot.cores, coreViews, .43f, new Color(1,.38f,.86f));
+    }
+
+    void ApplyMap(ServerMessage snapshot) {
+        if (string.IsNullOrEmpty(snapshot.mapId) || snapshot.mapId == activeMapId) return;
+        activeMapId = snapshot.mapId;
+        activeMapName = snapshot.mapName;
+        activeArenaSize = snapshot.arenaSize;
+        activeBushes = snapshot.bushes ?? Array.Empty<BushData>();
+
+        if (authoredEnvironment != null) authoredEnvironment.SetActive(false);
+        if (runtimeMapRoot != null) Destroy(runtimeMapRoot);
+        runtimeMapRoot = new GameObject("Runtime Map - " + activeMapId);
+
+        Color floorColor;
+        Color wallColor;
+        Color rockColor;
+        switch (activeMapId) {
+            case "crater":
+                floorColor = new Color(.24f,.13f,.14f);
+                wallColor = new Color(.48f,.24f,.18f);
+                rockColor = new Color(.34f,.29f,.30f);
+                break;
+            case "crossroads":
+                floorColor = new Color(.16f,.16f,.25f);
+                wallColor = new Color(.31f,.29f,.52f);
+                rockColor = new Color(.42f,.42f,.55f);
+                break;
+            default:
+                floorColor = new Color(.10f,.22f,.19f);
+                wallColor = new Color(.18f,.42f,.36f);
+                rockColor = new Color(.38f,.44f,.43f);
+                break;
+        }
+
+        float diameter = activeArenaSize * 2;
+        CreateMapPrimitive("Arena floor", PrimitiveType.Cube, runtimeMapRoot.transform,
+            new Vector3(0,-.2f,0), new Vector3(diameter + 1,.3f,diameter + 1), floorColor);
+        CreateMapPrimitive("West wall", PrimitiveType.Cube, runtimeMapRoot.transform,
+            new Vector3(-activeArenaSize-.7f,.6f,0), new Vector3(.5f,1.2f,diameter + 1.8f), wallColor);
+        CreateMapPrimitive("East wall", PrimitiveType.Cube, runtimeMapRoot.transform,
+            new Vector3(activeArenaSize+.7f,.6f,0), new Vector3(.5f,1.2f,diameter + 1.8f), wallColor);
+        CreateMapPrimitive("South wall", PrimitiveType.Cube, runtimeMapRoot.transform,
+            new Vector3(0,.6f,-activeArenaSize-.7f), new Vector3(diameter + 1.8f,1.2f,.5f), wallColor);
+        CreateMapPrimitive("North wall", PrimitiveType.Cube, runtimeMapRoot.transform,
+            new Vector3(0,.6f,activeArenaSize+.7f), new Vector3(diameter + 1.8f,1.2f,.5f), wallColor);
+
+        if (snapshot.obstacles != null) foreach (ObstacleData obstacle in snapshot.obstacles) {
+            CreateMapPrimitive("Rock", PrimitiveType.Cylinder, runtimeMapRoot.transform,
+                new Vector3(obstacle.x,.65f,obstacle.z),
+                new Vector3(obstacle.radius * 2,.65f,obstacle.radius * 2), rockColor);
+        }
+        foreach (BushData bush in activeBushes)
+            CreateRuntimeBush(new Vector3(bush.x,0,bush.z), bush.radius, runtimeMapRoot.transform);
     }
 
     void SyncPickups(PickupData[] pickups, Dictionary<int, GameObject> views, float size, Color color) {
@@ -282,13 +373,13 @@ public sealed class BombGame : MonoBehaviour {
         Destroy(effect);
     }
 
-    void BuildArena() {
+    void BuildPresentation() {
         var cameraObject = new GameObject("Arena camera");
         gameCamera = cameraObject.AddComponent<Camera>();
         gameCamera.transform.position = CameraOffset;
         gameCamera.transform.LookAt(Vector3.zero);
         gameCamera.orthographic = true;
-        gameCamera.orthographicSize = 12.5f;
+        gameCamera.orthographicSize = CameraSize;
         gameCamera.backgroundColor = new Color(.08f,.11f,.17f);
         cameraObject.AddComponent<AudioListener>();
         RenderSettings.ambientLight = new Color(.7f,.75f,.85f);
@@ -297,39 +388,22 @@ public sealed class BombGame : MonoBehaviour {
         light.type = LightType.Directional;
         light.intensity = 1.2f;
         lightObject.transform.rotation = Quaternion.Euler(45,-35,0);
-        var ground = GameObject.CreatePrimitive(PrimitiveType.Cube);
-        ground.name = "Arena floor";
-        ground.transform.position = new Vector3(0,-.2f,0);
-        ground.transform.localScale = new Vector3(41,.3f,41);
-        ground.GetComponent<Renderer>().material = MaterialFor(new Color(.15f,.22f,.30f));
-        walls = new GameObject[4];
-        for (int i = 0; i < 4; i++) {
-            walls[i] = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            walls[i].name = "Arena wall";
-            walls[i].transform.position = i < 2 ? new Vector3(i == 0 ? -20.7f : 20.7f,.6f,0) : new Vector3(0,.6f,i == 2 ? -20.7f : 20.7f);
-            walls[i].transform.localScale = i < 2 ? new Vector3(.4f,1.2f,41.8f) : new Vector3(41.8f,1.2f,.4f);
-            walls[i].GetComponent<Renderer>().material = MaterialFor(new Color(.29f,.4f,.52f));
-        }
-        Vector3[] obstaclePositions = { new Vector3(-5,0,-3), new Vector3(5,0,4), new Vector3(-6,0,7), new Vector3(7,0,-6) };
-        float[] obstacleRadii = { 1.3f, 1.4f, 1.1f, 1.2f };
-        for (int i = 0; i < obstaclePositions.Length; i++) {
-            var rock = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-            rock.name = "Obstacle";
-            rock.transform.position = obstaclePositions[i] + Vector3.up * .65f;
-            float radius = obstacleRadii[i];
-            rock.transform.localScale = new Vector3(radius * 2, .65f, radius * 2);
-            rock.GetComponent<Renderer>().material = MaterialFor(new Color(.43f,.46f,.55f));
-        }
-        Vector3[] bushPositions = {
-            new Vector3(-11,0,-6), new Vector3(-10,0,10), new Vector3(11,0,9),
-            new Vector3(12,0,-10), new Vector3(0,0,10), new Vector3(0,0,-11)
-        };
-        float[] bushRadii = { 1.4f, 1.6f, 1.5f, 1.7f, 1.3f, 1.3f };
-        for (int i = 0; i < bushPositions.Length; i++) CreateRuntimeBush(bushPositions[i], bushRadii[i]);
     }
 
-    void CreateRuntimeBush(Vector3 position, float radius) {
+    GameObject CreateMapPrimitive(string objectName, PrimitiveType type, Transform parent,
+                                  Vector3 position, Vector3 scale, Color color) {
+        GameObject item = GameObject.CreatePrimitive(type);
+        item.name = objectName;
+        item.transform.SetParent(parent, false);
+        item.transform.position = position;
+        item.transform.localScale = scale;
+        item.GetComponent<Renderer>().material = MaterialFor(color);
+        return item;
+    }
+
+    void CreateRuntimeBush(Vector3 position, float radius, Transform parent) {
         GameObject root = new GameObject("Bush");
+        root.transform.SetParent(parent, false);
         root.transform.position = position;
         Color[] colors = { new Color(.12f,.42f,.20f), new Color(.18f,.55f,.25f), new Color(.28f,.66f,.30f) };
         Vector3[] offsets = {
@@ -347,8 +421,11 @@ public sealed class BombGame : MonoBehaviour {
     }
 
     static Material MaterialFor(Color color) {
-        var material = new Material(Shader.Find("Standard"));
+        Shader shader = Shader.Find("Universal Render Pipeline/Lit");
+        if (shader == null) shader = Shader.Find("Standard");
+        var material = new Material(shader);
         material.color = color;
+        if (material.HasProperty("_BaseColor")) material.SetColor("_BaseColor",color);
         return material;
     }
 
@@ -399,6 +476,8 @@ public sealed class BombGame : MonoBehaviour {
             if (GUILayout.Button("Vào phòng", GUILayout.Height(34))) network.Send(new BombMessage { type = "JOIN_ROOM", code = joinCode });
         } else {
             GUILayout.Label("Phòng: " + room.code + "  •  " + phase, bodyStyle);
+            if (!string.IsNullOrEmpty(room.mapName))
+                GUILayout.Label("Map: " + room.mapName + $"  •  {room.arenaSize*2:0}×{room.arenaSize*2:0}", smallStyle);
             if (room.players != null) foreach (LobbyPlayer p in room.players)
                 GUILayout.Label((p.id == myId ? "▶ " : "   ") + p.name + (p.ready ? " ✓" : "") + (p.connected ? "" : " (mất kết nối)"), bodyStyle);
             if (phase != "PLAYING") {
@@ -406,12 +485,14 @@ public sealed class BombGame : MonoBehaviour {
                 if (room.players != null) foreach (LobbyPlayer p in room.players) if (p.id == myId) myReady = p.ready;
                 if (GUILayout.Button(myReady ? "Bỏ sẵn sàng" : "Sẵn sàng", GUILayout.Height(34)))
                     network.Send(new BombMessage { type = "READY", ready = !myReady });
-                GUILayout.Label("Có thể bắt đầu một mình để test; tối đa 4 người.", smallStyle);
+                int capacity = room.maxPlayers > 0 ? room.maxPlayers : 10;
+                GUILayout.Label($"Có thể bắt đầu một mình để test; tối đa {capacity} người.", smallStyle);
             }
             if (GUILayout.Button("Rời phòng")) network.Send(new BombMessage { type = "LEAVE_ROOM" });
         }
         if (phase == "PLAYING") {
             GUILayout.Space(14);
+            if (!string.IsNullOrEmpty(activeMapName)) GUILayout.Label("Map hiện tại: " + activeMapName, bodyStyle);
             GUILayout.Label("WASD / phím mũi tên: Di chuyển", bodyStyle);
             GUILayout.Label("Giữ / thả Space: Nạp / Nổ", bodyStyle);
             GUILayout.Label("E: Khiên 1.5 giây", bodyStyle);
@@ -431,22 +512,18 @@ public sealed class BombGame : MonoBehaviour {
         GUILayout.Label($"{sentPerSecond}/{receivedPerSecond} msg/s  •  {sentBytesPerSecond}/{receivedBytesPerSecond} B/s",smallStyle);
         GUILayout.EndArea();
         foreach (Avatar a in avatars.Values) {
-            if (a.body == null || a.state == null || !a.state.alive) continue;
+            if (a.body == null || a.state == null || !a.state.alive || !a.body.activeInHierarchy) continue;
             Vector3 pos = gameCamera.WorldToScreenPoint(a.body.transform.position + Vector3.up * (a.state.size + .4f));
-            if (pos.z > 0) GUI.Label(new Rect(pos.x-60,Screen.height-pos.y-16,120,22),$"{a.state.name}  {a.state.hp:0} HP",smallStyle);
+            if (pos.z > 0 && pos.x >= 0 && pos.x <= Screen.width && pos.y >= 0 && pos.y <= Screen.height)
+                GUI.Label(new Rect(pos.x-60,Screen.height-pos.y-16,120,22),$"{a.state.name}  {a.state.hp:0} HP",smallStyle);
         }
     }
 
-    static int BushIndex(float x, float z) {
-        Vector3[] centers = {
-            new Vector3(-11,0,-6), new Vector3(-10,0,10), new Vector3(11,0,9),
-            new Vector3(12,0,-10), new Vector3(0,0,10), new Vector3(0,0,-11)
-        };
-        float[] radii = { 1.4f, 1.6f, 1.5f, 1.7f, 1.3f, 1.3f };
-        for (int i = 0; i < centers.Length; i++) {
-            float dx = x - centers[i].x;
-            float dz = z - centers[i].z;
-            if (dx * dx + dz * dz <= radii[i] * radii[i]) return i;
+    int BushIndex(float x, float z) {
+        for (int i = 0; i < activeBushes.Length; i++) {
+            float dx = x - activeBushes[i].x;
+            float dz = z - activeBushes[i].z;
+            if (dx * dx + dz * dz <= activeBushes[i].radius * activeBushes[i].radius) return i;
         }
         return -1;
     }

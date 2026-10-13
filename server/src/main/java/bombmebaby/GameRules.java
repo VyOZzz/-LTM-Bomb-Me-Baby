@@ -1,7 +1,11 @@
 package bombmebaby;
 
 final class GameRules {
-    static final double ARENA = 20.0;
+    static final int MAX_PLAYERS = 10;
+    static final int INITIAL_ORBS = 110;
+    static final int MAX_ORBS = 150;
+    static final double MIN_SPAWN_DISTANCE = 28.0;
+    static final double PLAYER_VISIBILITY_DISTANCE = 26.0;
     // Slightly smaller than the rendered sphere so movement near scenery feels forgiving.
     static final double PLAYER_RADIUS = 0.40;
     static final double MAX_SIZE = 2.6;

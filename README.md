@@ -1,6 +1,6 @@
 # Bomb Me Baby
 
-Prototype game PvP arena 2.5D cho 2–4 người, xây theo GDD được cung cấp. Unity client hiển thị arena và gửi ý định điều khiển qua TCP; Java server giữ trạng thái chính thức của trận, tính va chạm, nhặt vật phẩm, sát thương và người thắng.
+Prototype game PvP arena 2.5D cho tối đa 10 người, xây theo GDD được cung cấp. Unity client hiển thị arena và gửi ý định điều khiển qua TCP; Java server giữ trạng thái chính thức của trận, chọn map, sinh vị trí người chơi, tính va chạm, nhặt vật phẩm, sát thương và người thắng.
 
 ## Cấu trúc
 
@@ -27,9 +27,9 @@ Server mặc định nghe TCP port `7777`. Mở firewall cho port này nếu ng�
 2. Mở `Assets/Scenes/Main.unity`. Nếu scene chưa có hierarchy `Bomb Me Baby`, chọn **Tools > Bomb Me Baby > Rebuild Main Scene**.
 3. Nhấn Play. Nhập tên, IP server, port rồi chọn **Kết nối**.
 4. Client thứ nhất chọn **Tạo phòng**. Các client còn lại nhập mã 6 ký tự và **Vào phòng**.
-5. Chọn **Sẵn sàng** để bắt đầu. Hiện tại có thể chơi một mình để kiểm thử; khi có nhiều người, trận bắt đầu khi tất cả cùng sẵn sàng (tối đa 4 người). Để chơi nhiều client trên cùng máy, build một bản Windows/Mac rồi chạy cùng lúc với Unity Editor, hoặc chạy nhiều bản build.
+5. Chọn **Sẵn sàng** để bắt đầu. Hiện tại có thể chơi một mình để kiểm thử; khi có nhiều người, trận bắt đầu khi tất cả cùng sẵn sàng (tối đa 10 người). Để chơi nhiều client trên cùng máy, build một bản Windows/Mac rồi chạy cùng lúc với Unity Editor, hoặc chạy nhiều bản build.
 
-Điều khiển: **WASD/phím mũi tên** di chuyển theo hướng màn hình, **giữ Space** nạp và **thả Space** để nổ, **E** bật Shield, **Shift** Boost. Camera bám theo người chơi trên arena 40×40. Sau trận, mọi người chọn **Sẵn sàng** để chơi lại cùng phòng.
+Điều khiển: **WASD/phím mũi tên** di chuyển theo hướng màn hình, **giữ Space** nạp và **thả Space** để nổ, **E** bật Shield, **Shift** Boost. Camera bám sát quả bóng của người chơi và chỉ hiển thị một vùng nhỏ của map. Mỗi vòng dùng một trong ba map server-authoritative rộng 96×96 đến 104×104; vòng kế tiếp trong cùng phòng sẽ đổi sang map khác.
 
 ## Bật AI trong Unity Editor
 
@@ -49,10 +49,12 @@ Unity AI Assistant cần kết nối mạng và quyền sử dụng/trial hoặc
 - Shield hoạt động ngay trong 1.5 giây, chặn 100% sát thương nổ và phản 50% về người tấn công; cooldown 9 giây.
 - Boost tăng tốc trong 0.9 giây, giảm Size 0.23 và rơi một Energy Orb, cooldown 5 giây.
 - Đá là vật cản. Bụi không có collision: người chơi có thể đi xuyên vào để ẩn; đối thủ ở ngoài không nhìn thấy người trong bụi, còn người ở cùng bụi vẫn nhìn thấy nhau.
+- Mỗi vòng spawn người chơi ngẫu nhiên, tránh đá/bụi và cách nhau tối thiểu 28 đơn vị. Server chỉ cho thấy đối thủ trong bán kính 26 đơn vị nên không lộ vị trí spawn ở xa.
+- Nhân vật được dựng thành quả bóng có dải màu tương phản; phần bóng xoay theo quãng đường di chuyển để chuyển động lăn đọc được rõ ràng.
 - Khi bị loại, player rơi Core. Người nhặt Core tăng Base Size 0.1, tối đa 1.4.
 - Mất kết nối trong trận có 10 giây để kết nối lại bằng resume token. Quá hạn sẽ bị loại.
 
-Các thông số được đặt ở `server/src/main/java/bombmebaby/GameRules.java`; đây là giá trị prototype cụ thể hoá các khoảng gợi ý trong GDD.
+Các thông số được đặt ở `server/src/main/java/bombmebaby/GameRules.java`; ba layout map nằm trong `server/src/main/java/bombmebaby/GameMap.java`. Đây là giá trị prototype cụ thể hoá các khoảng gợi ý trong GDD.
 
 ## Giao thức và kiểm tra
 

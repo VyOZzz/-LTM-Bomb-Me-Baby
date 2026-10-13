@@ -32,10 +32,14 @@ using System;
     public float z;
     public float radius;
     public float amount;
+    public float arenaSize;
+    public string mapId;
+    public string mapName;
     public PlayerData[] players;
     public PickupData[] orbs;
     public PickupData[] cores;
     public ObstacleData[] obstacles;
+    public BushData[] bushes;
     public string phase;
 }
 
@@ -47,6 +51,10 @@ using System;
 [Serializable] public class RoomData {
     public string code;
     public string phase;
+    public string mapId;
+    public string mapName;
+    public float arenaSize;
+    public int maxPlayers;
     public LobbyPlayer[] players;
 }
 
@@ -84,6 +92,12 @@ using System;
 }
 
 [Serializable] public class ObstacleData {
+    public float x;
+    public float z;
+    public float radius;
+}
+
+[Serializable] public class BushData {
     public float x;
     public float z;
     public float radius;

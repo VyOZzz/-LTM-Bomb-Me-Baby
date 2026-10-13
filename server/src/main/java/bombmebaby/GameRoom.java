@@ -10,31 +10,29 @@ import java.util.Random;
 final class GameRoom {
     enum Phase { WAITING, PLAYING, FINISHED }
     record Pickup(int id, double x, double z) {}
-    record Obstacle(double x, double z, double radius) {}
-    record Bush(double x, double z, double radius) {}
 
     final String code;
     final List<PlayerState> players = new ArrayList<>();
     final List<Pickup> orbs = new ArrayList<>();
     final List<Pickup> cores = new ArrayList<>();
-    final List<Obstacle> obstacles = List.of(
-        new Obstacle(-5, -3, 1.3), new Obstacle(5, 4, 1.4),
-        new Obstacle(-6, 7, 1.1), new Obstacle(7, -6, 1.2));
-    final List<Bush> bushes = List.of(
-        new Bush(-11, -6, 1.4), new Bush(-10, 10, 1.6),
-        new Bush(11, 9, 1.5), new Bush(12, -10, 1.7),
-        new Bush(0, 10, 1.3), new Bush(0, -11, 1.3));
     final Random random = new Random();
+    List<GameMap.Obstacle> obstacles;
+    List<GameMap.Bush> bushes;
+    GameMap map;
     Phase phase = Phase.WAITING;
     long tick;
     private int nextPickupId = 1;
     private long lastOrbAt;
     private boolean soloRound;
+    private boolean hasStarted;
 
-    GameRoom(String code) { this.code = code; }
+    GameRoom(String code) {
+        this.code = code;
+        applyMap(GameMap.random(random, null));
+    }
 
     synchronized boolean join(PlayerState player) {
-        if (phase == Phase.PLAYING || players.size() >= 4 || players.contains(player)) return false;
+        if (phase == Phase.PLAYING || players.size() >= GameRules.MAX_PLAYERS || players.contains(player)) return false;
         players.add(player);
         player.room = this;
         player.ready = false;
@@ -60,22 +58,25 @@ final class GameRoom {
     }
 
     private void start(long now) {
+        if (hasStarted) applyMap(GameMap.random(random, map.id));
+        List<double[]> spawns = randomSpawns(players.size());
+        hasStarted = true;
         phase = Phase.PLAYING;
         soloRound = players.size() == 1;
         tick = 0;
         orbs.clear(); cores.clear();
-        double[][] spawns = {{-16,-16},{16,16},{-16,16},{16,-16}};
         for (int i = 0; i < players.size(); i++) {
             PlayerState p = players.get(i);
-            p.x = spawns[i][0]; p.z = spawns[i][1]; p.dx = 0; p.dz = 0;
+            p.x = spawns.get(i)[0]; p.z = spawns.get(i)[1]; p.dx = 0; p.dz = 0;
             p.hp = 100; p.size = 1; p.baseSize = 1; p.kills = 0;
             p.alive = true; p.charging = false; p.shieldUntil = 0;
             p.shieldReadyAt = 0; p.boostUntil = 0; p.boostReadyAt = 0;
             p.ready = false;
         }
-        for (int i = 0; i < 48; i++) spawnOrb();
+        for (int i = 0; i < GameRules.INITIAL_ORBS; i++) spawnOrb();
         lastOrbAt = now;
-        broadcast(data("type", "GAME_START", "room", code));
+        broadcast(data("type", "GAME_START", "room", code,
+            "mapId", map.id, "mapName", map.name, "arenaSize", map.halfSize));
         broadcastSnapshots(now);
     }
 
@@ -109,7 +110,7 @@ final class GameRoom {
                     p.boostReadyAt = now + GameRules.BOOST_COOLDOWN_MS;
                     p.size = Math.max(p.baseSize, p.size - 0.23);
                     double ox = p.x - p.dx * 0.8, oz = p.z - p.dz * 0.8;
-                    if (orbs.size() < 72 && free(ox, oz, 0.2)) orbs.add(new Pickup(nextPickupId++, ox, oz));
+                    if (orbs.size() < GameRules.MAX_ORBS && free(ox, oz, 0.2)) orbs.add(new Pickup(nextPickupId++, ox, oz));
                     broadcast(data("type", "BOOST_ACTIVATED", "playerId", p.id));
                 } else reject(p,"BOOST_COOLDOWN");
             }
@@ -129,8 +130,8 @@ final class GameRoom {
             }
             if (p.connected) {
                 double speed = 5.2 / Math.sqrt(p.size) * (now < p.boostUntil ? 1.85 : 1);
-                double nx = GameRules.clamp(p.x + p.dx * speed * dt, -GameRules.ARENA, GameRules.ARENA);
-                double nz = GameRules.clamp(p.z + p.dz * speed * dt, -GameRules.ARENA, GameRules.ARENA);
+                double nx = GameRules.clamp(p.x + p.dx * speed * dt, -map.halfSize, map.halfSize);
+                double nz = GameRules.clamp(p.z + p.dz * speed * dt, -map.halfSize, map.halfSize);
                 if (free(nx, p.z, GameRules.PLAYER_RADIUS * p.size)) p.x = nx;
                 if (free(p.x, nz, GameRules.PLAYER_RADIUS * p.size)) p.z = nz;
                 pickup(p, now);
@@ -139,7 +140,7 @@ final class GameRoom {
         }
         if (phase != Phase.PLAYING) return;
         pickupCores();
-        if (now - lastOrbAt >= 650 && orbs.size() < 64) { spawnOrb(); lastOrbAt = now; }
+        if (now - lastOrbAt >= 500 && orbs.size() < GameRules.MAX_ORBS) { spawnOrb(); lastOrbAt = now; }
         if (tick % 2 == 0) broadcastSnapshots(now);
     }
 
@@ -228,22 +229,67 @@ final class GameRoom {
     private void spawnOrb() {
         for (int i = 0; i < 40; i++) {
             double margin = 1.0;
-            double span = (GameRules.ARENA - margin) * 2;
-            double x = -GameRules.ARENA + margin + random.nextDouble() * span;
-            double z = -GameRules.ARENA + margin + random.nextDouble() * span;
+            double span = (map.halfSize - margin) * 2;
+            double x = -map.halfSize + margin + random.nextDouble() * span;
+            double z = -map.halfSize + margin + random.nextDouble() * span;
             if (free(x,z,0.25)) { orbs.add(new Pickup(nextPickupId++,x,z)); return; }
         }
     }
 
     private boolean free(double x, double z, double radius) {
-        if (Math.abs(x) + radius > GameRules.ARENA || Math.abs(z) + radius > GameRules.ARENA) return false;
-        for (Obstacle o : obstacles)
-            if (GameRules.distance(x,z,o.x,o.z) < radius + o.radius) return false;
+        if (Math.abs(x) + radius > map.halfSize || Math.abs(z) + radius > map.halfSize) return false;
+        for (GameMap.Obstacle o : obstacles)
+            if (GameRules.distance(x,z,o.x(),o.z()) < radius + o.radius()) return false;
         return true;
     }
 
+    private boolean freeSpawn(double x, double z) {
+        if (!free(x, z, GameRules.PLAYER_RADIUS)) return false;
+        for (GameMap.Bush bush : bushes)
+            if (GameRules.distance(x,z,bush.x(),bush.z()) < bush.radius() + 2.0) return false;
+        return true;
+    }
+
+    /** Farthest-point sampling keeps every randomized start outside initial visibility range. */
+    private List<double[]> randomSpawns(int count) {
+        List<double[]> candidates = new ArrayList<>();
+        double margin = 3.0;
+        double span = (map.halfSize - margin) * 2;
+        for (int i = 0; i < 2_000; i++) {
+            double x = -map.halfSize + margin + random.nextDouble() * span;
+            double z = -map.halfSize + margin + random.nextDouble() * span;
+            if (freeSpawn(x,z)) candidates.add(new double[] {x,z});
+        }
+        if (candidates.size() < count) throw new IllegalStateException("Map has too few spawn candidates: " + map.id);
+
+        List<double[]> result = new ArrayList<>();
+        result.add(candidates.remove(random.nextInt(candidates.size())));
+        while (result.size() < count) {
+            int bestIndex = -1;
+            double bestDistance = -1;
+            for (int i = 0; i < candidates.size(); i++) {
+                double[] candidate = candidates.get(i);
+                double nearest = result.stream()
+                    .mapToDouble(spawn -> GameRules.distance(candidate[0],candidate[1],spawn[0],spawn[1]))
+                    .min().orElse(Double.POSITIVE_INFINITY);
+                if (nearest > bestDistance) { bestDistance = nearest; bestIndex = i; }
+            }
+            if (bestIndex < 0 || bestDistance < GameRules.MIN_SPAWN_DISTANCE)
+                throw new IllegalStateException("Cannot separate " + count + " spawns on map " + map.id);
+            result.add(candidates.remove(bestIndex));
+        }
+        return result;
+    }
+
+    private void applyMap(GameMap selected) {
+        map = selected;
+        obstacles = selected.obstacles;
+        bushes = selected.bushes;
+    }
+
     synchronized Map<String,Object> roomInfo() {
-        return data("code",code,"phase",phase.name(),"players",players.stream().map(p -> data(
+        return data("code",code,"phase",phase.name(),"mapId",map.id,"mapName",map.name,
+            "arenaSize",map.halfSize,"maxPlayers",GameRules.MAX_PLAYERS,"players",players.stream().map(p -> data(
             "id",p.id,"name",p.name,"ready",p.ready,"connected",p.connected)).toList());
     }
 
@@ -258,20 +304,23 @@ final class GameRoom {
             "shield",now < p.shieldUntil,"shieldCooldown",Math.max(0,p.shieldReadyAt-now)/1000.0,
             "boost",now < p.boostUntil,"boostCooldown",Math.max(0,p.boostReadyAt-now)/1000.0,
             "kills",p.kills)).toList();
-        return data("type","STATE_UPDATE","tick",tick,"phase",phase.name(),"players",states,
-            "orbs",orbs,"cores",cores,"obstacles",obstacles);
+        return data("type","STATE_UPDATE","tick",tick,"phase",phase.name(),
+            "mapId",map.id,"mapName",map.name,"arenaSize",map.halfSize,"players",states,
+            "orbs",orbs,"cores",cores,"obstacles",obstacles,"bushes",bushes);
     }
 
     synchronized boolean canSee(PlayerState viewer, PlayerState target) {
         if (viewer == null || viewer == target) return true;
+        if (GameRules.distance(viewer.x,viewer.z,target.x,target.z) > GameRules.PLAYER_VISIBILITY_DISTANCE)
+            return false;
         int targetBush = bushAt(target.x, target.z);
         return targetBush < 0 || bushAt(viewer.x, viewer.z) == targetBush;
     }
 
     private int bushAt(double x, double z) {
         for (int i = 0; i < bushes.size(); i++) {
-            Bush bush = bushes.get(i);
-            if (GameRules.distance(x,z,bush.x,bush.z) <= bush.radius) return i;
+            GameMap.Bush bush = bushes.get(i);
+            if (GameRules.distance(x,z,bush.x(),bush.z()) <= bush.radius()) return i;
         }
         return -1;
     }
