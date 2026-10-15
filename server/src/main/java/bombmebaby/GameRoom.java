@@ -75,8 +75,11 @@ final class GameRoom {
         }
         for (int i = 0; i < GameRules.INITIAL_ORBS; i++) spawnOrb();
         lastOrbAt = now;
+        // GAME_START always includes the static map geometry so the client
+        // has the full layout even when optimized STATE_UPDATEs omit it.
         broadcast(data("type", "GAME_START", "room", code,
-            "mapId", map.id, "mapName", map.name, "arenaSize", map.halfSize));
+            "mapId", map.id, "mapName", map.name, "arenaSize", map.halfSize,
+            "obstacles", obstacles, "bushes", bushes));
         broadcastSnapshots(now);
     }
 
@@ -293,20 +296,66 @@ final class GameRoom {
             "id",p.id,"name",p.name,"ready",p.ready,"connected",p.connected)).toList());
     }
 
+    /** Full snapshot (baseline mode, no viewer). Used by existing tests. */
     synchronized Map<String,Object> snapshot(long now) { return snapshot(now, null); }
 
+    /** Snapshot for a specific viewer, using the server-wide SyncMode. */
     synchronized Map<String,Object> snapshot(long now, PlayerState viewer) {
-        List<Map<String,Object>> states = players.stream().map(p -> data(
-            "id",p.id,"name",p.name,"x",p.x,"z",p.z,"hp",p.hp,"size",p.size,
-            "baseSize",p.baseSize,"alive",p.alive,"connected",p.connected,
-            "visible",viewer == null || canSee(viewer,p),
-            "charging",p.charging,"charge",p.charging ? GameRules.clamp((now-p.chargeSince)/8000.0,0,1) : 0,
-            "shield",now < p.shieldUntil,"shieldCooldown",Math.max(0,p.shieldReadyAt-now)/1000.0,
-            "boost",now < p.boostUntil,"boostCooldown",Math.max(0,p.boostReadyAt-now)/1000.0,
-            "kills",p.kills)).toList();
-        return data("type","STATE_UPDATE","tick",tick,"phase",phase.name(),
-            "mapId",map.id,"mapName",map.name,"arenaSize",map.halfSize,"players",states,
-            "orbs",orbs,"cores",cores,"obstacles",obstacles,"bushes",bushes);
+        return snapshot(now, viewer, false);
+    }
+
+    /**
+     * Build a STATE_UPDATE snapshot.
+     *
+     * @param now           current epoch millis
+     * @param viewer        the player who will receive this snapshot (null = spectator / test)
+     * @param forceBaseline if true, include obstacles/bushes and full data even in optimized mode
+     *                      (used on reconnect so the client gets a complete picture)
+     */
+    synchronized Map<String,Object> snapshot(long now, PlayerState viewer, boolean forceBaseline) {
+        boolean optimized = !forceBaseline && SyncMode.active() == SyncMode.OPTIMIZED;
+
+        // ---- player states ----
+        List<Map<String,Object>> states = new ArrayList<>();
+        for (PlayerState p : players) {
+            boolean visible = viewer == null || canSee(viewer, p);
+            // In optimized mode, hide exact coordinates of invisible players
+            // so the client cannot derive positions it should not know.
+            double px = (!optimized || visible) ? p.x : 0;
+            double pz = (!optimized || visible) ? p.z : 0;
+            states.add(data(
+                "id",p.id,"name",p.name,"x",px,"z",pz,"hp",p.hp,"size",p.size,
+                "baseSize",p.baseSize,"alive",p.alive,"connected",p.connected,
+                "visible",visible,
+                "charging",p.charging,"charge",p.charging ? GameRules.clamp((now-p.chargeSince)/8000.0,0,1) : 0,
+                "shield",now < p.shieldUntil,"shieldCooldown",Math.max(0,p.shieldReadyAt-now)/1000.0,
+                "boost",now < p.boostUntil,"boostCooldown",Math.max(0,p.boostReadyAt-now)/1000.0,
+                "kills",p.kills));
+        }
+
+        // ---- pickups: optionally cull by distance ----
+        List<?> visibleOrbs = orbs;
+        List<?> visibleCores = cores;
+        if (optimized && viewer != null) {
+            visibleOrbs = orbs.stream()
+                .filter(o -> GameRules.distance(viewer.x,viewer.z,o.x,o.z) <= SyncMode.PICKUP_VISIBILITY)
+                .toList();
+            visibleCores = cores.stream()
+                .filter(c -> GameRules.distance(viewer.x,viewer.z,c.x,c.z) <= SyncMode.PICKUP_VISIBILITY)
+                .toList();
+        }
+
+        Map<String,Object> snap = data("type","STATE_UPDATE","tick",tick,"phase",phase.name(),
+            "mapId",map.id,"mapName",map.name,"arenaSize",map.halfSize,
+            "players",states,"orbs",visibleOrbs,"cores",visibleCores);
+
+        // In baseline mode (or forced), include static map geometry every tick.
+        // In optimized mode the client already has them from GAME_START.
+        if (!optimized) {
+            snap.put("obstacles", obstacles);
+            snap.put("bushes", bushes);
+        }
+        return snap;
     }
 
     synchronized boolean canSee(PlayerState viewer, PlayerState target) {

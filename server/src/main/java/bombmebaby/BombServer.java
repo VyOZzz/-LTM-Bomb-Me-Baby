@@ -88,10 +88,16 @@ public final class BombServer {
                 }
             } catch (IOException ignored) {
             } finally {
-                if (player != null && player.connection == this) {
-                    player.connected = false;
-                    player.connection = null;
-                    player.disconnectedAt = System.currentTimeMillis();
+                // Atomically check that we are still the active connection before
+                // marking the player disconnected.  A concurrent reconnect may have
+                // already swapped in a new Connection for the same PlayerState.
+                if (player != null) {
+                    synchronized (player) {
+                        if (player.connection != this) return; // superseded by reconnect
+                        player.connected = false;
+                        player.connection = null;
+                        player.disconnectedAt = System.currentTimeMillis();
+                    }
                     GameRoom room = player.room;
                     if (room != null) {
                         synchronized (room) {
@@ -109,16 +115,39 @@ public final class BombServer {
             if (player == null) {
                 if (!"HELLO".equals(type)) { error("HELLO_REQUIRED"); return; }
                 String token = string(m,"resumeToken");
-                PlayerState resumed = sessions.get(token);
-                if (resumed != null && !resumed.connected && System.currentTimeMillis() - resumed.disconnectedAt <= GameRules.RECONNECT_MS) {
-                    player = resumed;
-                    player.connection = this;
-                    player.connected = true;
-                    send(GameRoom.data("type","WELCOME","playerId",player.id,"resumeToken",player.resumeToken));
-                    if (player.room != null) {
-                        send(GameRoom.data("type","ROOM_STATE","room",player.room.roomInfo()));
-                        if (player.room.phase == GameRoom.Phase.PLAYING) send(player.room.snapshot(System.currentTimeMillis(), player));
+                PlayerState resumed = token.isEmpty() ? null : sessions.get(token);
+                if (resumed != null) {
+                    // Synchronize on the PlayerState so that only one Connection
+                    // can claim a resume token at a time (fixes the race where
+                    // two TCP connections try to resume the same session).
+                    synchronized (resumed) {
+                        if (!resumed.connected && System.currentTimeMillis() - resumed.disconnectedAt <= GameRules.RECONNECT_MS) {
+                            player = resumed;
+                            player.connection = this;
+                            player.connected = true;
+                            // Include lastSeq so the client knows which sequence
+                            // number to continue from after a reconnect.
+                            send(GameRoom.data("type","WELCOME","playerId",player.id,
+                                "resumeToken",player.resumeToken,"lastSeq",player.lastSeq));
+                        }
                     }
+                    if (player != null) {
+                        // Send room state and current snapshot outside the
+                        // player lock (snapshot acquires the room lock).
+                        if (player.room != null) {
+                            send(GameRoom.data("type","ROOM_STATE","room",player.room.roomInfo()));
+                            if (player.room.phase == GameRoom.Phase.PLAYING) {
+                                // Always send a full snapshot (with obstacles/bushes)
+                                // on reconnect regardless of sync mode so the client
+                                // has a complete picture.
+                                send(player.room.snapshot(System.currentTimeMillis(), player, true));
+                            }
+                        }
+                        return;
+                    }
+                    // If we get here the token existed but the session was
+                    // already connected or the reconnect window expired.
+                    error("RESUME_FAILED");
                     return;
                 }
                 String name = string(m,"name").trim();
