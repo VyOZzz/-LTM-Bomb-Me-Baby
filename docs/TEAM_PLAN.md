@@ -1,11 +1,12 @@
 # Phân công nhóm — Bomb Me Baby
 
-Cập nhật: 13/10/2026. Tài liệu đối chiếu: `final-project/Topics.md`, `Instruction.md`, `Submission.md` và `README.md`.
+Cập nhật: 15/10/2026, bổ sung việc cho chế độ Hành trình Ba Mảnh (`docs/STORY_SCRIPT.md`). Tài liệu đối chiếu: `final-project/Topics.md`, `Instruction.md`, `Submission.md` và `README.md`.
 
 ## Mục tiêu và mốc bàn giao
 
+- **Trước 17/10:** cả nhóm chốt thay đổi JSON protocol: field mới trong `ROOM_STATE`/`STATE_UPDATE` (`mode`, `chapterIndex`, `scores`), tên event kết thúc hành trình và định dạng snapshot rút gọn. Chốt luôn ba câu hỏi còn mở cuối `docs/STORY_SCRIPT.md`.
 - **20/10:** mốc nội bộ: 2–4 Unity client chơi trọn trận, một map chính dễ chơi, HUD/âm thanh/VFX cơ bản và số liệu baseline đầu tiên.
-- **21–26/10:** hoàn thiện cải tiến đồng bộ trạng thái, đo lại bằng cùng kịch bản và sửa lỗi tích hợp.
+- **21–26/10:** hoàn thiện cải tiến đồng bộ trạng thái và chế độ Hành trình Ba Mảnh, đo lại bằng cùng kịch bản và sửa lỗi tích hợp.
 - **27–30/10:** hoàn thiện báo cáo, README, bộ source chạy được, luyện bảo vệ và kiểm tra nộp bài.
 - **31/10, 23:59:** hạn nộp chính thức theo `final-project/Submission.md`.
 
@@ -16,6 +17,16 @@ Cập nhật: 13/10/2026. Tài liệu đối chiếu: `final-project/Topics.md`,
 | Trưởng nhóm | Unity client: `LTM-Bomb-Me-Baby/Assets/Scripts/`, scene, HUD, ánh sáng, VFX, tích hợp âm thanh | Bản build/demo 2–4 client chơi từ lobby đến kết quả; giải thích luồng input → server → snapshot; review và tích hợp các nhánh. |
 | Thành viên A | Java server: `BombServer.java`, `GameRoom.java`, `GameRules.java` và test liên quan | Sửa lỗi reconnect, request trùng, disconnect, tranh Core; test tự động; cải tiến đồng bộ có thể so với baseline và giải thích cơ chế thread/khóa room. |
 | Thành viên B | `GameMap.java`, `scripts/`, dữ liệu thực nghiệm và tài nguyên âm thanh | Một map chính được playtest; script tạo 2/4/8 client; dữ liệu thô, cấu hình/lệnh chạy, bảng đo latency, message rate, byte truyền và thời gian xử lý; ghi nguồn/quyền sử dụng âm thanh. |
+
+### Việc bổ sung từ 15/10
+
+| Người | Làm ngay (không cần đổi protocol) | Sau khi chốt protocol |
+| --- | --- | --- |
+| Trưởng nhóm (Unity) | Hoàn thiện Đấu nhanh đến 20/10: build Windows, HUD (HP, Size, thanh nạp, cooldown Shield/Boost), VFX nổ/Shield, gắn âm thanh. Màn mở đầu, lời dẫn theo `mapId`, gợi ý và thông báo sự kiện theo mục 3–6 và 9 của `STORY_SCRIPT.md`; lời thoại để trong file JSON, không viết cứng trong `BombGame.cs`. | Bảng điểm giữa chương, màn kết hành trình; cập nhật client theo định dạng snapshot mới. |
+| Thành viên A (server) | Test tự động cho reconnect, sequence trùng, tranh Core. | Hành trình Ba Mảnh trên server: thứ tự map cố định `meadow → crossroads → crater`, điểm và số vòng thắng, gửi `mode`/`chapterIndex`/`scores`, event kết thúc hành trình. Novelty: gửi đá/bụi một lần lúc `GAME_START` thay vì mỗi snapshot; không gửi tọa độ người chơi viewer không nhìn thấy (sửa luôn lỗi lộ vị trí trong bụi). |
+| Thành viên B (đo/map/âm thanh) | Script 2/4/8 client ghi CSV (RTT, message/giây, byte, `processingMicros`); **đo baseline trước khi A đổi snapshot**. Playtest 3 map, chỉnh `GameMap.java` nếu cần. Nhạc theo chương (vui, cơ khí, căng thẳng) và SFX, ghi nguồn/bản quyền. | Cập nhật script theo protocol mới, đo lại bằng cùng kịch bản để so với baseline. |
+
+Phụ thuộc: bảng điểm Unity và script đo đều chờ A đổi protocol, nên buổi chốt protocol trước 17/10 là việc đầu tiên. Trong lúc chờ, Unity làm HUD và phần cốt truyện chỉ cần client.
 
 Mỗi người viết phần tương ứng trong báo cáo. Cả ba cùng đọc kiến trúc, giao thức và code quan trọng trước buổi bảo vệ.
 
