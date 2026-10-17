@@ -12,6 +12,7 @@ final class GameRoom {
     record Pickup(int id, double x, double z) {}
 
     final String code;
+    final SyncMode syncMode;
     final List<PlayerState> players = new ArrayList<>();
     final List<Pickup> orbs = new ArrayList<>();
     final List<Pickup> cores = new ArrayList<>();
@@ -27,7 +28,12 @@ final class GameRoom {
     private boolean hasStarted;
 
     GameRoom(String code) {
+        this(code, SyncMode.active());
+    }
+
+    GameRoom(String code, SyncMode syncMode) {
         this.code = code;
+        this.syncMode = syncMode;
         applyMap(GameMap.random(random, null));
     }
 
@@ -124,13 +130,16 @@ final class GameRoom {
     synchronized void update(long now, double dt) {
         if (phase != Phase.PLAYING) return;
         tick++;
+        // Resolve every expired disconnect before explosions or winner selection.
+        for (PlayerState p : players) {
+            if (p.alive && !p.connected && now - p.disconnectedAt >= GameRules.RECONNECT_MS) {
+                eliminate(p, "disconnect", now);
+            }
+        }
+        checkGameOver();
+        if (phase != Phase.PLAYING) return;
         for (PlayerState p : players) {
             if (!p.alive) continue;
-            if (!p.connected && now - p.disconnectedAt >= GameRules.RECONNECT_MS) {
-                eliminate(p, "disconnect", now);
-                checkGameOver();
-                continue;
-            }
             if (p.connected) {
                 double speed = 5.2 / Math.sqrt(p.size) * (now < p.boostUntil ? 1.85 : 1);
                 double nx = GameRules.clamp(p.x + p.dx * speed * dt, -map.halfSize, map.halfSize);
@@ -140,8 +149,8 @@ final class GameRoom {
                 pickup(p, now);
             }
             if (p.charging && now - p.chargeSince >= GameRules.MAX_CHARGE_MS) explode(p, now);
+            if (phase != Phase.PLAYING) return;
         }
-        if (phase != Phase.PLAYING) return;
         pickupCores();
         if (now - lastOrbAt >= 500 && orbs.size() < GameRules.MAX_ORBS) { spawnOrb(); lastOrbAt = now; }
         if (tick % 2 == 0) broadcastSnapshots(now);
@@ -265,6 +274,16 @@ final class GameRoom {
         }
         if (candidates.size() < count) throw new IllegalStateException("Map has too few spawn candidates: " + map.id);
 
+        // A greedy layout can get stuck for 10 players even on a valid map.
+        // Retry with a different first candidate, preserving the 28-unit rule.
+        for (int attempt = 0; attempt < 32; attempt++) {
+            List<double[]> result = separatedSpawns(new ArrayList<>(candidates), count);
+            if (result != null) return result;
+        }
+        throw new IllegalStateException("Cannot separate " + count + " spawns on map " + map.id);
+    }
+
+    private List<double[]> separatedSpawns(List<double[]> candidates, int count) {
         List<double[]> result = new ArrayList<>();
         result.add(candidates.remove(random.nextInt(candidates.size())));
         while (result.size() < count) {
@@ -278,7 +297,7 @@ final class GameRoom {
                 if (nearest > bestDistance) { bestDistance = nearest; bestIndex = i; }
             }
             if (bestIndex < 0 || bestDistance < GameRules.MIN_SPAWN_DISTANCE)
-                throw new IllegalStateException("Cannot separate " + count + " spawns on map " + map.id);
+                return null;
             result.add(candidates.remove(bestIndex));
         }
         return result;
@@ -296,7 +315,7 @@ final class GameRoom {
             "id",p.id,"name",p.name,"ready",p.ready,"connected",p.connected)).toList());
     }
 
-    /** Full snapshot (baseline mode, no viewer). Used by existing tests. */
+    /** Snapshot without visibility filtering; still uses this room's sync mode. */
     synchronized Map<String,Object> snapshot(long now) { return snapshot(now, null); }
 
     /** Snapshot for a specific viewer, using the server-wide SyncMode. */
@@ -313,7 +332,7 @@ final class GameRoom {
      *                      (used on reconnect so the client gets a complete picture)
      */
     synchronized Map<String,Object> snapshot(long now, PlayerState viewer, boolean forceBaseline) {
-        boolean optimized = !forceBaseline && SyncMode.active() == SyncMode.OPTIMIZED;
+        boolean optimized = !forceBaseline && syncMode == SyncMode.OPTIMIZED;
 
         // ---- player states ----
         List<Map<String,Object>> states = new ArrayList<>();
@@ -334,8 +353,9 @@ final class GameRoom {
         }
 
         // ---- pickups: optionally cull by distance ----
-        List<?> visibleOrbs = orbs;
-        List<?> visibleCores = cores;
+        // A returned snapshot must not change when the next tick mutates pickups.
+        List<?> visibleOrbs = List.copyOf(orbs);
+        List<?> visibleCores = List.copyOf(cores);
         if (optimized && viewer != null) {
             visibleOrbs = orbs.stream()
                 .filter(o -> GameRules.distance(viewer.x,viewer.z,o.x,o.z) <= SyncMode.PICKUP_VISIBILITY)

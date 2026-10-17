@@ -8,16 +8,18 @@ package bombmebaby;
  * when invisible), and every orb/core on the map.  This is the reference
  * point for the network experiment.</p>
  *
- * <p><b>OPTIMIZED</b> — the improved mode:
+ * <p><b>OPTIMIZED</b> — selective synchronization for regular snapshots
+ * (not field-by-field delta encoding):
  * <ul>
  *   <li>obstacles and bushes are sent once in GAME_START, omitted from
  *       STATE_UPDATE;</li>
  *   <li>invisible players have their x/z zeroed out so the client cannot
- *       derive positions it should not know (also fixes a potential
- *       information-leak through bush hiding);</li>
+ *       derive those positions from regular snapshots;</li>
  *   <li>orbs and cores beyond the viewer's visibility distance are
  *       excluded from the snapshot.</li>
  * </ul></p>
+ * Recovery currently forces a baseline snapshot; coordinate-bearing events
+ * also remain unchanged. This mode is not a comprehensive anti-cheat boundary.
  *
  * The active mode is selected via the system property {@code sync.mode}:
  * <pre>

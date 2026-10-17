@@ -139,10 +139,30 @@ class GameRoomTest {
         assertTrue(GameMap.all().stream().allMatch(map -> map.halfSize >= 46));
 
         GameRoom room = startedRoom();
-        var snapshot = room.snapshot(1000);
+        var snapshot = room.snapshot(1000, null, true);
         assertEquals(room.map.id,snapshot.get("mapId"));
         assertEquals(room.map.halfSize,snapshot.get("arenaSize"));
         assertSame(room.bushes,snapshot.get("bushes"));
+    }
+
+    @Test void tenPlayersCanStartAcrossMapsAndSeeds() {
+        for (GameMap map : GameMap.all()) {
+            for (int seed = 0; seed < 20; seed++) {
+                GameRoom room = new GameRoom("SEED10");
+                room.map = map; room.obstacles = map.obstacles; room.bushes = map.bushes;
+                room.random.setSeed(seed);
+                for (int i = 0; i < 10; i++) room.join(new PlayerState("P" + i, null));
+                for (PlayerState player : room.players) room.ready(player, true);
+                assertEquals(GameRoom.Phase.PLAYING, room.phase, map.id + " seed=" + seed);
+                for (int i = 0; i < 10; i++) {
+                    for (int j = i + 1; j < 10; j++) {
+                        PlayerState a = room.players.get(i), b = room.players.get(j);
+                        assertTrue(GameRules.distance(a.x, a.z, b.x, b.z) >= GameRules.MIN_SPAWN_DISTANCE,
+                            map.id + " seed=" + seed);
+                    }
+                }
+            }
+        }
     }
 
     @Test void eliminatedPlayerDropsContestedCoreAndLastSurvivorWins() {

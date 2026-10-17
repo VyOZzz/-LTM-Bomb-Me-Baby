@@ -1,170 +1,355 @@
-# Hướng dẫn & Tài liệu Kỹ thuật — Thành viên A (Java Server)
+# Thành viên A — Học và hiểu phần Java server từ đầu
 
-> **Dành cho:** Thành viên A — Phụ trách Server Java & Cải tiến Kỹ thuật  
-> **Dự án:** Bomb Me Baby (Lập trình mạng)  
-> **Nhánh Git:** `ThuyTien`  
-> **Tài liệu đối chiếu:** `docs/TEAM_PLAN.md`, `docs/PROTOCOL.md`, `final-project/Topics.md`
+Cập nhật ngày 15/10/2026. Đọc cùng [README](../README.md), [bàn giao cho T và B](THANH_VIEN_A_BAN_GIAO.md) và [kết quả kiểm thử](THANH_VIEN_A_KIEM_THU.md).
 
----
+Tài liệu này giải thích code thực tế trong thư mục `server/`. Nó thay thế bản hướng dẫn cũ có một số mô tả chưa đúng với code. Không cần hiểu toàn bộ Java trước khi đọc; hãy đi lần lượt từ mục 1 đến mục 6, chạy test, rồi đọc sâu phần khóa và đồng bộ.
 
-## 1. Tổng quan vai trò của Thành viên A
+## 1. Bạn phụ trách gì?
 
-Thành viên A phụ trách toàn bộ mã nguồn phía máy chủ (Server), bao gồm:
-- **Kiến trúc mạng TCP & Quản lý phiên kết nối:** `BombServer.java`
-- **Logic phòng chơi, Game Loop & Đồng bộ trạng thái:** `GameRoom.java`
-- **Quy tắc trò chơi & Hằng số cấu hình:** `GameRules.java`
-- **Bộ chuyển đổi chế độ đồng bộ (Baseline vs Optimized):** `SyncMode.java`
-- **Bộ kiểm thử tự động (Unit / Integration Tests):** `ServerFixesTest.java`
+Bạn A phụ trách chương trình Java chạy trên máy chủ: nhận kết nối, tạo/vào/rời phòng, giữ trạng thái trận, nhận hành động, xử lý mất kết nối và gửi kết quả cho Unity. Bạn cũng viết test chứng minh server xử lý đúng và duy trì hai chế độ đồng bộ để B so sánh.
 
-Mục tiêu chính:
-1. Xử lý các lỗi mạng thực tế: Mất kết nối (disconnect), kết nối lại (reconnect), gửi trùng gói tin (duplicate sequence), tranh chấp nhặt tài nguyên (Core contention).
-2. Hiện thực cải tiến kỹ thuật (**Novelty / Contribution**): Tối ưu hóa dữ liệu truyền tải qua mạng (**Delta Sync / State Culling**) so với bản gốc (**Baseline**).
-3. Đảm bảo server ổn định, có test tự động chứng minh và có thể chuyển đổi linh hoạt chế độ để bạn B chạy script đo lường thực nghiệm.
+T phụ trách Unity: đọc bàn phím, vẽ game, phát âm thanh, hiển thị HUD và xử lý bản tin server. B phụ trách map, script đo mạng và số liệu thực nghiệm. Khi đổi tên trường, bỏ trường hay đổi ý nghĩa dữ liệu JSON, cả ba phải thống nhất trước khi tích hợp.
 
----
+**Kết quả hiện tại:** đã sửa thêm các lỗi vòng đời kết nối, tăng chất lượng kiểm thử và giữ baseline mặc định. Chế độ optimized đã tồn tại từ commit `dc255a3`; Unity hiện còn cần T tích hợp. Chưa có xác nhận T chốt protocol, nên đợt này không thêm loại bản tin hay trường JSON mới. Phần Hành trình Ba Mảnh trong ảnh phân công là công việc sau khi chốt protocol, chưa được triển khai ở đây.
 
-## 2. Chi tiết các vấn đề đã giải quyết & Giải thích mã nguồn
+## 2. Những từ cần biết
 
-### 2.1. Sửa lỗi Reconnect & Chống Race Condition
-- **Vấn đề thực tế:** Khi mạng di động hoặc Wi-Fi chập chờn, client có thể cố gắng kết nối lại nhiều lần cùng lúc hoặc mở 2 socket cùng gửi một `resumeToken`. Trước đây, nếu 2 thread cùng kiểm tra `resumed.connected == false`, cả hai đều có thể chiếm phiên, gây lỗi trạng thái hoặc đá nhau liên tục.
-- **Giải pháp trong `BombServer.java`:**
-  - Áp dụng khóa đồng bộ `synchronized (resumed)` ngay trên đối tượng `PlayerState`.
-  - Chỉ một thread kết nối đầu tiên giành được quyền sở hữu session (`player = resumed; player.connected = true;`).
-  - Thread kết nối thứ hai đến sau thấy `resumed.connected == true` hoặc đã hết hạn thời gian chờ (`RECONNECT_MS = 10s`) sẽ lập tức bị từ chối với mã lỗi `RESUME_FAILED`.
-  - Trong gói tin phản hồi `WELCOME`, server bổ sung `lastSeq` của người chơi:
-    ```java
-    send(GameRoom.data("type", "WELCOME", "playerId", player.id,
-        "resumeToken", player.resumeToken, "lastSeq", player.lastSeq));
-    ```
-    Điều này giúp client biết chính xác sequence number cuối cùng server đã nhận, từ đó tiếp tục đánh số gói tin tiếp theo mà không bị lệch sequence.
-  - Khi người chơi reconnect thành công trong lúc phòng đang diễn ra trận đấu (`PLAYING`), server gửi một snapshot đặc biệt có cờ `forceBaseline = true` để client nhận đủ toàn bộ thông tin bản đồ, chướng ngại vật ngay lập tức.
+| Từ | Hiểu đơn giản | Ví dụ trong dự án |
+| --- | --- | --- |
+| Client | Chương trình người chơi sử dụng | Game Unity trên máy bạn |
+| Server | Chương trình giữ kết quả chính thức | `BombServer` chạy bằng Java |
+| TCP | Kênh truyền byte có thứ tự, đáng tin cậy khi kết nối còn hoạt động | Socket giữa Unity và Java |
+| Socket | Một đầu của kết nối mạng | `Socket socket` trong `Connection` |
+| JSON | Văn bản có cặp tên và giá trị | `{"type":"MOVE","seq":5}` |
+| Protocol | Quy ước hai phía hiểu dữ liệu như thế nào | `MOVE` cần hướng, không nhận tọa độ tự khai báo |
+| Session | Phiên của một người chơi, có thể tồn tại qua nhiều socket | `PlayerState` cùng `resumeToken` |
+| Room | Một nhóm người chơi chung trận | `GameRoom` |
+| State | Dữ liệu hiện tại | HP, tọa độ, Core, giai đoạn trận |
+| Tick | Một lần server tính diễn biến | Mục tiêu mỗi 50 ms |
+| Snapshot | Bản chụp dữ liệu tại một thời điểm | `STATE_UPDATE` |
+| Thread | Một luồng công việc có thể chạy cùng luồng khác | Luồng đọc socket và luồng game |
+| Race condition | Kết quả sai do các luồng xen kẽ ở thời điểm không phù hợp | Hai socket cùng nhận một session |
+| Lock/monitor | Quyền vào một vùng xử lý, mỗi lúc một luồng giữ | `synchronized (room)` |
+| Baseline | Cách làm dùng làm mốc so sánh | Gửi map tĩnh trong mỗi snapshot |
+| Culling | Bỏ bớt dữ liệu không cần gửi cho người nhận | Không gửi Core cách người nhận hơn 30 đơn vị |
 
-### 2.2. Xử lý Request Trùng & Sai thứ tự (Duplicate / Out-of-order Sequences)
-- **Vấn đề:** Giao thức mạng yêu cầu mỗi hành động của client (trừ `PING`) phải có số thứ tự `seq` tăng dần. Nếu mạng gửi lại gói tin cũ hoặc client gửi trùng số `seq`, trạng thái game có thể bị sai lệch.
-- **Giải pháp:**
-  - Server kiểm tra `seq <= player.lastSeq`. Nếu đúng, server từ chối xử lý và gửi phản hồi:
-    ```json
-    {"type":"ERROR","code":"DUPLICATE_SEQUENCE"}
-    ```
-  - Chỉ khi `seq > player.lastSeq`, server mới cập nhật `player.lastSeq = seq` và xử lý logic.
+Một số cú pháp Java bạn sẽ gặp:
 
-### 2.3. Quản lý Ngắt kết nối (Disconnect) & Timeout
-- **Vấn đề:** Khi client tắt app hoặc mất mạng đột ngột, socket bị đứt (ném ra `EOF` hoặc `IOException`).
-- **Giải pháp:**
-  - Khi bắt được lỗi đóng socket trong khối `try-with-resources` của `BombServer.java`, server đánh dấu:
-    ```java
-    player.connected = false;
-    player.disconnectedAt = System.currentTimeMillis();
-    ```
-  - Trong vòng lặp `GameRoom.tick()` (chạy mỗi 50ms):
-    - Server kiểm tra nếu người chơi mất kết nối quá 10 giây (`now - p.disconnectedAt > GameRules.RECONNECT_MS`), người chơi sẽ chính thức bị loại khỏi trận (`p.alive = false`).
-    - Server phát broadcast `PLAYER_ELIMINATED` và `PLAYER_DISCONNECTED` để các client còn lại cập nhật UI.
-    - Nếu chỉ còn 1 người sống sót, trận đấu tự động kết thúc (`GAME_OVER`).
-
-### 2.4. Tranh chấp nhặt Lõi Năng lượng (Core Contention)
-- **Vấn đề:** Khi nhiều người chơi cùng lao vào một Lõi năng lượng (Core) tại cùng một thời điểm, ai sẽ là người nhặt được? Client có thể tự ý quyết định không?
-- **Giải pháp:**
-  - Server là **Authoritative Server** (Máy chủ có thẩm quyền tối cao). Toàn bộ va chạm và nhặt đồ chỉ do server tính toán trong hàm `tick()` của `GameRoom.java`, được bảo vệ bởi khóa `synchronized(this)`.
-  - Khi duyệt danh sách các Cores:
-    ```java
-    for (Iterator<CoreState> it = cores.iterator(); it.hasNext(); ) {
-        CoreState c = it.next();
-        for (PlayerState p : players) {
-            if (p.alive && GameRules.distance(p.x, p.z, c.x, c.z) <= (p.size + GameRules.CORE_RADIUS)) {
-                // Người chơi đầu tiên chạm vào sẽ nhận Core
-                p.baseSize += GameRules.CORE_SIZE_BONUS;
-                broadcast(data("type", "CORE_PICKED", "playerId", p.id, "coreId", c.id));
-                it.remove(); // Xóa ngay lập tức khỏi thế giới
-                break;       // Thoát vòng lặp player, không ai khác có thể nhặt Core này nữa!
-            }
-        }
-    }
-    ```
-  - Nhờ `it.remove()` và `break`, không bao giờ xảy ra tình trạng 2 người cùng nhặt 1 Core.
-
----
-
-## 3. Cải tiến Kỹ thuật (Novelty): Chế độ Đồng bộ Tối ưu (Delta / Selective Sync)
-
-Để phục vụ yêu cầu đồ án về **Novelty / Technical Contribution** và cung cấp dữ liệu thực nghiệm so sánh cho bạn B:
-
-### 3.1. So sánh Baseline vs Optimized
-| Đặc điểm | Baseline (Bản gốc) | Optimized (Cải tiến của A) | Lợi ích đạt được |
-| :--- | :--- | :--- | :--- |
-| **Vật cản tĩnh (Obstacles, Bushes)** | Gửi lặp lại toàn bộ trong **mọi gói `STATE_UPDATE`** (mỗi 50ms). | Chỉ gửi **1 lần duy nhất trong `GAME_START`**; các gói `STATE_UPDATE` sau đó loại bỏ hoàn toàn. | Giảm kích thước gói tin định kỳ đi từ 30% đến 50%, tiết kiệm băng thông mạng. |
-| **Bảo mật vị trí người chơi ẩn náu** | Gửi tọa độ `x, z` thật của tất cả người chơi ngay cả khi đang núp trong bụi (`visible: false`). | Với đối thủ đang tàng hình/núp bụi, server gán `x = 0, z = 0` trong snapshot gửi cho người khác. | Chống hack/cheat soi map (wallhack); giảm rò rỉ dữ liệu qua mạng. |
-| **Lọc vật phẩm theo tầm nhìn (Culling)** | Gửi toàn bộ danh sách `orbs` và `cores` trên khắp toàn bản đồ cho tất cả mọi người. | Chỉ gửi các `orbs` và `cores` nằm trong bán kính quan sát (`PICKUP_VISIBILITY = 30.0`) của người nhận. | Giảm dung lượng payload tỷ lệ thuận với số lượng vật phẩm trên bản đồ. |
-
-### 3.2. Cấu hình chuyển đổi linh hoạt (`SyncMode.java`)
-Server hỗ trợ chuyển đổi giữa 2 chế độ thông qua biến môi trường JVM `-Dsync.mode`:
-```bash
-# Chế độ Baseline (dùng làm mốc so sánh thực nghiệm):
-mvn exec:java -Dexec.args="7777" -Dsync.mode=baseline
-
-# Chế độ Optimized (bản cải tiến kỹ thuật):
-mvn exec:java -Dexec.args="7777" -Dsync.mode=optimized
-```
-Điều này cho phép bạn B chạy cùng 1 kịch bản kiểm thử (2, 4, 8 client) trên cả 2 chế độ để đo đạc:
-- Số byte truyền nhận mỗi giây (Throughput / Bandwidth).
-- Kích thước trung bình của gói `STATE_UPDATE`.
-- Thời gian xử lý snapshot của server (`processingMicros`).
-
----
-
-## 4. Cơ chế Đa luồng (Multi-threading) & Đồng bộ hóa dữ liệu
-
-Khi bảo vệ trước giảng viên, đây là phần hay được hỏi nhất:
-
-1. **Mô hình luồng (Thread Model):**
-   - **Mỗi kết nối TCP:** Được xử lý bởi 1 thread độc lập (`BombServer.Connection` chạy trong `Executors.newCachedThreadPool()`). Luồng này chuyên đọc các dòng JSON từ client và phân tích thông điệp.
-   - **Vòng lặp trận đấu (Game Tick Loop):** Được chạy bởi `ScheduledExecutorService` (1 thread định thời) với chu kỳ 50ms (20 ticks/giây) chạy hàm `GameRoom.tick()`.
-2. **Cơ chế chống xung đột (Concurrency Control):**
-   - Tất cả các phương thức thay đổi hoặc truy xuất trạng thái phòng trong `GameRoom` (`handleAction`, `tick`, `snapshot`, `join`, `leave`, v.v.) đều được bảo vệ bằng từ khóa `synchronized(this)`.
-   - Khi luồng mạng của Client A gửi gói `MOVE`, nó phải giành được khóa của `GameRoom` trước khi cập nhật vector hướng.
-   - Nhờ đó, thread game loop và các thread client không bao giờ bị race condition hay data corruption khi cùng đọc/ghi vào danh sách người chơi, quả cầu năng lượng, hoặc bom.
-   - Để tránh Deadlock, việc gửi dữ liệu ra mạng (`send()`) được thực hiện cẩn thận, không giữ lồng ghép nhiều loại khóa khác nhau.
-
----
-
-## 5. Danh sách Kiểm thử Tự động (`ServerFixesTest.java`)
-
-Toàn bộ 16 ca kiểm thử mới được bổ sung vào bộ test (nâng tổng số test lên 27 test, chạy thành công 100%):
-
-1. `reconnectRestoresPlayerInRoom`: Xác nhận người chơi mất kết nối được phục hồi đúng phòng và trạng thái khi reconnect kịp thời.
-2. `reconnectFailsAfterWindowExpires`: Người chơi reconnect sau 10s sẽ bị từ chối.
-3. `reconnectRaceOnlyOneConnectionWins`: Giả lập 2 luồng cùng lúc dùng chung 1 token reconnect; xác nhận đúng 1 luồng thành công và luồng kia thất bại.
-4. `duplicateSequenceIsRejected`: Xác nhận gói tin có `seq <= lastSeq` bị từ chối với lỗi `DUPLICATE_SEQUENCE`.
-5. `strictlyIncreasingSequenceIsAccepted`: Gói tin có `seq` tăng dần hợp lệ.
-6. `disconnectMarksPlayerDisconnected`: Khi socket đóng, cờ `connected` chuyển sang `false` và lưu mốc thời gian.
-7. `disconnectTimeoutEliminatesPlayer`: Khi hết thời gian chờ 10s, người chơi bị loại khỏi trận.
-8. `corePickupClosestPlayerWins`: Kiểm tra tính Authoritative của server: chỉ 1 người duy nhất gần Core nhất nhặt được.
-9. `coreCannotBePickedTwice`: Core đã bị nhặt sẽ bị xóa, không thể bị người khác nhặt lại.
-10. `optimizedSnapshotOmitsObstaclesAndBushes`: Trong chế độ Optimized, snapshot không chứa chướng ngại vật tĩnh.
-11. `baselineSnapshotIncludesObstaclesAndBushes`: Trong chế độ Baseline, snapshot luôn kèm chướng ngại vật tĩnh.
-12. `gameStartAlwaysIncludesObstaclesAndBushes`: Bản tin `GAME_START` luôn cung cấp đầy đủ layout map cho cả 2 chế độ.
-13. `optimizedSnapshotHidesInvisiblePlayerCoords`: Tọa độ người tàng hình bị ẩn (`x=0, z=0`) trong chế độ Optimized.
-14. `baselineSnapshotRevealsInvisiblePlayerCoords`: Bản gốc Baseline vẫn để lộ tọa độ người núp bụi.
-15. `optimizedSnapshotCullsDistantPickups`: Lọc bỏ các orbs/cores nằm ngoài tầm nhìn 30 mét.
-16. `reconnectForcesFullSnapshotEvenInOptimizedMode`: Khi reconnect, client luôn nhận được full snapshot để dựng lại bản đồ.
-
-Lệnh chạy kiểm thử:
-```bash
-mvn test
+```java
+PlayerState p = new PlayerState("An", null);
 ```
 
----
+`PlayerState` là kiểu dữ liệu; `p` là tên biến; `new` tạo một đối tượng. `p.hp` là HP của đối tượng đó. `null` nghĩa là chưa có đối tượng được tham chiếu; trong test, người chơi thường không có kết nối thật.
 
-## 6. Gợi ý Trả lời Phỏng vấn / Bảo vệ Đồ án (Dành cho Thành viên A)
+`if` kiểm tra điều kiện, `for` lặp, `return` kết thúc hàm, `!` là phủ định, `&&` yêu cầu cả hai điều kiện đúng. `==` so sánh giá trị nguyên thủy hoặc danh tính đối tượng; khi so sánh nội dung chuỗi Java thường dùng `.equals()`.
 
-**Câu 1: Em đã giải quyết vấn đề reconnect khi mạng chập chờn như thế nào?**
-> *Trả lời:* Em lưu phiên người chơi kèm một `resumeToken` ngẫu nhiên khi người chơi kết nối lần đầu (gửi trong gói `WELCOME`). Khi client bị ngắt kết nối TCP đột ngột, client có 10 giây để mở socket mới và gửi lại `HELLO` kèm `resumeToken`. Trên server, em dùng khối `synchronized(resumed)` để tránh race condition nếu có nhiều kết nối cùng tranh chấp 1 token. Đồng thời, server gửi lại `lastSeq` để client đồng bộ lại số thứ tự gói tin và gửi một full snapshot trạng thái trận đấu để client khôi phục giao diện ngay lập tức.
+`Map<String, PlayerState>` giống danh bạ: dùng chuỗi token để tìm người chơi. `List<PlayerState>` là danh sách người trong phòng. `final` ngăn gán lại biến tham chiếu, **không** khiến mọi dữ liệu bên trong đối tượng trở thành bất biến.
 
-**Câu 2: Novelty (Cải tiến kỹ thuật) của nhóm em trong phần mạng là gì?**
-> *Trả lời:* Trong nguyên mẫu ban đầu, mỗi tick (50ms) server đều gửi toàn bộ danh sách chướng ngại vật tĩnh, bụi rậm, toàn bộ vật phẩm trên toàn map và để lộ tọa độ của cả người chơi đang núp bụi. Cải tiến của em là thiết kế cơ chế **Selective / Delta Sync**:
-> 1. Gửi bản đồ tĩnh một lần duy nhất lúc `GAME_START`.
-> 2. Ẩn tọa độ người chơi tàng hình để chống lộ thông tin qua gói tin mạng.
-> 3. Cắt tỉa (cull) các vật phẩm ngoài bán kính quan sát của từng người chơi.
-> Em tạo ra 2 chế độ `baseline` và `optimized` điều khiển qua JVM argument để bạn B có thể chạy script đo đạc định lượng sự khác biệt về số byte truyền và độ trễ.
+## 3. Bản đồ các file
 
-**Câu 3: Server xử lý tranh chấp khi 2 người cùng nhặt 1 vật phẩm thế nào?**
-> *Trả lời:* Server của nhóm em hoạt động theo mô hình **Server-Authoritative** (Máy chủ toàn quyền). Client chỉ gửi input di chuyển, không có quyền tự quyết định đã nhặt đồ hay chưa. Trong vòng lặp `tick()` được bảo vệ bởi khóa đồng bộ `synchronized(this)`, server kiểm tra khoảng cách. Ngay khi phát hiện người chơi đầu tiên chạm vào vật phẩm, server cộng điểm/kích thước cho người đó, phát thông báo `CORE_PICKED`, và gọi `iterator.remove()` xóa ngay vật phẩm khỏi danh sách thế giới. Vì vậy người chơi thứ hai trong cùng tick đó sẽ không thể nhặt trùng được nữa.
+| File | Nên tìm hàm/biến nào? | Vai trò |
+| --- | --- | --- |
+| [BombServer.java](../server/src/main/java/bombmebaby/BombServer.java) | `main`, `run`, `Connection.run`, `handle`, `resume`, `disconnect`, `withSessionState` | TCP, session, điều phối request, vòng đời kết nối |
+| [PlayerState.java](../server/src/main/java/bombmebaby/PlayerState.java) | `connection`, `room`, `lastSeq`, `connected`, `disconnectedAt` | Dữ liệu của một người chơi |
+| [GameRoom.java](../server/src/main/java/bombmebaby/GameRoom.java) | `join`, `leave`, `ready`, `start`, `action`, `update`, `pickupCores`, `snapshot` | Phòng, luật diễn biến trận, bản tin trạng thái |
+| [GameRules.java](../server/src/main/java/bombmebaby/GameRules.java) | `RECONNECT_MS`, `MIN_SPAWN_DISTANCE`, `damage` | Hằng số và công thức game |
+| [SyncMode.java](../server/src/main/java/bombmebaby/SyncMode.java) | `BASELINE`, `OPTIMIZED`, `active` | Chọn cách đồng bộ |
+| [ConnectionTest.java](../server/src/test/java/bombmebaby/ConnectionTest.java) | Các hàm có `@Test` | Kiểm tra bằng socket TCP thật trên máy |
+| [ServerFixesTest.java](../server/src/test/java/bombmebaby/ServerFixesTest.java) | Core, timeout, snapshot | Kiểm tra trạng thái phòng và hai chế độ |
+| [GameRoomTest.java](../server/src/test/java/bombmebaby/GameRoomTest.java) | Movement, shield, spawn, game over | Kiểm tra gameplay, có cả hồi quy spawn 10 người |
+
+`GameMap.java` là dữ liệu ba bản đồ do B phụ trách. Đợt sửa này không đổi layout map hay công thức sát thương.
+
+## 4. Theo dõi một trận từ đầu đến cuối
+
+```mermaid
+sequenceDiagram
+    participant U as Unity client
+    participant S as BombServer.Connection
+    participant R as GameRoom
+    U->>S: HELLO
+    S-->>U: WELCOME (id và token)
+    U->>S: CREATE_ROOM hoặc JOIN_ROOM + seq
+    S->>R: join(player)
+    R-->>U: ROOM_STATE
+    U->>S: READY + seq
+    S->>R: ready(player, true)
+    R-->>U: GAME_START và snapshot đầu
+    U->>S: MOVE + seq + hướng
+    S->>R: action(...)
+    loop Mỗi 50 ms theo lịch
+        S->>R: update(now, dt)
+        Note over R: Tính di chuyển, nhặt đồ, sát thương
+    end
+    R-->>U: STATE_UPDATE mỗi 2 tick (~100 ms)
+    R-->>U: GAME_OVER khi đủ điều kiện
+```
+
+Luồng ví dụ:
+
+1. Unity mở TCP đến IP server, cổng mặc định `7777`.
+2. `Connection.run()` đọc từng dòng. `JsonParser` biến dòng chữ thành JSON để Java truy cập.
+3. `HELLO` đầu tiên tạo session hoặc yêu cầu nối lại session cũ.
+4. `CREATE_ROOM` tạo phòng; `JOIN_ROOM` tìm phòng theo mã. Server trả `ROOM_STATE` để Unity hiển thị danh sách người chơi.
+5. Khi mọi người đã sẵn sàng và còn kết nối, `ready()` gọi `start()`.
+6. `MOVE` chỉ đặt hướng `dx`, `dz`. `update()` mới dùng thời gian `dt` và tốc độ để tính vị trí, kiểm tra vật cản.
+7. `snapshot()` tạo dữ liệu gửi cho từng người. Unity nhận và nội suy hình ảnh cho mượt.
+8. Người cuối cùng còn sống thắng. Phòng một người là chế độ thử, không tự kết thúc ngay chỉ vì có một người sống.
+
+Ba giai đoạn phòng là `WAITING` (chờ), `PLAYING` (đang chơi), `FINISHED` (đã kết thúc). Sẵn sàng lại có thể bắt đầu vòng mới.
+
+**Điểm phải nhớ:** game loop là 20 Hz, snapshot định kỳ là 10 Hz. Ngoài lịch định kỳ, server còn gửi snapshot ngay lúc bắt đầu và khi reconnect. Không viết trong báo cáo rằng mọi snapshot được gửi mỗi 50 ms.
+
+## 5. Vì sao client không tự quyết định nhặt Core?
+
+Nếu Unity được tự gửi “tôi có 999 HP” rồi server tin ngay thì người chơi có thể sửa client để gian lận. Ở đây client chỉ gửi ý định như đi sang phải, bắt đầu nạp hoặc nổ. Server tự tính HP, va chạm, ai chết và ai nhặt Core. Đó là mô hình **server authoritative**.
+
+Đọc `pickupCores()` trong `GameRoom.java`:
+
+```java
+if (!p.alive || !p.connected) continue;
+double distance = GameRules.distance(p.x, p.z, core.x, core.z);
+if (distance < 0.55 * p.size + 0.45 && distance < bestDistance) {
+    closest = p;
+    bestDistance = distance;
+}
+```
+
+Đoạn này tìm người **gần nhất trong số người đủ điều kiện**, không phải ai gửi request nhanh nhất. Nếu hai người có khoảng cách bằng nhau, người xuất hiện trước trong danh sách phòng giữ ưu tiên vì điều kiện là `<`, không phải `<=`.
+
+Sau khi tìm được người nhận:
+
+```java
+cores.remove(i);
+closest.baseSize = Math.min(GameRules.MAX_BASE, closest.baseSize + 0.1);
+closest.size = Math.max(closest.size, closest.baseSize);
+```
+
+Core được xóa và chỉ một người tăng Base Size. Hàm này được gọi trong `update()` đang giữ khóa phòng, nên luồng khác không thể chen vào giữa để cùng nhặt Core. Bản tin thực tế là `CORE_PICKED` với `pickupId`, không phải `coreId`.
+
+Quy tắc chọn người gần nhất và khóa phòng đã có trong code đầu vào. Đợt này bổ sung test cạnh tranh hai tick, khoảng cách bằng nhau, ngoài tầm và người không đủ điều kiện; không nhận phần có sẵn thành thuật toán mới.
+
+## 6. Request trùng và số thứ tự `seq`
+
+Giả sử người chơi gửi:
+
+```json
+{"type":"MOVE","seq":5,"directionX":1,"directionZ":0}
+```
+
+Server lưu `lastSeq = 5`. Nếu cùng session gửi lại `seq = 5` hoặc gửi `seq = 3`, server trả `DUPLICATE_SEQUENCE` và không thực hiện hành động. `seq = 6` được xét tiếp.
+
+```java
+if (seq <= player.lastSeq) { error("DUPLICATE_SEQUENCE"); return; }
+player.lastSeq = seq;
+```
+
+Sequence không cần liên tục: 5 rồi 8 vẫn được. Nó phải tăng trong toàn bộ session, không reset khi rời phòng hay reconnect. `HELLO` đầu tiên xử lý riêng; `PING` không làm tăng `lastSeq`.
+
+TCP đã tự xử lý mất gói và truyền lại ở tầng giao vận. Ứng dụng thường không nhận các byte trùng chỉ vì TCP truyền lại. `seq` bảo vệ trước việc **ứng dụng gửi lại request**, client lỗi hoặc thử gửi lệnh cũ.
+
+`lastSeq` được cập nhật trước khi kiểm tra mọi điều kiện gameplay. Một request mới nhưng không hợp lệ trong tình trạng hiện tại vẫn có thể tiêu thụ sequence. Client nên luôn tăng số khi gửi request tiếp theo.
+
+**ACK không đồng nghĩa hành động thành công:** server hiện gửi ACK cả sau nhiều trường hợp ERROR. ACK có `seq` và `processingMicros` để phản hồi việc xử lý; phải đọc ERROR để biết hành động bị từ chối. Đợt này giữ nguyên quy ước đó để không tự đổi protocol.
+
+## 7. Reconnect và disconnect được sửa như thế nào?
+
+### 7.1. Phân biệt socket và session
+
+Socket cũ mất đi không có nghĩa session phải mất ngay. `sessions` lưu người chơi theo `resumeToken`. Unity có thể mở socket mới rồi gửi:
+
+```json
+{"type":"HELLO","resumeToken":"token-da-nhan-truoc-do"}
+```
+
+Nếu session đã ngắt và chưa hết thời hạn 10 giây, server gắn socket mới vào cùng `PlayerState`: giữ id, phòng, HP và sequence. Server không hồi sinh người đã bị loại chỉ vì họ reconnect.
+
+Thời hạn tính từ lúc **server phát hiện ngắt kết nối** và ghi `disconnectedAt`, không nhất thiết từ lúc Wi-Fi thực sự mất. Chưa có heartbeat timeout để phát hiện mọi trường hợp TCP bị treo im lặng.
+
+### 7.2. Lỗi còn sót trong bản đầu vào
+
+Bản cũ đã khóa lúc nhận token, nhưng disconnect làm hai bước tách rời: đánh dấu session ngắt dưới khóa player, sau đó mới lấy khóa room để xóa hướng đi hoặc rời phòng. Reconnect có thể chen giữa hai bước. Khi kết nối mới đã hoạt động, kết nối cũ vẫn có thể xóa hướng đi hoặc sửa phòng của nó.
+
+### 7.3. Vùng xử lý chung cho vòng đời kết nối
+
+`withSessionState()` lấy khóa theo một thứ tự:
+
+```text
+khóa PlayerState → khóa GameRoom (nếu có) → khóa ghi Connection (khi gửi)
+```
+
+`disconnect()` và `resume()` cùng đi qua vùng khóa này. Disconnect chỉ tác động nếu nó vẫn sở hữu session:
+
+```java
+if (player.connection != this) return;
+```
+
+`this` ở đây là đối tượng Connection đang chạy. Nếu session đã có Connection mới, dọn dẹp muộn của Connection cũ không được thay đổi nó.
+
+Ở lobby hoặc phòng đã kết thúc, disconnect rời phòng; phòng rỗng được bỏ khỏi danh sách server. Trong trận, người chơi ở lại chờ reconnect, hướng đi về 0 và đối thủ nhận `PLAYER_DISCONNECTED`.
+
+Khi resume, khóa phòng được giữ đến lúc gửi xong `WELCOME`, `ROOM_STATE` và snapshot khôi phục. Nhờ vậy game loop không gửi snapshot định kỳ trước `WELCOME`. Hai socket tranh cùng token chỉ có một socket thành công.
+
+Token không tồn tại cũng trả `RESUME_FAILED`, thay vì âm thầm tạo người chơi mới dù client đang yêu cầu khôi phục người cũ. Muốn bắt đầu session mới, client gửi HELLO không có token.
+
+Mốc thời gian được thống nhất: **nhỏ hơn 10.000 ms** mới được resume; từ 10.000 ms trở lên là hết hạn. Trước đây resume dùng `<=` trong khi tick dùng `>=`.
+
+### 7.4. Nhận lại sequence và map
+
+WELCOME khi resume có `lastSeq`. Ví dụ server đã xử lý 10, request tiếp theo phải lớn hơn 10. Unity hiện chưa khai báo/áp dụng trường này; T cần cập nhật trước khi khẳng định khôi phục sequence hoạt động đầy đủ ở client mới tạo lại.
+
+Snapshot khôi phục dùng `forceBaseline = true` theo code đã có: có toàn bộ `obstacles`, `bushes`, vật phẩm và tọa độ. Điều này khôi phục map nhưng **cũng giữ hạn chế lộ tọa độ của snapshot baseline**. Muốn chỉ gửi lại map mà vẫn lọc vị trí phải thống nhất ý nghĩa với T; chưa thay ở đợt này.
+
+### 7.5. Hết hạn ngắt kết nối
+
+`GameRoom.update()` giờ xử lý tất cả người hết hạn trước khi xét thắng/thua hoặc nổ tự động. Nếu cả hai người cùng hết hạn, cả hai bị loại, không chọn nhầm một người đã hết hạn làm người thắng. Khi không có người sống, `winnerId` là chuỗi rỗng theo protocol hiện có.
+
+## 8. Hiểu đa luồng và khóa trong code
+
+Server dùng `Executors.newFixedThreadPool(64)` để xử lý Connection; không phải `newCachedThreadPool`. Mỗi Connection đang chạy chiếm một worker đọc socket. Các connection vượt số worker có thể phải chờ trong hàng đợi; đây không phải thiết kế hỗ trợ vô hạn người chơi.
+
+Game loop có một luồng định thời riêng, lần lượt cập nhật các phòng. Trong cùng phòng, `join`, `leave`, `ready`, `action`, `update`, `snapshot` và `roomInfo` dùng `synchronized`.
+
+```java
+synchronized void update(long now, double dt) { ... }
+```
+
+Tương đương lấy khóa `this`, mà `this` ở đây là phòng hiện tại. Luồng MOVE và luồng tick muốn sửa cùng phòng phải chờ nhau. Hai phòng có khóa khác nhau, nhưng vẫn dùng chung một luồng tick của server.
+
+`volatile` trên `connection`, `room`, `connected` giúp luồng khác thấy giá trị được công bố. Nó **không thay thế khóa** cho thao tác gồm nhiều bước. Ví dụ kiểm tra session rảnh rồi nhận session vẫn phải làm trong vùng khóa chung.
+
+Để tránh deadlock, không thêm đoạn lấy khóa player bên trong phương thức GameRoom đang giữ khóa room. Việc đảo thứ tự room → player sẽ xung đột với player → room của vòng đời kết nối.
+
+Giới hạn hiện tại: ghi socket vẫn đồng bộ, có thể diễn ra trong khi giữ khóa phòng/session. Client đọc chậm có thể làm chậm phòng và game loop. Test hiện chưa chứng minh chịu được client chậm hoặc tải lớn; hàng đợi gửi riêng là hướng cải tiến sau này.
+
+## 9. Cải tiến đồng bộ: nói đúng tên, đo đúng thứ
+
+| Nội dung | Baseline | Optimized hiện có |
+| --- | --- | --- |
+| Tần suất tính game | 20 Hz | 20 Hz |
+| Snapshot định kỳ | 10 Hz | 10 Hz |
+| Đá và bụi trong snapshot | Có mỗi lần | Bỏ ở snapshot thường; có trong GAME_START và snapshot khôi phục |
+| Đối thủ không nhìn thấy | `visible=false` nhưng vẫn có tọa độ thật | `visible=false`, `x=0`, `z=0` trong snapshot thường |
+| Orb/Core | Gửi tất cả | Gửi vật phẩm cách viewer tối đa 30 đơn vị |
+| Players và các trường động | Gửi lại mỗi snapshot | Vẫn gửi lại mỗi snapshot |
+
+Đây là **selective state synchronization**: tách dữ liệu tĩnh và lọc theo người nhận. Chưa phải delta encoding đầy đủ vì chưa so snapshot mới/cũ, chưa gửi riêng các trường thay đổi hay danh sách id bị xóa giữa hai tick.
+
+`0,0` là tọa độ thay thế khi `visible=false`, không phải vị trí thật của đối thủ. Culling chỉ thay danh sách gửi đi, không xóa đồ vật trong thế giới server. Khi người chơi tiến lại gần, vật phẩm xuất hiện lại trong snapshot nếu nó còn tồn tại.
+
+Trong `snapshot()`:
+
+```java
+boolean optimized = !forceBaseline && syncMode == SyncMode.OPTIMIZED;
+```
+
+`forceBaseline` ghi đè chế độ khi cần khôi phục đầy đủ. Chế độ mặc định của room lấy từ cấu hình server. Constructor nhận `SyncMode` giúp test tạo cả hai chế độ trong cùng lần chạy, không cần sửa biến toàn cục bằng reflection.
+
+Đợt này còn sửa `List.copyOf(orbs)` và `List.copyOf(cores)`: snapshot giữ bản sao danh sách vật phẩm. Nếu tick sau xóa đồ vật, snapshot đã tạo không bị đổi theo trong lúc chuẩn bị ghi JSON.
+
+Không nên tuyên bố đã chống mọi hack map: snapshot khôi phục vẫn đầy đủ; các sự kiện như `CORE_SPAWNED` và `PLAYER_EXPLODE` vẫn có tọa độ và broadcast. Phạm vi hiện có chỉ là giảm dữ liệu và giảm lộ vị trí trong **snapshot optimized thông thường**.
+
+## 10. Thay đổi mới so với commit dc255a3
+
+| Phần | Đã có trong commit đầu vào | Bổ sung/sửa trong đợt này |
+| --- | --- | --- |
+| Reconnect | Khóa lúc nhận token, WELCOME.lastSeq, full snapshot | Khóa chung toàn vòng đời, ngăn cleanup cũ tác động phiên mới, thứ tự bản tin khôi phục |
+| Token và timeout | Có resume token, cửa sổ 10 giây | Token lạ bị từ chối; thống nhất điều kiện hết hạn |
+| Room | Tạo/vào/rời phòng | `putIfAbsent` tránh ghi đè mã phòng trùng; join không vào phòng vừa bị xóa; dọn lobby rỗng khi disconnect |
+| Kết thúc trận | Loại người hết hạn | Loại toàn bộ người hết hạn trước khi chọn thắng/thua |
+| Core | Người gần nhất, khóa room | Test cạnh tranh và các điều kiện nhận Core |
+| Đồng bộ | BASELINE/OPTIMIZED và culling | Chọn mode tường minh cho test; snapshot không dùng chung danh sách pickup có thể thay đổi |
+| Spawn | Chọn vị trí bằng greedy farthest-point | Thử lại tối đa 32 điểm bắt đầu nếu bố trí bị kẹt; giữ khoảng cách tối thiểu 28 |
+| Test | 27 test; vài test chỉ tự lặp điều kiện | 38 test, gồm 12 test TCP thật; kiểm tra cả hai mode |
+| Hướng dẫn | Có mô tả chưa khớp code | Viết lại theo code, thêm cách học, lệnh chạy, bằng chứng và giới hạn |
+
+Lỗi spawn xuất hiện khi chạy test: `Cannot separate 10 spawns on map meadow`. Một lựa chọn đầu tiên không tốt có thể làm thuật toán tham lam không xếp đủ người dù map còn cách bố trí hợp lệ. Thử lại giúp xử lý trường hợp đó mà không hạ khoảng cách; test kiểm tra 20 seed × 3 map. Đây là kiểm tra hữu hạn, không phải chứng minh toán học cho mọi seed.
+
+## 11. Chạy trên máy bạn
+
+Mở Terminal trong IntelliJ hoặc PowerShell ở thư mục dự án. Chỉ chạy `cd server` một lần nếu bạn đang đứng ở thư mục gốc:
+
+```powershell
+cd server
+java -version
+mvn -version
+mvn clean test
+```
+
+`mvn` là Maven, công cụ tải thư viện, biên dịch và chạy test. Dự án biên dịch với Java release 17; máy kiểm tra dùng JDK 21.0.10 và Maven 3.9.16. Lần đầu Maven có thể cần mạng để tải thư viện.
+
+Kết quả đúng ở bản hiện tại là `Tests run: 38, Failures: 0, Errors: 0, Skipped: 0` rồi `BUILD SUCCESS`.
+
+Chạy từng nhóm để học:
+
+```powershell
+mvn test "-Dtest=ConnectionTest"
+mvn test "-Dtest=ServerFixesTest"
+mvn test "-Dtest=GameRoomTest"
+```
+
+Chạy server baseline cho Unity hiện tại và cho B đo:
+
+```powershell
+mvn compile exec:java "-Dexec.args=7777" "-Dsync.mode=baseline"
+```
+
+Terminal này sẽ tiếp tục chạy server. Giữ nó mở, dùng terminal khác hoặc Unity để kết nối. Dừng server bằng Ctrl+C.
+
+Kiểm tra mode optimized bằng test, chưa cần Unity:
+
+```powershell
+mvn test "-Dsync.mode=optimized"
+```
+
+Sau khi T tích hợp và xác nhận protocol, khởi động lại server bằng:
+
+```powershell
+mvn compile exec:java "-Dexec.args=7777" "-Dsync.mode=optimized"
+```
+
+`-Dsync.mode=...` là **Java system property**, không phải biến môi trường. Nó được đọc khi lớp SyncMode khởi tạo; muốn đổi mode thì khởi động lại tiến trình. Xem log `[SyncMode] active = ...` để xác nhận. Giá trị không nhận ra hiện quay về baseline.
+
+Nếu `mvn` không được nhận diện, kiểm tra PATH trong terminal và cấu hình Maven/JDK của IntelliJ. Nếu báo cổng đã được dùng, dừng server cũ hoặc đổi cả cổng server và client. Nếu lỗi khi chạy optimized trên Unity, xem phần bàn giao cho T trước; test Java pass không chứng minh Unity đã tương thích.
+
+## 12. Đọc test như đọc một thí nghiệm
+
+Mỗi test có ba phần: dựng tình huống → gọi code thật → so kết quả mong đợi. `assertEquals` yêu cầu bằng nhau, `assertTrue` yêu cầu đúng, `assertFalse` yêu cầu sai. Khi một điều kiện không đúng, Maven báo test thất bại để mình tìm nguyên nhân.
+
+Ví dụ `simultaneousResumeAllowsExactlyOneTcpConnection` tạo hai socket, dùng `CountDownLatch` cho hai luồng cùng gửi HELLO, rồi đọc phản hồi: một WELCOME, một RESUME_FAILED. Nó đi qua chính `Connection.run()` và `handle()` của sản phẩm. Không chỉ tự viết lại biểu thức kiểm tra token trong test.
+
+`equalDistanceCoreIsAwardedOnceAcrossConcurrentTicks` cho hai luồng cùng gọi `update()` và kiểm tra chỉ một người tăng Base Size. `Future.get()` có timeout giúp test thất bại nếu luồng bị kẹt, đồng thời đưa ngoại lệ từ luồng phụ về luồng test.
+
+Các test timeout truyền mốc thời gian cho room, hoặc đặt thời điểm ngắt trong fixture; không cần ngồi chờ đủ 10 giây. Fixture là dữ liệu/đối tượng dựng riêng cho test, không phải dữ liệu giả để báo cáo benchmark.
+
+## 13. Lộ trình tự học và thực hành
+
+1. Đọc mục 2–4, tự kể lại đường đi của MOVE từ Unity đến snapshot.
+2. Mở `PlayerState`, tìm trường ứng với tọa độ, HP, token và sequence.
+3. Chạy `ConnectionTest`; đọc test reconnect và request trùng cùng code `handle()`.
+4. Đọc `update()` và `pickupCores()`; giải thích vì sao chỉ một người nhận Core.
+5. Chạy `ServerFixesTest`; xem test byte và so hai snapshot của cùng một room.
+6. Mở Unity baseline với T, chơi thử hai client. Test Java là bước chuẩn bị, vẫn cần demo thực tế.
+7. Thống nhất danh sách trong tài liệu bàn giao, sau đó B đo 2/4/8 client bằng cùng kịch bản.
+
+Trong IntelliJ, bạn có thể đặt breakpoint ở `Connection.handle`, `resume`, `disconnect` hoặc `pickupCores`, rồi chạy test bằng Debug. Quan sát `player.lastSeq`, `player.connection`, `room.phase`, `cores.size()`. Dừng debugger lâu sẽ ảnh hưởng timeout theo đồng hồ thật; đây không phải lỗi game.
+
+## 14. Câu hỏi bảo vệ và cách trả lời
+
+**Em làm phần nào?** Em phụ trách server Java, kết nối/session, phòng và trạng thái trận; sửa vòng đời reconnect/disconnect, kiểm thử request trùng và tranh Core; duy trì hai chế độ đồng bộ để so sánh. Em phân biệt phần đã có của prototype với thay đổi của đợt phát triển trong bảng mục 10.
+
+**Vì sao TCP rồi còn cần seq?** TCP đảm bảo luồng byte theo thứ tự. Seq ngăn ứng dụng thực hiện lại request mà client tự gửi trùng hoặc gửi cũ.
+
+**Vì sao synchronized trên player chưa đủ?** Vì disconnect còn sửa dữ liệu room. Phải ngăn reconnect chen giữa bước đổi session và bước dọn trạng thái room, đồng thời thống nhất thứ tự lấy khóa.
+
+**Ai nhặt Core khi hai người chạm cùng lúc?** Server chọn người gần nhất đủ điều kiện trong tick. Bằng khoảng cách thì thứ tự danh sách quyết định. Xóa Core và cộng Base Size trong vùng khóa room nên không nhặt hai lần.
+
+**Cải tiến có phải delta sync không?** Hiện tại là selective sync: bỏ map tĩnh khỏi snapshot thường và lọc dữ liệu theo viewer. Chưa có delta từng trường dựa trên snapshot trước.
+
+**Tiết kiệm bao nhiêu phần trăm?** Test cố định chứng minh snapshot optimized nhỏ hơn với cùng trạng thái. Chưa dùng kết quả một fixture để kết luận hiệu quả mạng thực tế; B cần đo lặp lại với 2/4/8 client và báo cấu hình cụ thể.
+
+**processingMicros là gì?** Thời gian trong luồng xử lý request đến trước khi gửi ACK; có thể gồm thời gian chờ khóa và gửi phản hồi trước đó. Nó không phải RTT, cũng không phải số đo riêng cho serialize snapshot định kỳ.
+
+**Đã hoàn thành toàn bộ game chưa?** Phần server và test trong phạm vi này đã được kiểm tra. Unity optimized, benchmark mạng và chế độ Hành trình còn phụ thuộc phối hợp với T/B; không trình bày chúng như tính năng đã tích hợp.
+
+Hãy tập trả lời bằng cách chỉ vào hàm và chạy test minh họa, thay vì học thuộc nguyên đoạn. Tài liệu có AI hỗ trợ biên soạn; người nộp cần tự kiểm chứng và trình bày đúng phần mình hiểu.

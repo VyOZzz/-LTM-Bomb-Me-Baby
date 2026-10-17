@@ -7,9 +7,10 @@ final class PlayerState {
     final String name;
     final String resumeToken = UUID.randomUUID().toString();
     volatile BombServer.Connection connection;
-    GameRoom room;
+    volatile GameRoom room;
     double x, z, dx, dz, hp = 100, size = 1, baseSize = 1;
-    boolean ready, alive = true, charging, connected = true;
+    boolean ready, alive = true, charging;
+    volatile boolean connected = true;
     long chargeSince, shieldUntil, shieldReadyAt, boostUntil, boostReadyAt, disconnectedAt;
     long lastSeq = -1;
     int kills;
