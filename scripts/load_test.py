@@ -25,7 +25,8 @@ import time
 
 RAW_FIELDS = ["t_ms", "client", "direction", "type", "bytes", "rtt_ms", "processing_us"]
 SUMMARY_FIELDS = [
-    "run_at", "label", "commit", "host", "port", "clients", "duration_s", "move_hz", "ping_hz", "seed",
+    "run_at", "label", "commit", "sync_mode", "map_id", "host", "port", "clients", "duration_s",
+    "move_hz", "ping_hz", "seed",
     "recv_msgs_per_client_s", "recv_bytes_per_client_s", "server_out_bytes_s",
     "sent_msgs_per_client_s", "sent_bytes_per_client_s",
     "state_updates_per_client_s", "state_update_avg_bytes",
@@ -42,6 +43,7 @@ class Client:
         self.sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         self.reader = self.sock.makefile("rb")
         self.seq = 0
+        self.geometry_in_snapshot = None  # True: baseline snapshots carry obstacles/bushes
         self.send_lock = threading.Lock()
         self.send("HELLO", name=f"Load {index}", resumeToken="")
         self.until("WELCOME")
@@ -89,6 +91,8 @@ class Client:
                 rtt_ms = (now_us() - int(message.get("clientTime", 0))) / 1000
             elif kind == "ACK":
                 processing_us = message.get("processingMicros", "")
+            elif kind == "STATE_UPDATE" and self.geometry_in_snapshot is None:
+                self.geometry_in_snapshot = "obstacles" in message
             self.recorder.record(self.index, "recv", kind, len(line), rtt_ms, processing_us)
 
     def send_loop(self, stop, move_hz, ping_hz, rng):
@@ -164,7 +168,15 @@ def git_commit():
         return ""
 
 
-def summarize(rows, args, elapsed, raw_file):
+def detect_sync_mode(clients):
+    """Baseline repeats map geometry in every STATE_UPDATE; optimized sends it only in GAME_START."""
+    seen = {c.geometry_in_snapshot for c in clients} - {None}
+    if len(seen) != 1:
+        return "unknown"
+    return "baseline" if seen.pop() else "optimized"
+
+
+def summarize(rows, args, elapsed, raw_file, sync_mode, map_id):
     recv = [r for r in rows if r[2] == "recv"]
     sent = [r for r in rows if r[2] == "sent"]
     states = [r for r in recv if r[3] == "STATE_UPDATE"]
@@ -174,7 +186,8 @@ def summarize(rows, args, elapsed, raw_file):
     fmt = lambda v, d=2: round(v, d) if v != "" else ""
     return {
         "run_at": datetime.datetime.now().isoformat(timespec="seconds"),
-        "label": args.label, "commit": git_commit(), "host": args.host, "port": args.port,
+        "label": args.label, "commit": git_commit(), "sync_mode": sync_mode, "map_id": map_id,
+        "host": args.host, "port": args.port,
         "clients": args.clients, "duration_s": round(elapsed, 2), "move_hz": args.move_hz,
         "ping_hz": args.ping_hz, "seed": args.seed,
         "recv_msgs_per_client_s": fmt(len(recv) / per_client),
@@ -212,6 +225,7 @@ def main():
     clients = [Client(i, args.host, args.port, recorder) for i in range(args.clients)]
     stop = threading.Event()
     threads = []
+    game = {}
     try:
         clients[0].send("CREATE_ROOM")
         code = clients[0].until("ROOM_STATE")["room"]["code"]
@@ -254,7 +268,8 @@ def main():
         writer.writerow(RAW_FIELDS)
         writer.writerows(rows)
 
-    summary = summarize(rows, args, elapsed, raw_file.replace(os.sep, "/"))
+    summary = summarize(rows, args, elapsed, raw_file.replace(os.sep, "/"),
+                        detect_sync_mode(clients), game.get("mapId", ""))
     summary_file = os.path.join(args.out_dir, "summary.csv")
     new_file = not os.path.exists(summary_file)
     with open(summary_file, "a", newline="", encoding="utf-8") as f:
