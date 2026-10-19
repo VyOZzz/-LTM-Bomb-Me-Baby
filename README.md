@@ -21,6 +21,21 @@ mvn exec:java -Dexec.args="7777"
 
 Server mặc định nghe TCP port `7777`. Mở firewall cho port này nếu người chơi ở máy khác. Giao thức prototype là TCP thuần trong mạng tin cậy; chưa có đăng nhập hay TLS.
 
+## Tài liệu và kiểm thử phần Java server (thành viên A)
+
+- [Học từ đầu và giải thích từng phần code](docs/THANH_VIEN_A_HUONG_DAN.md).
+- [Kết quả 38 test và phạm vi đã kiểm chứng](docs/THANH_VIEN_A_KIEM_THU.md).
+- [Bàn giao cho T/B: tích hợp JSON và so sánh baseline/optimized](docs/THANH_VIEN_A_BAN_GIAO.md).
+
+Server mặc định dùng baseline. Từ thư mục `server/`, kiểm tra cả hai cấu hình:
+
+```powershell
+mvn clean test "-Dsync.mode=baseline"
+mvn test "-Dsync.mode=optimized"
+```
+
+Chạy server bằng `mvn compile exec:java "-Dexec.args=7777" "-Dsync.mode=baseline"`. Chế độ `optimized` đã có phía server nhưng cần T cập nhật Unity và thống nhất protocol trước khi dùng cho demo. Cải tiến hiện tại là đồng bộ chọn lọc, chưa phải delta từng trường giữa hai snapshot.
+
 ## Chạy Unity client
 
 1. Cài Unity `6000.3.6f1` bằng Unity Hub, sau đó mở thư mục `LTM-Bomb-Me-Baby/` và chờ Unity import xong.
@@ -71,5 +86,5 @@ Unity client hiển thị RTT, số message gửi/nhận và dùng nội suy v�
 ## Giới hạn hiện tại
 
 - Cần mở project bằng Unity để Unity tạo scene và kiểm tra build hình ảnh. Phần Unity không thể được chạy trong môi trường không có Unity Editor.
-- Chưa có lưu lịch sử trận, bot, skin, matchmaking, TLS, hoặc tối ưu state sync theo khoảng cách. Snapshot hiện gửi toàn bộ trạng thái ở 10 Hz để làm baseline cho thí nghiệm mạng.
+- Chưa có lưu lịch sử trận, bot, skin, matchmaking hay TLS. Baseline gửi snapshot đầy đủ ở 10 Hz; optimized bỏ geometry ở snapshot thường và lọc vật phẩm theo khoảng cách. Unity optimized và số liệu benchmark thực tế còn cần tích hợp/kiểm chứng, xem tài liệu bàn giao phần A.
 - Không có cơ chế chống gian lận toàn diện; server đã giới hạn movement và bỏ qua sequence trùng/cũ.

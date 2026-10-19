@@ -26,7 +26,12 @@ public final class BombServer {
     final Map<String,PlayerState> sessions = new ConcurrentHashMap<>();
     final ExecutorService clients = Executors.newFixedThreadPool(64);
     final ScheduledExecutorService gameLoop = Executors.newSingleThreadScheduledExecutor();
+    final SyncMode syncMode;
     private long previousTick = System.nanoTime();
+
+    BombServer() { this(SyncMode.active()); }
+
+    BombServer(SyncMode syncMode) { this.syncMode = syncMode; }
 
     public static void main(String[] args) throws IOException {
         int port = args.length > 0 ? Integer.parseInt(args[0]) : 7777;
@@ -43,7 +48,11 @@ public final class BombServer {
                 try { room.update(now, dt); }
                 catch (RuntimeException e) { System.err.println("Room " + room.code + ": " + e); }
             }
-            sessions.values().removeIf(p -> !p.connected && now - p.disconnectedAt > GameRules.RECONNECT_MS + 30_000);
+            sessions.values().removeIf(p -> {
+                synchronized (p) {
+                    return !p.connected && now - p.disconnectedAt > GameRules.RECONNECT_MS + 30_000;
+                }
+            });
         }, 50, 50, TimeUnit.MILLISECONDS);
         try (ServerSocket listener = new ServerSocket(port)) {
             System.out.println("Bomb Me Baby server on TCP port " + port);
@@ -88,20 +97,58 @@ public final class BombServer {
                 }
             } catch (IOException ignored) {
             } finally {
-                if (player != null && player.connection == this) {
-                    player.connected = false;
-                    player.connection = null;
-                    player.disconnectedAt = System.currentTimeMillis();
-                    GameRoom room = player.room;
-                    if (room != null) {
-                        synchronized (room) {
-                            player.dx = 0; player.dz = 0;
-                            if (room.phase != GameRoom.Phase.PLAYING) room.leave(player);
-                            else room.players.forEach(p -> p.send(GameRoom.data("type","PLAYER_DISCONNECTED","playerId",player.id)));
-                        }
-                    }
-                }
+                disconnect();
             }
+        }
+
+        // Lock order for lifecycle transitions: player -> room -> connection writer.
+        // GameRoom must never acquire the player monitor in the opposite order.
+        private void withSessionState(PlayerState session, Runnable action) {
+            synchronized (session) {
+                GameRoom room = session.room;
+                if (room == null) action.run();
+                else synchronized (room) { action.run(); }
+            }
+        }
+
+        void disconnect() {
+            if (player == null) return;
+            withSessionState(player, () -> {
+                if (player.connection != this) return;
+                player.disconnectedAt = System.currentTimeMillis();
+                player.connection = null;
+                player.connected = false;
+                player.dx = 0; player.dz = 0;
+                GameRoom room = player.room;
+                if (room == null) return;
+                if (room.phase != GameRoom.Phase.PLAYING) {
+                    room.leave(player);
+                    if (room.players.isEmpty()) rooms.remove(room.code, room);
+                } else {
+                    room.players.forEach(p -> p.send(GameRoom.data("type","PLAYER_DISCONNECTED","playerId",player.id)));
+                }
+            });
+        }
+
+        private boolean resume(PlayerState session) {
+            withSessionState(session, () -> {
+                // Match update()'s >= timeout boundary exactly.
+                if (session.connected || System.currentTimeMillis() - session.disconnectedAt >= GameRules.RECONNECT_MS) return;
+                player = session;
+                // Keep the room locked until WELCOME and recovery state are sent:
+                // a tick cannot send STATE_UPDATE ahead of WELCOME.
+                send(GameRoom.data("type","WELCOME","playerId",player.id,
+                    "resumeToken",player.resumeToken,"lastSeq",player.lastSeq));
+                player.connection = this;
+                player.connected = true;
+                GameRoom room = player.room;
+                if (room != null) {
+                    send(GameRoom.data("type","ROOM_STATE","room",room.roomInfo()));
+                    if (room.phase == GameRoom.Phase.PLAYING)
+                        send(room.snapshot(System.currentTimeMillis(), player, true));
+                }
+            });
+            return player != null;
         }
 
         private void handle(JsonObject m) {
@@ -109,16 +156,9 @@ public final class BombServer {
             if (player == null) {
                 if (!"HELLO".equals(type)) { error("HELLO_REQUIRED"); return; }
                 String token = string(m,"resumeToken");
-                PlayerState resumed = sessions.get(token);
-                if (resumed != null && !resumed.connected && System.currentTimeMillis() - resumed.disconnectedAt <= GameRules.RECONNECT_MS) {
-                    player = resumed;
-                    player.connection = this;
-                    player.connected = true;
-                    send(GameRoom.data("type","WELCOME","playerId",player.id,"resumeToken",player.resumeToken));
-                    if (player.room != null) {
-                        send(GameRoom.data("type","ROOM_STATE","room",player.room.roomInfo()));
-                        if (player.room.phase == GameRoom.Phase.PLAYING) send(player.room.snapshot(System.currentTimeMillis(), player));
-                    }
+                PlayerState resumed = token.isEmpty() ? null : sessions.get(token);
+                if (!token.isEmpty()) {
+                    if (resumed == null || !resume(resumed)) error("RESUME_FAILED");
                     return;
                 }
                 String name = string(m,"name").trim();
@@ -138,22 +178,27 @@ public final class BombServer {
                 case "PING" -> send(GameRoom.data("type","PONG","clientTime",number(m,"clientTime",0),"serverTime",System.currentTimeMillis()));
                 case "CREATE_ROOM" -> {
                     if (room != null) { error("ALREADY_IN_ROOM"); return; }
-                    String code;
-                    do { code = UUID.randomUUID().toString().substring(0,6).toUpperCase(); } while (rooms.containsKey(code));
-                    GameRoom created = new GameRoom(code);
-                    rooms.put(code, created);
+                    GameRoom created;
+                    do {
+                        String code = UUID.randomUUID().toString().substring(0,6).toUpperCase();
+                        created = new GameRoom(code, syncMode);
+                    } while (rooms.putIfAbsent(created.code, created) != null);
                     created.join(player);
                 }
                 case "JOIN_ROOM" -> {
                     if (room != null) { error("ALREADY_IN_ROOM"); return; }
                     GameRoom target = rooms.get(string(m,"code").trim().toUpperCase());
                     if (target == null) { error("ROOM_NOT_FOUND"); return; }
-                    if (!target.join(player)) error("ROOM_UNAVAILABLE");
+                    synchronized (target) {
+                        if (rooms.get(target.code) != target || !target.join(player)) error("ROOM_UNAVAILABLE");
+                    }
                 }
                 case "LEAVE_ROOM" -> {
                     if (room != null) {
-                        room.leave(player);
-                        if (room.players.isEmpty()) rooms.remove(room.code, room);
+                        synchronized (room) {
+                            room.leave(player);
+                            if (room.players.isEmpty()) rooms.remove(room.code, room);
+                        }
                         send(GameRoom.data("type","LEFT_ROOM"));
                     }
                 }
