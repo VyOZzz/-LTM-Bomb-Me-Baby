@@ -49,19 +49,27 @@ def main():
         b.until("ROOM_STATE")
         a.send("READY", ready=True)
         b.send("READY", ready=True)
-        assert a.until("GAME_START")["room"] == code
+        start = a.until("GAME_START")
+        assert start["room"] == code
         assert b.until("GAME_START")["room"] == code
+        # GAME_START always carries the map geometry; baseline also repeats it in every
+        # STATE_UPDATE, while optimized omits it there.
+        assert len(start["obstacles"]) > 0 and len(start["bushes"]) > 0
         state = a.until("STATE_UPDATE")
         assert len(state["players"]) == 2
-        assert len(state["orbs"]) > 0
-        assert state["mapId"] in {"meadow", "crater", "crossroads"}
+        # Optimized culls pickups beyond the viewer's range, so the list may be empty.
+        assert isinstance(state["orbs"], list)
+        assert state["mapId"] == start["mapId"] in {"meadow", "crater", "crossroads"}
         assert state["arenaSize"] >= 46
-        assert len(state["bushes"]) > 0
+        mode = "baseline" if "bushes" in state else "optimized"
+        if mode == "baseline":
+            assert state["bushes"] == start["bushes"] and state["obstacles"] == start["obstacles"]
         a.send("MOVE", directionX=1, directionZ=0)
         a.send("CHARGE_START")
         a.send("EXPLODE")
         a.until("PLAYER_EXPLODE")
-        print(f"PASS: room {code}, 2 clients, state sync, movement, explosion")
+        print(f"PASS ({mode}): room {code}, map {start['mapId']}, 2 clients, "
+              "state sync, movement, explosion")
     finally:
         a.close()
         b.close()
