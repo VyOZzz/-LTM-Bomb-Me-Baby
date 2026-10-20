@@ -53,20 +53,26 @@ def main():
         start_b = b.until("GAME_START")
         assert start_a["room"] == code
         assert start_b["room"] == code
-        assert len(start_a["obstacles"]) > 0
-        assert len(start_a["bushes"]) > 0
+        # GAME_START always carries the map geometry; baseline also repeats it in every
+        # STATE_UPDATE, while optimized omits it there.
+        assert len(start_a["obstacles"]) > 0 and len(start_a["bushes"]) > 0
+        assert len(start_b["obstacles"]) > 0 and len(start_b["bushes"]) > 0
         state = a.until("STATE_UPDATE")
         assert len(state["players"]) == 2
-        assert len(state["orbs"]) > 0
-        assert state["mapId"] in {"meadow", "crater", "crossroads"}
+        # Optimized culls pickups beyond the viewer's range, so the list may be empty.
+        assert isinstance(state["orbs"], list)
+        assert state["mapId"] == start_a["mapId"] in {"meadow", "crater", "crossroads"}
         assert state["arenaSize"] >= 46
-        # Static geometry is guaranteed by GAME_START. Baseline may repeat it
-        # here; optimized snapshots intentionally omit it.
+        mode = "baseline" if "bushes" in state else "optimized"
+        if mode == "baseline":
+            assert state["bushes"] == start_a["bushes"]
+            assert state["obstacles"] == start_a["obstacles"]
         a.send("MOVE", directionX=1, directionZ=0)
         a.send("CHARGE_START")
         a.send("EXPLODE")
         a.until("PLAYER_EXPLODE")
-        print(f"PASS: room {code}, 2 clients, state sync, movement, explosion")
+        print(f"PASS ({mode}): room {code}, map {start_a['mapId']}, 2 clients, "
+              "state sync, movement, explosion")
     finally:
         a.close()
         b.close()
