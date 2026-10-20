@@ -191,6 +191,12 @@ public final class BombServer {
                     if (room != null) { error("ALREADY_IN_ROOM"); return; }
                     GameRoom target = rooms.get(string(m,"code").trim().toUpperCase());
                     if (target == null) { error("ROOM_NOT_FOUND"); return; }
+                    // Optional: a client that picked a mode first only joins rooms of that mode.
+                    GameMode expected = GameMode.fromProtocol(string(m,"mode"));
+                    if (!string(m,"mode").isBlank() && expected != target.mode) {
+                        send(GameRoom.data("type","ERROR","code","MODE_MISMATCH","mode",target.mode.name()));
+                        return;
+                    }
                     synchronized (target) {
                         if (rooms.get(target.code) != target || !target.join(player)) error("ROOM_UNAVAILABLE");
                     }

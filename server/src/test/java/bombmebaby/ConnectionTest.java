@@ -192,6 +192,21 @@ class ConnectionTest {
         assertTrue(server.rooms.isEmpty());
     }
 
+    @Test void joinWithModeOnlyEntersRoomsOfThatMode() throws Exception {
+        Peer host = hello(), wrong = hello(), right = hello();
+        host.request("type", "CREATE_ROOM", "seq", 1, "mode", "QUICK");
+        String code = host.player.room.code;
+
+        wrong.send("type", "JOIN_ROOM", "seq", 1, "code", code, "mode", "JOURNEY");
+        JsonObject error = wrong.until("ERROR");
+        assertEquals("MODE_MISMATCH", error.get("code").getAsString());
+        assertEquals("QUICK", error.get("mode").getAsString());
+        assertNull(wrong.player.room);
+
+        right.request("type", "JOIN_ROOM", "seq", 1, "code", code.toLowerCase(), "mode", "quick");
+        assertSame(host.player.room, right.player.room);
+    }
+
     @Test void journeyCompleteEventIsBroadcastAfterThreeTcpRounds() throws Exception {
         Peer a = hello(), b = hello();
         a.request("type", "CREATE_ROOM", "seq", 1, "mode", "JOURNEY");
