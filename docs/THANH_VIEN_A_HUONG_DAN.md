@@ -10,7 +10,7 @@ Bạn A phụ trách chương trình Java chạy trên máy chủ: nhận kết 
 
 T phụ trách Unity: đọc bàn phím, vẽ game, phát âm thanh, hiển thị HUD và xử lý bản tin server. B phụ trách map, script đo mạng và số liệu thực nghiệm. Khi đổi tên trường, bỏ trường hay đổi ý nghĩa dữ liệu JSON, cả ba phải thống nhất trước khi tích hợp.
 
-**Kết quả hiện tại:** đã sửa thêm các lỗi vòng đời kết nối, tăng chất lượng kiểm thử và giữ baseline mặc định. Chế độ optimized đã tồn tại từ commit `dc255a3`; Unity hiện còn cần T tích hợp. Chưa có xác nhận T chốt protocol, nên đợt này không thêm loại bản tin hay trường JSON mới. Phần Hành trình Ba Mảnh trong ảnh phân công là công việc sau khi chốt protocol, chưa được triển khai ở đây.
+**Kết quả hiện tại:** server đã có Đấu nhanh và Hành trình Ba Mảnh, sửa vòng đời reconnect/disconnect, chặn sequence trùng, xử lý tranh Core và giữ hai chế độ đồng bộ để đo. Hành trình chạy ba map cố định, giữ điểm qua ba vòng và phát kết quả cuối. Unity đã có DTO, nút tạo hai loại phòng, bảng điểm cơ bản và xử lý `JOURNEY_COMPLETE`; giao diện vẫn cần T mở bằng Unity Editor để kiểm tra hình ảnh và hoàn thiện lời dẫn.
 
 ## 2. Những từ cần biết
 
@@ -53,6 +53,7 @@ PlayerState p = new PlayerState("An", null);
 | [PlayerState.java](../server/src/main/java/bombmebaby/PlayerState.java) | `connection`, `room`, `lastSeq`, `connected`, `disconnectedAt` | Dữ liệu của một người chơi |
 | [GameRoom.java](../server/src/main/java/bombmebaby/GameRoom.java) | `join`, `leave`, `ready`, `start`, `action`, `update`, `pickupCores`, `snapshot` | Phòng, luật diễn biến trận, bản tin trạng thái |
 | [GameRules.java](../server/src/main/java/bombmebaby/GameRules.java) | `RECONNECT_MS`, `MIN_SPAWN_DISTANCE`, `damage` | Hằng số và công thức game |
+| [GameMode.java](../server/src/main/java/bombmebaby/GameMode.java) | `QUICK`, `JOURNEY`, `fromProtocol` | Chế độ phòng và cách đọc trường mode |
 | [SyncMode.java](../server/src/main/java/bombmebaby/SyncMode.java) | `BASELINE`, `OPTIMIZED`, `active` | Chọn cách đồng bộ |
 | [ConnectionTest.java](../server/src/test/java/bombmebaby/ConnectionTest.java) | Các hàm có `@Test` | Kiểm tra bằng socket TCP thật trên máy |
 | [ServerFixesTest.java](../server/src/test/java/bombmebaby/ServerFixesTest.java) | Core, timeout, snapshot | Kiểm tra trạng thái phòng và hai chế độ |
@@ -83,6 +84,9 @@ sequenceDiagram
     end
     R-->>U: STATE_UPDATE mỗi 2 tick (~100 ms)
     R-->>U: GAME_OVER khi đủ điều kiện
+    alt Phòng JOURNEY và vừa xong chương 3
+        R-->>U: JOURNEY_COMPLETE + scores + winnerIds
+    end
 ```
 
 Luồng ví dụ:
@@ -96,9 +100,32 @@ Luồng ví dụ:
 7. `snapshot()` tạo dữ liệu gửi cho từng người. Unity nhận và nội suy hình ảnh cho mượt.
 8. Người cuối cùng còn sống thắng. Phòng một người là chế độ thử, không tự kết thúc ngay chỉ vì có một người sống.
 
-Ba giai đoạn phòng là `WAITING` (chờ), `PLAYING` (đang chơi), `FINISHED` (đã kết thúc). Sẵn sàng lại có thể bắt đầu vòng mới.
+Ba giai đoạn phòng là `WAITING` (chờ), `PLAYING` (đang chơi), `FINISHED` (đã kết thúc vòng). Với Đấu nhanh, sẵn sàng lại bắt đầu vòng ngẫu nhiên mới. Với Hành trình, sẵn sàng lại sau chương 1/2 chuyển sang chương kế tiếp; sau chương 3 server không cho bắt đầu vòng thứ tư.
 
 **Điểm phải nhớ:** game loop là 20 Hz, snapshot định kỳ là 10 Hz. Ngoài lịch định kỳ, server còn gửi snapshot ngay lúc bắt đầu và khi reconnect. Không viết trong báo cáo rằng mọi snapshot được gửi mỗi 50 ms.
+
+### 4.1. Hành trình Ba Mảnh hoạt động thế nào?
+
+Client tạo phòng bằng `CREATE_ROOM` với `mode="JOURNEY"`. Nếu bỏ trống mode, server dùng `QUICK` để client cũ vẫn chạy. Mode sai nhận `INVALID_MODE`.
+
+| `chapterIndex` | Map | Tên chương |
+| --- | --- | --- |
+| 0 | `meadow` | Mảnh Mầm |
+| 1 | `crossroads` | Mảnh Đường |
+| 2 | `crater` | Mảnh Nhiệt |
+
+Mỗi lần loại trực tiếp một đối thủ bằng vụ nổ hoặc phản khiên được 1 điểm. Người sống cuối cùng của vòng nhận thêm 3 điểm và một `roundWins`. Khi vòng kết thúc, server gửi `GAME_OVER` kèm bảng `scores`. Người chơi READY lại để sang chương kế tiếp; `start()` reset HP, Size, cooldown và số kill của vòng nhưng không xóa điểm hành trình.
+
+Sau chương 3, `selectJourneyWinners()` xếp theo thứ tự:
+
+1. Tổng `points` cao nhất.
+2. Nếu hòa, `roundWins` cao nhất.
+3. Nếu vẫn hòa, người thắng vòng cuối được ưu tiên khi nằm trong nhóm hòa.
+4. Nếu vẫn không tách được, trả nhiều id trong `winnerIds`; `winnerId` để rỗng.
+
+Server phát `JOURNEY_COMPLETE` gồm `mode`, `chapterIndex`, `scores`, `winnerId` và `winnerIds`. `mode`, `chapterIndex`, `scores` cũng có trong `ROOM_STATE`, `GAME_START` và `STATE_UPDATE`, nên reconnect vẫn lấy được tiến độ hiện tại.
+
+Điểm được giữ trong `journeyScores`, không nằm trong Unity. Người vào phòng bị chặn sau khi hành trình đã bắt đầu để không chen vào giữa chương. Người mất mạng giữa hai chương vẫn có 10 giây reconnect; hết hạn bị rời danh sách. Điểm đã ghi vẫn nằm trong kết quả hành trình, nhưng phòng cần người còn kết nối READY để đi tiếp.
 
 ## 5. Vì sao client không tự quyết định nhặt Core?
 
@@ -196,9 +223,9 @@ Mốc thời gian được thống nhất: **nhỏ hơn 10.000 ms** mới đư�
 
 ### 7.4. Nhận lại sequence và map
 
-WELCOME khi resume có `lastSeq`. Ví dụ server đã xử lý 10, request tiếp theo phải lớn hơn 10. Unity hiện chưa khai báo/áp dụng trường này; T cần cập nhật trước khi khẳng định khôi phục sequence hoạt động đầy đủ ở client mới tạo lại.
+WELCOME khi resume có `lastSeq`. Ví dụ server đã xử lý 10, request tiếp theo phải lớn hơn 10. `BombProtocol.cs` đã khai báo trường này và `BombNetwork.ContinueSequenceAfter()` đưa bộ đếm client lên ít nhất bằng giá trị server trả về.
 
-Snapshot khôi phục dùng `forceBaseline = true` theo code đã có: có toàn bộ `obstacles`, `bushes`, vật phẩm và tọa độ. Điều này khôi phục map nhưng **cũng giữ hạn chế lộ tọa độ của snapshot baseline**. Muốn chỉ gửi lại map mà vẫn lọc vị trí phải thống nhất ý nghĩa với T; chưa thay ở đợt này.
+Snapshot khôi phục gọi `snapshot(..., includeStaticGeometry=true)`: có lại toàn bộ `obstacles` và `bushes`, nhưng optimized vẫn che tọa độ player vô hình và vẫn cull pickup xa. Geometry đầy đủ không còn đồng nghĩa tắt luật visibility.
 
 ### 7.5. Hết hạn ngắt kết nối
 
@@ -240,14 +267,14 @@ Giới hạn hiện tại: ghi socket vẫn đồng bộ, có thể diễn ra tr
 Trong `snapshot()`:
 
 ```java
-boolean optimized = !forceBaseline && syncMode == SyncMode.OPTIMIZED;
+boolean optimized = !forceBaselineData && syncMode == SyncMode.OPTIMIZED;
 ```
 
-`forceBaseline` ghi đè chế độ khi cần khôi phục đầy đủ. Chế độ mặc định của room lấy từ cấu hình server. Constructor nhận `SyncMode` giúp test tạo cả hai chế độ trong cùng lần chạy, không cần sửa biến toàn cục bằng reflection.
+`includeStaticGeometry` chỉ quyết định có kèm đá/bụi; reconnect bật cờ này nhưng không tắt privacy. `forceBaselineData` chỉ được overload bốn tham số dùng cho phép so sánh baseline có kiểm soát trong test. Constructor nhận `SyncMode` giúp test tạo cả hai chế độ trong cùng lần chạy.
 
 Đợt này còn sửa `List.copyOf(orbs)` và `List.copyOf(cores)`: snapshot giữ bản sao danh sách vật phẩm. Nếu tick sau xóa đồ vật, snapshot đã tạo không bị đổi theo trong lúc chuẩn bị ghi JSON.
 
-Không nên tuyên bố đã chống mọi hack map: snapshot khôi phục vẫn đầy đủ; các sự kiện như `CORE_SPAWNED` và `PLAYER_EXPLODE` vẫn có tọa độ và broadcast. Phạm vi hiện có chỉ là giảm dữ liệu và giảm lộ vị trí trong **snapshot optimized thông thường**.
+Trong optimized, `PLAYER_EXPLODE` được tạo riêng cho từng viewer: người không nhìn thấy nguồn nổ nhận `visible=false`, `x=0`, `z=0`, và Unity không dựng VFX tại tọa độ thay thế. `CORE_SPAWNED` chỉ được gửi cho viewer trong 30 đơn vị; người ở xa sẽ thấy Core khi snapshot culling cho phép. Không nên gọi đây là chống gian lận toàn diện vì server chưa có xác thực/TLS và những event không có tọa độ vẫn có thể để lộ một phần diễn biến.
 
 ## 10. Thay đổi mới so với commit dc255a3
 
@@ -260,7 +287,9 @@ Không nên tuyên bố đã chống mọi hack map: snapshot khôi phục vẫn
 | Core | Người gần nhất, khóa room | Test cạnh tranh và các điều kiện nhận Core |
 | Đồng bộ | BASELINE/OPTIMIZED và culling | Chọn mode tường minh cho test; snapshot không dùng chung danh sách pickup có thể thay đổi |
 | Spawn | Chọn vị trí bằng greedy farthest-point | Thử lại tối đa 32 điểm bắt đầu nếu bố trí bị kẹt; giữ khoảng cách tối thiểu 28 |
-| Test | 27 test; vài test chỉ tự lặp điều kiện | 38 test, gồm 12 test TCP thật; kiểm tra cả hai mode |
+| Hành trình | Chưa có | QUICK/JOURNEY, ba map cố định, điểm loại/thắng vòng, tie-break và `JOURNEY_COMPLETE` |
+| Unity protocol/UI | Chưa nhận mode/điểm; chưa dựng map từ GAME_START | DTO mới, nút tạo hai mode, bảng điểm, event cuối và cache geometry từ GAME_START |
+| Test | 27 test; vài test chỉ tự lặp điều kiện | 45 test, gồm 16 test TCP thật; kiểm tra sync mode và game mode |
 | Hướng dẫn | Có mô tả chưa khớp code | Viết lại theo code, thêm cách học, lệnh chạy, bằng chứng và giới hạn |
 
 Lỗi spawn xuất hiện khi chạy test: `Cannot separate 10 spawns on map meadow`. Một lựa chọn đầu tiên không tốt có thể làm thuật toán tham lam không xếp đủ người dù map còn cách bố trí hợp lệ. Thử lại giúp xử lý trường hợp đó mà không hạ khoảng cách; test kiểm tra 20 seed × 3 map. Đây là kiểm tra hữu hạn, không phải chứng minh toán học cho mọi seed.
@@ -278,7 +307,7 @@ mvn clean test
 
 `mvn` là Maven, công cụ tải thư viện, biên dịch và chạy test. Dự án biên dịch với Java release 17; máy kiểm tra dùng JDK 21.0.10 và Maven 3.9.16. Lần đầu Maven có thể cần mạng để tải thư viện.
 
-Kết quả đúng ở bản hiện tại là `Tests run: 38, Failures: 0, Errors: 0, Skipped: 0` rồi `BUILD SUCCESS`.
+Kết quả đúng ở bản hiện tại là `Tests run: 45, Failures: 0, Errors: 0, Skipped: 0` rồi `BUILD SUCCESS`.
 
 Chạy từng nhóm để học:
 
@@ -329,8 +358,9 @@ Các test timeout truyền mốc thời gian cho room, hoặc đặt thời đi�
 3. Chạy `ConnectionTest`; đọc test reconnect và request trùng cùng code `handle()`.
 4. Đọc `update()` và `pickupCores()`; giải thích vì sao chỉ một người nhận Core.
 5. Chạy `ServerFixesTest`; xem test byte và so hai snapshot của cùng một room.
-6. Mở Unity baseline với T, chơi thử hai client. Test Java là bước chuẩn bị, vẫn cần demo thực tế.
-7. Thống nhất danh sách trong tài liệu bàn giao, sau đó B đo 2/4/8 client bằng cùng kịch bản.
+6. Đọc test `threeFragmentJourneyUsesFixedMapsScoresAndFinalRoundTieBreak`, tự ghi lại điểm của A/B/C sau từng chương.
+7. Mở Unity với T, tạo phòng Hành trình và chơi đủ ba chương bằng hai client. Test Java là bằng chứng tự động; vẫn cần demo hình ảnh thực tế.
+8. B đo 2/4/8 client bằng cùng kịch bản trên baseline và optimized.
 
 Trong IntelliJ, bạn có thể đặt breakpoint ở `Connection.handle`, `resume`, `disconnect` hoặc `pickupCores`, rồi chạy test bằng Debug. Quan sát `player.lastSeq`, `player.connection`, `room.phase`, `cores.size()`. Dừng debugger lâu sẽ ảnh hưởng timeout theo đồng hồ thật; đây không phải lỗi game.
 
@@ -346,10 +376,14 @@ Trong IntelliJ, bạn có thể đặt breakpoint ở `Connection.handle`, `resu
 
 **Cải tiến có phải delta sync không?** Hiện tại là selective sync: bỏ map tĩnh khỏi snapshot thường và lọc dữ liệu theo viewer. Chưa có delta từng trường dựa trên snapshot trước.
 
+**Server tính điểm Hành trình ra sao?** Mỗi lần loại trực tiếp được 1 điểm; thắng vòng được 3 điểm và tăng số vòng thắng. Hết ba chương, server so tổng điểm, vòng thắng, rồi người thắng vòng cuối. Client chỉ hiển thị kết quả server gửi.
+
+**Vì sao mode sync và mode game là hai thứ khác nhau?** `SyncMode` chọn cách truyền snapshot (`BASELINE`/`OPTIMIZED`). `GameMode` chọn luật phòng (`QUICK`/`JOURNEY`). Có thể chạy JOURNEY trên cả baseline lẫn optimized.
+
 **Tiết kiệm bao nhiêu phần trăm?** Test cố định chứng minh snapshot optimized nhỏ hơn với cùng trạng thái. Chưa dùng kết quả một fixture để kết luận hiệu quả mạng thực tế; B cần đo lặp lại với 2/4/8 client và báo cấu hình cụ thể.
 
 **processingMicros là gì?** Thời gian trong luồng xử lý request đến trước khi gửi ACK; có thể gồm thời gian chờ khóa và gửi phản hồi trước đó. Nó không phải RTT, cũng không phải số đo riêng cho serialize snapshot định kỳ.
 
-**Đã hoàn thành toàn bộ game chưa?** Phần server và test trong phạm vi này đã được kiểm tra. Unity optimized, benchmark mạng và chế độ Hành trình còn phụ thuộc phối hợp với T/B; không trình bày chúng như tính năng đã tích hợp.
+**Đã hoàn thành toàn bộ game chưa?** Server Hành trình, protocol, Unity UI cơ bản và test tự động đã có. Chưa chạy Unity Editor/build trong môi trường này, chưa có benchmark 2/4/8 client và chưa hoàn thiện lời dẫn/VFX từng chương; các phần đó phải được T/B kiểm chứng trước khi báo cáo là hoàn thành end-to-end.
 
 Hãy tập trả lời bằng cách chỉ vào hàm và chạy test minh họa, thay vì học thuộc nguyên đoạn. Tài liệu có AI hỗ trợ biên soạn; người nộp cần tự kiểm chứng và trình bày đúng phần mình hiểu.

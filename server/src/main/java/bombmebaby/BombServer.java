@@ -121,7 +121,7 @@ public final class BombServer {
                 player.dx = 0; player.dz = 0;
                 GameRoom room = player.room;
                 if (room == null) return;
-                if (room.phase != GameRoom.Phase.PLAYING) {
+                if (!room.keepsDisconnectedSession()) {
                     room.leave(player);
                     if (room.players.isEmpty()) rooms.remove(room.code, room);
                 } else {
@@ -178,10 +178,12 @@ public final class BombServer {
                 case "PING" -> send(GameRoom.data("type","PONG","clientTime",number(m,"clientTime",0),"serverTime",System.currentTimeMillis()));
                 case "CREATE_ROOM" -> {
                     if (room != null) { error("ALREADY_IN_ROOM"); return; }
+                    GameMode mode = GameMode.fromProtocol(string(m,"mode"));
+                    if (mode == null) { error("INVALID_MODE"); return; }
                     GameRoom created;
                     do {
                         String code = UUID.randomUUID().toString().substring(0,6).toUpperCase();
-                        created = new GameRoom(code, syncMode);
+                        created = new GameRoom(code, syncMode, mode);
                     } while (rooms.putIfAbsent(created.code, created) != null);
                     created.join(player);
                 }

@@ -6,6 +6,7 @@ using System;
     public string name;
     public string resumeToken;
     public string code;
+    public string mode;
     public bool ready;
     public float directionX;
     public float directionZ;
@@ -24,6 +25,7 @@ using System;
     public string by;
     public int pickupId;
     public long seq;
+    public long lastSeq;
     public long tick;
     public long clientTime;
     public long serverTime;
@@ -32,9 +34,15 @@ using System;
     public float z;
     public float radius;
     public float amount;
+    public bool visible;
     public float arenaSize;
     public string mapId;
     public string mapName;
+    public string mode;
+    public int chapterIndex;
+    public bool journeyComplete;
+    public string[] winnerIds;
+    public ScoreData[] scores;
     public PlayerData[] players;
     public PickupData[] orbs;
     public PickupData[] cores;
@@ -54,6 +62,10 @@ using System;
     public string mapId;
     public string mapName;
     public float arenaSize;
+    public string mode;
+    public int chapterIndex;
+    public bool journeyComplete;
+    public ScoreData[] scores;
     public int maxPlayers;
     public LobbyPlayer[] players;
 }
@@ -63,6 +75,13 @@ using System;
     public string name;
     public bool ready;
     public bool connected;
+}
+
+[Serializable] public class ScoreData {
+    public string playerId;
+    public string name;
+    public int points;
+    public int roundWins;
 }
 
 [Serializable] public class PlayerData {

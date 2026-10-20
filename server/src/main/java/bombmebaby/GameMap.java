@@ -69,6 +69,11 @@ final class GameMap {
 
     static List<GameMap> all() { return MAPS; }
 
+    static GameMap byId(String id) {
+        return MAPS.stream().filter(map -> map.id.equals(id)).findFirst()
+            .orElseThrow(() -> new IllegalArgumentException("Unknown map: " + id));
+    }
+
     static GameMap random(Random random, String previousId) {
         List<GameMap> choices = new ArrayList<>(MAPS);
         if (previousId != null && choices.size() > 1)

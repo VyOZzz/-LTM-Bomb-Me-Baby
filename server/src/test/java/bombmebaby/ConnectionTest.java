@@ -165,6 +165,82 @@ class ConnectionTest {
         peer.until("ACK");
     }
 
+    @Test void createJourneyRoomPublishesModeChapterAndScores() throws Exception {
+        Peer peer = hello();
+        peer.send("type", "CREATE_ROOM", "seq", 1, "mode", "journey");
+        JsonObject room = peer.until("ROOM_STATE").getAsJsonObject("room");
+        assertEquals("JOURNEY", room.get("mode").getAsString());
+        assertEquals(0, room.get("chapterIndex").getAsInt());
+        assertEquals(1, room.getAsJsonArray("scores").size());
+        assertEquals("meadow", room.get("mapId").getAsString());
+        peer.until("ACK");
+
+        peer.send("type", "READY", "seq", 2, "ready", true);
+        JsonObject start = peer.until("GAME_START");
+        assertEquals("JOURNEY", start.get("mode").getAsString());
+        assertEquals(0, start.get("chapterIndex").getAsInt());
+        assertEquals("meadow", start.get("mapId").getAsString());
+        peer.until("STATE_UPDATE");
+        peer.until("ACK");
+    }
+
+    @Test void invalidRoomModeIsRejectedWithoutCreatingRoom() throws Exception {
+        Peer peer = hello();
+        peer.send("type", "CREATE_ROOM", "seq", 1, "mode", "unknown");
+        assertEquals("INVALID_MODE", peer.until("ERROR").get("code").getAsString());
+        peer.until("ACK");
+        assertTrue(server.rooms.isEmpty());
+    }
+
+    @Test void journeyCompleteEventIsBroadcastAfterThreeTcpRounds() throws Exception {
+        Peer a = hello(), b = hello();
+        a.request("type", "CREATE_ROOM", "seq", 1, "mode", "JOURNEY");
+        GameRoom room = a.player.room;
+        b.request("type", "JOIN_ROOM", "seq", 1, "code", room.code);
+
+        long aSeq = 2, bSeq = 2;
+        for (int chapter = 0; chapter < 3; chapter++) {
+            a.request("type", "READY", "seq", aSeq++, "ready", true);
+            b.request("type", "READY", "seq", bSeq++, "ready", true);
+            synchronized (room) {
+                a.player.x = 0; a.player.z = 0;
+                b.player.x = .5; b.player.z = 0; b.player.hp = 1;
+            }
+            a.request("type", "CHARGE_START", "seq", aSeq++);
+            a.request("type", "EXPLODE", "seq", aSeq++);
+            JsonObject gameOver = b.until("GAME_OVER");
+            assertEquals(chapter, gameOver.get("chapterIndex").getAsInt());
+            assertEquals(a.player.id, gameOver.get("winnerId").getAsString());
+        }
+
+        JsonObject complete = b.until("JOURNEY_COMPLETE");
+        assertEquals(2, complete.get("chapterIndex").getAsInt());
+        assertEquals(a.player.id, complete.get("winnerId").getAsString());
+        assertEquals(a.player.id, complete.getAsJsonArray("winnerIds").get(0).getAsString());
+        assertEquals(3, complete.getAsJsonArray("scores").get(0).getAsJsonObject().get("roundWins").getAsInt());
+    }
+
+    @Test void optimizedExplosionEventHidesBushPositionFromOtherViewer() throws Exception {
+        Peer hidden = hello(), viewer = hello();
+        hidden.request("type", "CREATE_ROOM", "seq", 1);
+        GameRoom room = hidden.player.room;
+        viewer.request("type", "JOIN_ROOM", "seq", 1, "code", room.code);
+        hidden.request("type", "READY", "seq", 2, "ready", true);
+        viewer.request("type", "READY", "seq", 2, "ready", true);
+        synchronized (room) {
+            GameMap.Bush bush = room.bushes.get(0);
+            hidden.player.x = bush.x(); hidden.player.z = bush.z();
+            viewer.player.x = bush.x() + 8; viewer.player.z = bush.z();
+            assertFalse(room.canSee(viewer.player, hidden.player));
+        }
+        hidden.request("type", "CHARGE_START", "seq", 3);
+        hidden.request("type", "EXPLODE", "seq", 4);
+        JsonObject event = viewer.until("PLAYER_EXPLODE");
+        assertFalse(event.get("visible").getAsBoolean());
+        assertEquals(0, event.get("x").getAsDouble());
+        assertEquals(0, event.get("z").getAsDouble());
+    }
+
     @Test void disconnectNotifiesOpponentThenTimeoutAwardsCorrectWinner() throws Exception {
         Peer a = hello(), b = hello();
         a.request("type", "CREATE_ROOM", "seq", 1);

@@ -10,36 +10,69 @@ import java.util.Random;
 final class GameRoom {
     enum Phase { WAITING, PLAYING, FINISHED }
     record Pickup(int id, double x, double z) {}
+    private static final List<String> JOURNEY_MAPS = List.of("meadow", "crossroads", "crater");
+    private static final int ROUND_WIN_POINTS = 3;
+    private static final int ELIMINATION_POINTS = 1;
+
+    static final class ScoreState {
+        final String playerId;
+        final String name;
+        int points;
+        int roundWins;
+
+        ScoreState(PlayerState player) {
+            playerId = player.id;
+            name = player.name;
+        }
+
+        Map<String,Object> data() {
+            return GameRoom.data("playerId",playerId,"name",name,
+                "points",points,"roundWins",roundWins);
+        }
+    }
 
     final String code;
     final SyncMode syncMode;
+    final GameMode mode;
     final List<PlayerState> players = new ArrayList<>();
     final List<Pickup> orbs = new ArrayList<>();
     final List<Pickup> cores = new ArrayList<>();
+    final Map<String,ScoreState> journeyScores = new LinkedHashMap<>();
     final Random random = new Random();
     List<GameMap.Obstacle> obstacles;
     List<GameMap.Bush> bushes;
     GameMap map;
     Phase phase = Phase.WAITING;
     long tick;
+    int chapterIndex;
+    boolean journeyComplete;
+    List<String> journeyWinnerIds = List.of();
+    String finalRoundWinnerId = "";
     private int nextPickupId = 1;
     private long lastOrbAt;
     private boolean soloRound;
     private boolean hasStarted;
 
     GameRoom(String code) {
-        this(code, SyncMode.active());
+        this(code, SyncMode.active(), GameMode.QUICK);
     }
 
     GameRoom(String code, SyncMode syncMode) {
+        this(code, syncMode, GameMode.QUICK);
+    }
+
+    GameRoom(String code, SyncMode syncMode, GameMode mode) {
         this.code = code;
         this.syncMode = syncMode;
-        applyMap(GameMap.random(random, null));
+        this.mode = mode;
+        applyMap(mode == GameMode.JOURNEY ? GameMap.byId(JOURNEY_MAPS.get(0)) : GameMap.random(random, null));
     }
 
     synchronized boolean join(PlayerState player) {
-        if (phase == Phase.PLAYING || players.size() >= GameRules.MAX_PLAYERS || players.contains(player)) return false;
+        if (phase == Phase.PLAYING || (mode == GameMode.JOURNEY && hasStarted)
+                || players.size() >= GameRules.MAX_PLAYERS || players.contains(player)) return false;
         players.add(player);
+        if (mode == GameMode.JOURNEY) journeyScores.put(player.id, new ScoreState(player));
         player.room = this;
         player.ready = false;
         broadcast(data("type", "ROOM_STATE", "room", roomInfo()));
@@ -50,6 +83,7 @@ final class GameRoom {
         if (!players.contains(player)) return;
         if (phase == Phase.PLAYING && player.alive) eliminate(player, "left", System.currentTimeMillis());
         players.remove(player);
+        if (mode == GameMode.JOURNEY && !hasStarted) journeyScores.remove(player.id);
         player.room = null;
         player.ready = false;
         checkGameOver();
@@ -58,13 +92,19 @@ final class GameRoom {
 
     synchronized void ready(PlayerState player, boolean value) {
         if (phase == Phase.PLAYING) { reject(player,"MATCH_IN_PROGRESS"); return; }
+        if (journeyComplete) { reject(player,"JOURNEY_COMPLETE"); return; }
         player.ready = value;
         broadcast(data("type", "ROOM_STATE", "room", roomInfo()));
         if (!players.isEmpty() && players.stream().allMatch(p -> p.ready && p.connected)) start(System.currentTimeMillis());
     }
 
     private void start(long now) {
-        if (hasStarted) applyMap(GameMap.random(random, map.id));
+        if (mode == GameMode.JOURNEY) {
+            if (hasStarted) chapterIndex++;
+            applyMap(GameMap.byId(JOURNEY_MAPS.get(chapterIndex)));
+        } else if (hasStarted) {
+            applyMap(GameMap.random(random, map.id));
+        }
         List<double[]> spawns = randomSpawns(players.size());
         hasStarted = true;
         phase = Phase.PLAYING;
@@ -85,6 +125,7 @@ final class GameRoom {
         // has the full layout even when optimized STATE_UPDATEs omit it.
         broadcast(data("type", "GAME_START", "room", code,
             "mapId", map.id, "mapName", map.name, "arenaSize", map.halfSize,
+            "mode",mode.name(),"chapterIndex",protocolChapterIndex(),"scores",scores(),
             "obstacles", obstacles, "bushes", bushes));
         broadcastSnapshots(now);
     }
@@ -128,7 +169,15 @@ final class GameRoom {
     }
 
     synchronized void update(long now, double dt) {
-        if (phase != Phase.PLAYING) return;
+        if (phase != Phase.PLAYING) {
+            if (mode == GameMode.JOURNEY && hasStarted && !journeyComplete) {
+                List<PlayerState> expired = players.stream()
+                    .filter(p -> !p.connected && now - p.disconnectedAt >= GameRules.RECONNECT_MS)
+                    .toList();
+                for (PlayerState player : expired) leave(player);
+            }
+            return;
+        }
         tick++;
         // Resolve every expired disconnect before explosions or winner selection.
         for (PlayerState p : players) {
@@ -194,6 +243,7 @@ final class GameRoom {
         double charge = GameRules.clamp((now - source.chargeSince) / (double) GameRules.MAX_CHARGE_MS, 0, 1);
         double radius = GameRules.blastRadius(source.size, charge);
         double damageDone = 0;
+        PlayerState lastReflector = null;
         for (PlayerState target : players) {
             if (target == source || !target.alive) continue;
             double distance = GameRules.distance(source.x,source.z,target.x,target.z);
@@ -201,18 +251,35 @@ final class GameRoom {
             if (damage <= 0) continue;
             if (now < target.shieldUntil) {
                 damageDone += damage * 0.5;
+                lastReflector = target;
                 broadcast(data("type","DAMAGE_REFLECTED","from",target.id,"to",source.id,"amount",damage * 0.5));
             } else {
                 target.hp = Math.max(0, target.hp - damage);
                 broadcast(data("type","PLAYER_DAMAGED","playerId",target.id,"by",source.id,"amount",damage));
-                if (target.hp <= 0) { source.kills++; eliminate(target, "explosion", now); }
+                if (target.hp <= 0) {
+                    source.kills++;
+                    awardElimination(source);
+                    eliminate(target, "explosion", now);
+                }
             }
         }
         source.hp = Math.max(0, source.hp - damageDone);
         source.size = source.baseSize;
-        broadcast(data("type","PLAYER_EXPLODE","playerId",source.id,"x",source.x,"z",source.z,"radius",radius));
-        if (source.hp <= 0) eliminate(source, "reflection", now);
+        broadcastExplosion(source, radius);
+        if (source.hp <= 0) {
+            if (lastReflector != null) {
+                lastReflector.kills++;
+                awardElimination(lastReflector);
+            }
+            eliminate(source, "reflection", now);
+        }
         checkGameOver();
+    }
+
+    private void awardElimination(PlayerState player) {
+        if (mode != GameMode.JOURNEY) return;
+        ScoreState score = journeyScores.get(player.id);
+        if (score != null) score.points += ELIMINATION_POINTS;
     }
 
     private void eliminate(PlayerState p, String reason, long now) {
@@ -221,7 +288,24 @@ final class GameRoom {
         Pickup core = new Pickup(nextPickupId++, p.x, p.z);
         cores.add(core);
         broadcast(data("type","PLAYER_ELIMINATED","playerId",p.id,"reason",reason));
-        broadcast(data("type","CORE_SPAWNED","pickupId",core.id,"x",core.x,"z",core.z));
+        broadcastCoreSpawn(core);
+    }
+
+    private void broadcastExplosion(PlayerState source, double radius) {
+        for (PlayerState viewer : players) {
+            boolean visible = syncMode != SyncMode.OPTIMIZED || canSee(viewer, source);
+            viewer.send(data("type","PLAYER_EXPLODE","playerId",source.id,
+                "x",visible ? source.x : 0,"z",visible ? source.z : 0,
+                "radius",radius,"visible",visible));
+        }
+    }
+
+    private void broadcastCoreSpawn(Pickup core) {
+        for (PlayerState viewer : players) {
+            if (syncMode == SyncMode.OPTIMIZED
+                    && GameRules.distance(viewer.x,viewer.z,core.x,core.z) > SyncMode.PICKUP_VISIBILITY) continue;
+            viewer.send(data("type","CORE_SPAWNED","pickupId",core.id,"x",core.x,"z",core.z));
+        }
     }
 
     private void checkGameOver() {
@@ -232,10 +316,48 @@ final class GameRoom {
         // player is eliminated or disconnects and no survivors remain.
         if (soloRound && survivors.size() == 1) return;
         if (survivors.size() <= 1) {
+            PlayerState winner = survivors.isEmpty() ? null : survivors.get(0);
+            if (mode == GameMode.JOURNEY && winner != null) {
+                ScoreState score = journeyScores.get(winner.id);
+                if (score != null) {
+                    score.points += ROUND_WIN_POINTS;
+                    score.roundWins++;
+                }
+            }
             phase = Phase.FINISHED;
-            broadcast(data("type","GAME_OVER","winnerId",survivors.isEmpty() ? "" : survivors.get(0).id,"room",code));
+            String winnerId = winner == null ? "" : winner.id;
+            broadcast(data("type","GAME_OVER","winnerId",winnerId,"room",code,
+                "mode",mode.name(),"chapterIndex",protocolChapterIndex(),"scores",scores()));
+            if (mode == GameMode.JOURNEY && chapterIndex == JOURNEY_MAPS.size() - 1) {
+                finalRoundWinnerId = winnerId;
+                journeyComplete = true;
+                journeyWinnerIds = selectJourneyWinners();
+                broadcast(journeyCompleteEvent());
+            }
             broadcast(data("type","ROOM_STATE","room",roomInfo()));
         }
+    }
+
+    private List<String> selectJourneyWinners() {
+        if (journeyScores.isEmpty()) return List.of();
+        int bestPoints = journeyScores.values().stream().mapToInt(score -> score.points).max().orElse(0);
+        List<ScoreState> finalists = journeyScores.values().stream()
+            .filter(score -> score.points == bestPoints).toList();
+        int bestRoundWins = finalists.stream().mapToInt(score -> score.roundWins).max().orElse(0);
+        finalists = finalists.stream().filter(score -> score.roundWins == bestRoundWins).toList();
+        if (finalists.size() > 1 && !finalRoundWinnerId.isEmpty()) {
+            for (ScoreState score : finalists) {
+                if (score.playerId.equals(finalRoundWinnerId)) return List.of(score.playerId);
+            }
+        }
+        return finalists.stream().map(score -> score.playerId).toList();
+    }
+
+    Map<String,Object> journeyCompleteEvent() {
+        String winnerId = journeyWinnerIds.size() == 1 ? journeyWinnerIds.get(0) : "";
+        return data("type","JOURNEY_COMPLETE","room",code,"mode",mode.name(),
+            "chapterIndex",protocolChapterIndex(),"winnerId",winnerId,
+            "winnerIds",journeyWinnerIds,"scores",scores());
     }
 
     private void spawnOrb() {
@@ -309,16 +431,27 @@ final class GameRoom {
         bushes = selected.bushes;
     }
 
+    private int protocolChapterIndex() {
+        return mode == GameMode.JOURNEY ? chapterIndex : -1;
+    }
+
+    synchronized List<Map<String,Object>> scores() {
+        if (mode != GameMode.JOURNEY) return List.of();
+        return journeyScores.values().stream().map(ScoreState::data).toList();
+    }
+
     synchronized Map<String,Object> roomInfo() {
         return data("code",code,"phase",phase.name(),"mapId",map.id,"mapName",map.name,
-            "arenaSize",map.halfSize,"maxPlayers",GameRules.MAX_PLAYERS,"players",players.stream().map(p -> data(
+            "arenaSize",map.halfSize,"maxPlayers",GameRules.MAX_PLAYERS,
+            "mode",mode.name(),"chapterIndex",protocolChapterIndex(),"scores",scores(),
+            "journeyComplete",journeyComplete,"players",players.stream().map(p -> data(
             "id",p.id,"name",p.name,"ready",p.ready,"connected",p.connected)).toList());
     }
 
     /** Snapshot without visibility filtering; still uses this room's sync mode. */
     synchronized Map<String,Object> snapshot(long now) { return snapshot(now, null); }
 
-    /** Snapshot for a specific viewer, using the server-wide SyncMode. */
+    /** Snapshot for a specific viewer, using the room SyncMode. */
     synchronized Map<String,Object> snapshot(long now, PlayerState viewer) {
         return snapshot(now, viewer, false);
     }
@@ -328,11 +461,17 @@ final class GameRoom {
      *
      * @param now           current epoch millis
      * @param viewer        the player who will receive this snapshot (null = spectator / test)
-     * @param forceBaseline if true, include obstacles/bushes and full data even in optimized mode
-     *                      (used on reconnect so the client gets a complete picture)
+     * @param includeStaticGeometry include obstacles/bushes even in optimized mode;
+     *                              visibility and pickup culling remain enforced
      */
-    synchronized Map<String,Object> snapshot(long now, PlayerState viewer, boolean forceBaseline) {
-        boolean optimized = !forceBaseline && syncMode == SyncMode.OPTIMIZED;
+    synchronized Map<String,Object> snapshot(long now, PlayerState viewer, boolean includeStaticGeometry) {
+        return snapshot(now, viewer, includeStaticGeometry, false);
+    }
+
+    /** Fourth argument is only for a controlled baseline comparison in tests. */
+    synchronized Map<String,Object> snapshot(long now, PlayerState viewer,
+                                             boolean includeStaticGeometry, boolean forceBaselineData) {
+        boolean optimized = !forceBaselineData && syncMode == SyncMode.OPTIMIZED;
 
         // ---- player states ----
         List<Map<String,Object>> states = new ArrayList<>();
@@ -367,11 +506,12 @@ final class GameRoom {
 
         Map<String,Object> snap = data("type","STATE_UPDATE","tick",tick,"phase",phase.name(),
             "mapId",map.id,"mapName",map.name,"arenaSize",map.halfSize,
+            "mode",mode.name(),"chapterIndex",protocolChapterIndex(),"scores",scores(),
             "players",states,"orbs",visibleOrbs,"cores",visibleCores);
 
         // In baseline mode (or forced), include static map geometry every tick.
         // In optimized mode the client already has them from GAME_START.
-        if (!optimized) {
+        if (!optimized || includeStaticGeometry) {
             snap.put("obstacles", obstacles);
             snap.put("bushes", bushes);
         }
@@ -384,6 +524,10 @@ final class GameRoom {
             return false;
         int targetBush = bushAt(target.x, target.z);
         return targetBush < 0 || bushAt(viewer.x, viewer.z) == targetBush;
+    }
+
+    synchronized boolean keepsDisconnectedSession() {
+        return phase == Phase.PLAYING || (mode == GameMode.JOURNEY && hasStarted && !journeyComplete);
     }
 
     private int bushAt(double x, double z) {
