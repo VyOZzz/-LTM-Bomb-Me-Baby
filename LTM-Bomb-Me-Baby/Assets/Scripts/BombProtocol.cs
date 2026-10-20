@@ -49,6 +49,26 @@ using System;
     public ObstacleData[] obstacles;
     public BushData[] bushes;
     public string phase;
+    public ObjectiveData objective;
+}
+
+/// Journey shard objective in STATE_UPDATE. JsonUtility never leaves it null, so an empty
+/// state means the snapshot had no objective (Quick mode).
+[Serializable] public class ObjectiveData {
+    public string state;          // WAITING, GROUND, CARRIED, PLACED
+    public float x;
+    public float z;
+    public string carrierId;
+    public string ownerId;
+    public string challengerId;
+    public float capture;         // 0..1 progress of the current challenger
+    public float pedestalX;
+    public float pedestalZ;
+    public float pedestalRadius;
+    public float timeLeft;        // seconds until the chapter ends
+    public float spawnIn;         // seconds until the shard appears
+
+    public bool Active => !string.IsNullOrEmpty(state);
 }
 
 [Serializable] public class RoomEnvelope {
@@ -81,7 +101,8 @@ using System;
     public string playerId;
     public string name;
     public int points;
-    public int roundWins;
+    public int roundWins;      // shards brought home
+    public int eliminations;
 }
 
 [Serializable] public class PlayerData {
