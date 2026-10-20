@@ -84,6 +84,14 @@ public sealed class BombNetwork : IDisposable {
         }
     }
 
+    public void ContinueSequenceAfter(long lastAcceptedSequence) {
+        long current;
+        do {
+            current = Interlocked.Read(ref sequence);
+            if (current >= lastAcceptedSequence) return;
+        } while (Interlocked.CompareExchange(ref sequence, lastAcceptedSequence, current) != current);
+    }
+
     public bool TryReceive(out string line) { return inbox.TryDequeue(out line); }
 
     public void Dispose() {

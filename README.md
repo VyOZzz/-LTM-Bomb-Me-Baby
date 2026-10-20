@@ -24,7 +24,7 @@ Server mặc định nghe TCP port `7777`. Mở firewall cho port này nếu ng�
 ## Tài liệu và kiểm thử phần Java server (thành viên A)
 
 - [Học từ đầu và giải thích từng phần code](docs/THANH_VIEN_A_HUONG_DAN.md).
-- [Kết quả 38 test và phạm vi đã kiểm chứng](docs/THANH_VIEN_A_KIEM_THU.md).
+- [Kết quả 45 test và phạm vi đã kiểm chứng](docs/THANH_VIEN_A_KIEM_THU.md).
 - [Bàn giao cho T/B: tích hợp JSON và so sánh baseline/optimized](docs/THANH_VIEN_A_BAN_GIAO.md).
 
 Server mặc định dùng baseline. Từ thư mục `server/`, kiểm tra cả hai cấu hình:
@@ -34,7 +34,7 @@ mvn clean test "-Dsync.mode=baseline"
 mvn test "-Dsync.mode=optimized"
 ```
 
-Chạy server bằng `mvn compile exec:java "-Dexec.args=7777" "-Dsync.mode=baseline"`. Chế độ `optimized` đã có phía server nhưng cần T cập nhật Unity và thống nhất protocol trước khi dùng cho demo. Cải tiến hiện tại là đồng bộ chọn lọc, chưa phải delta từng trường giữa hai snapshot.
+Chạy server bằng `mvn compile exec:java "-Dexec.args=7777" "-Dsync.mode=baseline"`. Unity có nút tạo phòng Đấu nhanh và Hành trình Ba Mảnh. Chế độ `optimized` gửi geometry một lần ở GAME_START và lọc snapshot theo viewer; đây là đồng bộ chọn lọc, chưa phải delta từng trường giữa hai snapshot.
 
 ## Chạy Unity client
 
@@ -44,7 +44,7 @@ Chạy server bằng `mvn compile exec:java "-Dexec.args=7777" "-Dsync.mode=base
 4. Client thứ nhất chọn **Tạo phòng**. Các client còn lại nhập mã 6 ký tự và **Vào phòng**.
 5. Chọn **Sẵn sàng** để bắt đầu. Hiện tại có thể chơi một mình để kiểm thử; khi có nhiều người, trận bắt đầu khi tất cả cùng sẵn sàng (tối đa 10 người). Để chơi nhiều client trên cùng máy, build một bản Windows/Mac rồi chạy cùng lúc với Unity Editor, hoặc chạy nhiều bản build.
 
-Điều khiển: **WASD/phím mũi tên** di chuyển theo hướng màn hình, **giữ Space** nạp và **thả Space** để nổ, **E** bật Shield, **Shift** Boost. Camera bám sát quả bóng của người chơi và chỉ hiển thị một vùng nhỏ của map. Mỗi vòng dùng một trong ba map server-authoritative rộng 96×96 đến 104×104; vòng kế tiếp trong cùng phòng sẽ đổi sang map khác.
+Điều khiển: **WASD/phím mũi tên** di chuyển theo hướng màn hình, **giữ Space** nạp và **thả Space** để nổ, **E** bật Shield, **Shift** Boost. Camera bám sát quả bóng của người chơi và chỉ hiển thị một vùng nhỏ của map. Đấu nhanh đổi sang một map khác ở vòng sau; Hành trình luôn chạy `meadow → crossroads → crater`, giữ điểm qua ba vòng.
 
 ## Bật AI trong Unity Editor
 

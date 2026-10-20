@@ -174,6 +174,7 @@ public sealed class BombGame : MonoBehaviour {
             case "WELCOME":
                 myId = msg.playerId;
                 network.ResumeToken = msg.resumeToken;
+                network.ContinueSequenceAfter(msg.lastSeq);
                 status = "Đã kết nối. Tạo phòng hoặc nhập mã phòng.";
                 break;
             case "ROOM_STATE":
@@ -186,7 +187,10 @@ public sealed class BombGame : MonoBehaviour {
                 break;
             case "GAME_START":
                 phase = "PLAYING"; winnerId = ""; charging = false;
-                status = "Trận đấu bắt đầu" + (string.IsNullOrEmpty(msg.mapName) ? "!" : ": " + msg.mapName);
+                ApplyMap(msg);
+                status = msg.mode == "JOURNEY"
+                    ? $"Chương {msg.chapterIndex + 1}/3: {msg.mapName}"
+                    : "Trận đấu bắt đầu" + (string.IsNullOrEmpty(msg.mapName) ? "!" : ": " + msg.mapName);
                 break;
             case "STATE_UPDATE":
                 phase = msg.phase;
@@ -194,12 +198,21 @@ public sealed class BombGame : MonoBehaviour {
                 break;
             case "PLAYER_EXPLODE":
                 if (msg.playerId == myId) charging = false;
-                StartCoroutine(Explosion(new Vector3(msg.x, .45f, msg.z), msg.radius));
+                if (msg.visible) StartCoroutine(Explosion(new Vector3(msg.x, .45f, msg.z), msg.radius));
                 break;
             case "GAME_OVER":
                 phase = "FINISHED";
                 winnerId = msg.winnerId;
-                status = winnerId == myId ? "Bạn chiến thắng!" : "Trận đấu kết thúc.";
+                status = msg.mode == "JOURNEY"
+                    ? (winnerId == myId ? "Bạn thắng chương này!" : "Chương đã kết thúc. Sẵn sàng cho chương kế tiếp.")
+                    : (winnerId == myId ? "Bạn chiến thắng!" : "Trận đấu kết thúc.");
+                break;
+            case "JOURNEY_COMPLETE":
+                phase = "FINISHED";
+                winnerId = msg.winnerId;
+                status = string.IsNullOrEmpty(winnerId)
+                    ? "Hành trình kết thúc: đồng hạng."
+                    : (winnerId == myId ? "Bạn đã khôi phục Tim Lửa!" : "Hành trình Ba Mảnh đã kết thúc.");
                 break;
             case "PONG":
                 rttMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - msg.clientTime;
@@ -471,16 +484,26 @@ public sealed class BombGame : MonoBehaviour {
             if (GUILayout.Button("Kết nối", GUILayout.Height(34)) && int.TryParse(port,out int parsed))
                 network.Connect(host,parsed,playerName);
         } else if (room == null) {
-            if (GUILayout.Button("Tạo phòng", GUILayout.Height(34))) network.Send(new BombMessage { type = "CREATE_ROOM" });
+            if (GUILayout.Button("Tạo phòng Đấu nhanh", GUILayout.Height(34)))
+                network.Send(new BombMessage { type = "CREATE_ROOM", mode = "QUICK" });
+            if (GUILayout.Button("Tạo Hành trình Ba Mảnh", GUILayout.Height(34)))
+                network.Send(new BombMessage { type = "CREATE_ROOM", mode = "JOURNEY" });
             GUILayout.Label("Mã phòng", bodyStyle); joinCode = GUILayout.TextField(joinCode,6);
             if (GUILayout.Button("Vào phòng", GUILayout.Height(34))) network.Send(new BombMessage { type = "JOIN_ROOM", code = joinCode });
         } else {
             GUILayout.Label("Phòng: " + room.code + "  •  " + phase, bodyStyle);
+            if (room.mode == "JOURNEY")
+                GUILayout.Label($"Hành trình Ba Mảnh  •  Chương {room.chapterIndex + 1}/3", bodyStyle);
             if (!string.IsNullOrEmpty(room.mapName))
                 GUILayout.Label("Map: " + room.mapName + $"  •  {room.arenaSize*2:0}×{room.arenaSize*2:0}", smallStyle);
+            if (room.scores != null && room.scores.Length > 0) {
+                GUILayout.Label("Bảng điểm hành trình", bodyStyle);
+                foreach (ScoreData score in room.scores)
+                    GUILayout.Label($"   {score.name}: {score.points} điểm • {score.roundWins} vòng thắng", smallStyle);
+            }
             if (room.players != null) foreach (LobbyPlayer p in room.players)
                 GUILayout.Label((p.id == myId ? "▶ " : "   ") + p.name + (p.ready ? " ✓" : "") + (p.connected ? "" : " (mất kết nối)"), bodyStyle);
-            if (phase != "PLAYING") {
+            if (phase != "PLAYING" && !room.journeyComplete) {
                 bool myReady = false;
                 if (room.players != null) foreach (LobbyPlayer p in room.players) if (p.id == myId) myReady = p.ready;
                 if (GUILayout.Button(myReady ? "Bỏ sẵn sàng" : "Sẵn sàng", GUILayout.Height(34)))

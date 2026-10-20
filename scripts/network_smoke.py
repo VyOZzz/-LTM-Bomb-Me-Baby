@@ -49,14 +49,19 @@ def main():
         b.until("ROOM_STATE")
         a.send("READY", ready=True)
         b.send("READY", ready=True)
-        assert a.until("GAME_START")["room"] == code
-        assert b.until("GAME_START")["room"] == code
+        start_a = a.until("GAME_START")
+        start_b = b.until("GAME_START")
+        assert start_a["room"] == code
+        assert start_b["room"] == code
+        assert len(start_a["obstacles"]) > 0
+        assert len(start_a["bushes"]) > 0
         state = a.until("STATE_UPDATE")
         assert len(state["players"]) == 2
         assert len(state["orbs"]) > 0
         assert state["mapId"] in {"meadow", "crater", "crossroads"}
         assert state["arenaSize"] >= 46
-        assert len(state["bushes"]) > 0
+        # Static geometry is guaranteed by GAME_START. Baseline may repeat it
+        # here; optimized snapshots intentionally omit it.
         a.send("MOVE", directionX=1, directionZ=0)
         a.send("CHARGE_START")
         a.send("EXPLODE")

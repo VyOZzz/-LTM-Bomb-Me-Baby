@@ -18,8 +18,9 @@ package bombmebaby;
  *   <li>orbs and cores beyond the viewer's visibility distance are
  *       excluded from the snapshot.</li>
  * </ul></p>
- * Recovery currently forces a baseline snapshot; coordinate-bearing events
- * also remain unchanged. This mode is not a comprehensive anti-cheat boundary.
+ * Recovery includes static geometry but keeps visibility/culling enabled.
+ * Coordinate-bearing explosion/Core-spawn events are filtered per viewer too.
+ * This mode is still not a comprehensive anti-cheat boundary.
  *
  * The active mode is selected via the system property {@code sync.mode}:
  * <pre>

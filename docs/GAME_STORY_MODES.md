@@ -1,6 +1,6 @@
 # Đề xuất cốt truyện và chế độ chơi — Bomb Me Baby
 
-Trạng thái: **đề xuất thiết kế**, cập nhật 14/10/2026. Các tính năng cốt truyện và chế độ mới dưới đây **chưa được triển khai**.
+Trạng thái: cập nhật 20/10/2026. **Hành trình Ba Mảnh đã được triển khai ở Java server, JSON protocol và UI Unity cơ bản**. Lời dẫn, hình/tiếng từng chương và kiểm thử Unity end-to-end vẫn cần hoàn thiện trong Editor. Đội 2v2 vẫn chỉ là đề xuất.
 
 ## Ý tưởng chính
 
@@ -37,12 +37,12 @@ Giọng điệu: vui, cạnh tranh, hơi bí ẩn; nhân vật bị **loại kh�
 - Dùng luật và luồng phòng hiện tại: tạo/vào phòng → Ready → trận → kết quả.
 - Cần hoàn thiện build Unity, HUD, âm thanh/VFX, reconnect và kiểm thử end-to-end.
 
-### 2. Hành trình Ba Mảnh — mục tiêu sau khi Đấu nhanh ổn định
+### 2. Hành trình Ba Mảnh — đã có logic server và UI cơ bản
 
 - 2–4 người trong cùng phòng chơi **ba vòng theo thứ tự** `meadow → crossroads → crater`.
 - Sau mỗi vòng, người bị loại trở lại ở vòng sau. Mỗi người thắng vòng được **3 điểm**, mỗi lần loại đối thủ được **1 điểm**. Hết ba vòng, tổng điểm cao nhất thắng hành trình; hòa điểm thì xét số vòng thắng, sau đó là người thắng vòng cuối. Nếu vẫn bằng nhau, công bố đồng hạng.
 - Giữa các vòng: màn kể chuyện ngắn, bảng điểm và nút Ready. Vòng mới đặt lại HP/Size/cooldown như hiện tại; **điểm hành trình** được giữ trên server.
-- Server chọn map, tính điểm và phát kết quả; client chỉ hiển thị. Cần thêm `mode`, `chapterIndex`, `scores` vào trạng thái phòng và event kết thúc hành trình. Giao thức cụ thể phải chốt trước khi sửa cả Java và Unity.
+- Server chọn map, tính điểm và phát kết quả; client chỉ hiển thị. `mode`, `chapterIndex`, `scores` đã có trong trạng thái và `JOURNEY_COMPLETE` kết thúc hành trình. Xem `docs/PROTOCOL.md`.
 
 ### 3. Đội 2v2 — chỉ làm sau hai chế độ trên
 
@@ -58,5 +58,5 @@ Nếu muốn danh sách online toàn hệ thống, bổ sung `ONLINE_LIST` khi v
 ## Ranh giới kỹ thuật và lịch
 
 - Đến **20/10:** hoàn thiện Đấu nhanh, chọn map/hiển thị chuyện mở đầu đơn giản, có ít nhất một trận 2–4 Unity client chạy thật.
-- Sau đó triển khai Hành trình Ba Mảnh theo từng bước: cố định thứ tự map → điểm hành trình trên server → event/chapter UI → test nhiều vòng.
+- Hành trình đã có thứ tự map, điểm server, event/UI cơ bản và test nhiều vòng. Việc tiếp theo là playtest 2–4 Unity client, hoàn thiện lời dẫn/VFX và sửa lỗi tích hợp nếu có.
 - Cốt truyện, art và chế độ chơi giúp phần chức năng/demo. Phần **Novelty / Contributions** của môn Lập trình mạng vẫn cần cải tiến kỹ thuật riêng và số liệu thực nghiệm, như kế hoạch trong `docs/TEAM_PLAN.md`.

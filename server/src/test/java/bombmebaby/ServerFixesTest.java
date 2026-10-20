@@ -157,7 +157,7 @@ class ServerFixesTest {
         assertEquals(0.0, hidden.get("z"));
     }
 
-    @Test void recoveryPreservesExistingFullSnapshotContract() {
+    @Test void optimizedRecoveryIncludesMapWithoutRevealingHiddenState() {
         GameRoom room = startedRoom(SyncMode.OPTIMIZED);
         var viewer = room.players.get(0);
         var other = room.players.get(1);
@@ -166,9 +166,10 @@ class ServerFixesTest {
         var snap = room.snapshot(1000, viewer, true);
         assertEquals(room.obstacles, snap.get("obstacles"));
         assertEquals(room.bushes, snap.get("bushes"));
-        assertEquals(room.orbs, snap.get("orbs"));
-        // Existing protocol behavior; changing this needs coordination with T.
-        assertEquals(other.x, state(snap, 1).get("x"));
+        assertEquals(List.of(), snap.get("orbs"));
+        assertEquals(false, state(snap, 1).get("visible"));
+        assertEquals(0.0, state(snap, 1).get("x"));
+        assertEquals(0.0, state(snap, 1).get("z"));
     }
 
     @Test void returnedSnapshotDoesNotShareMutablePickupLists() {
@@ -185,7 +186,7 @@ class ServerFixesTest {
         GameRoom room = startedRoom(SyncMode.OPTIMIZED);
         PlayerState viewer = room.players.get(0);
         room.orbs.add(new GameRoom.Pickup(991, viewer.x + 40, viewer.z));
-        int baseline = bytes(room.snapshot(1000, viewer, true));
+        int baseline = bytes(room.snapshot(1000, viewer, true, true));
         int optimized = bytes(room.snapshot(1000, viewer));
         assertTrue(optimized < baseline, "Compare same room, tick, viewer and state");
         System.out.printf("[Snapshot fixture] baseline=%d optimized=%d UTF-8 bytes (JSON only)%n", baseline, optimized);
