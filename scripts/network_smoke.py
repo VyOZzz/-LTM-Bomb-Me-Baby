@@ -1,6 +1,3 @@
-Copy toàn bộ đoạn này vào `scripts/network_smoke.py`:
-
-```python
 """Run against a live server: python3 scripts/network_smoke.py [port]."""
 
 import json
