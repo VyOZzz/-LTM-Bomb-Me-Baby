@@ -18,7 +18,8 @@ final class GameRoom {
         final String playerId;
         final String name;
         int points;
-        int roundWins;
+        int roundWins;      // chapters won = Fire Heart shards brought home
+        int eliminations;
 
         ScoreState(PlayerState player) {
             playerId = player.id;
@@ -27,7 +28,7 @@ final class GameRoom {
 
         Map<String,Object> data() {
             return GameRoom.data("playerId",playerId,"name",name,
-                "points",points,"roundWins",roundWins);
+                "points",points,"roundWins",roundWins,"eliminations",eliminations);
         }
     }
 
@@ -42,6 +43,8 @@ final class GameRoom {
     List<GameMap.Obstacle> obstacles;
     List<GameMap.Bush> bushes;
     GameMap map;
+    /** Shard and pedestal of the current Journey chapter; null in Quick mode. */
+    ShardObjective objective;
     Phase phase = Phase.WAITING;
     long tick;
     int chapterIndex;
@@ -121,6 +124,10 @@ final class GameRoom {
         }
         for (int i = 0; i < GameRules.INITIAL_ORBS; i++) spawnOrb();
         lastOrbAt = now;
+        if (mode == GameMode.JOURNEY) {
+            double[] shard = shardSpawn();
+            objective = new ShardObjective(now, shard[0], shard[1]);
+        } else objective = null;
         // GAME_START always includes the static map geometry so the client
         // has the full layout even when optimized STATE_UPDATEs omit it.
         broadcast(data("type", "GAME_START", "room", code,
@@ -201,6 +208,10 @@ final class GameRoom {
             if (phase != Phase.PLAYING) return;
         }
         pickupCores();
+        if (objective != null && objective.update(now, players)) {
+            finishRound(objective.holder(), "TIME");
+            return;
+        }
         if (now - lastOrbAt >= 500 && orbs.size() < GameRules.MAX_ORBS) { spawnOrb(); lastOrbAt = now; }
         if (tick % 2 == 0) broadcastSnapshots(now);
     }
@@ -279,12 +290,16 @@ final class GameRoom {
     private void awardElimination(PlayerState player) {
         if (mode != GameMode.JOURNEY) return;
         ScoreState score = journeyScores.get(player.id);
-        if (score != null) score.points += ELIMINATION_POINTS;
+        if (score != null) {
+            score.points += ELIMINATION_POINTS;
+            score.eliminations++;
+        }
     }
 
     private void eliminate(PlayerState p, String reason, long now) {
         if (!p.alive) return;
         p.alive = false; p.hp = 0; p.charging = false; p.dx = 0; p.dz = 0;
+        if (objective != null) objective.onEliminated(p);
         Pickup core = new Pickup(nextPickupId++, p.x, p.z);
         cores.add(core);
         broadcast(data("type","PLAYER_ELIMINATED","playerId",p.id,"reason",reason));
@@ -315,36 +330,39 @@ final class GameRoom {
         // the round after every explosion. A solo round still finishes if the
         // player is eliminated or disconnects and no survivors remain.
         if (soloRound && survivors.size() == 1) return;
-        if (survivors.size() <= 1) {
-            PlayerState winner = survivors.isEmpty() ? null : survivors.get(0);
-            if (mode == GameMode.JOURNEY && winner != null) {
-                ScoreState score = journeyScores.get(winner.id);
-                if (score != null) {
-                    score.points += ROUND_WIN_POINTS;
-                    score.roundWins++;
-                }
-            }
-            phase = Phase.FINISHED;
-            String winnerId = winner == null ? "" : winner.id;
-            broadcast(data("type","GAME_OVER","winnerId",winnerId,"room",code,
-                "mode",mode.name(),"chapterIndex",protocolChapterIndex(),"scores",scores()));
-            if (mode == GameMode.JOURNEY && chapterIndex == JOURNEY_MAPS.size() - 1) {
-                finalRoundWinnerId = winnerId;
-                journeyComplete = true;
-                journeyWinnerIds = selectJourneyWinners();
-                broadcast(journeyCompleteEvent());
-            }
-            broadcast(data("type","ROOM_STATE","room",roomInfo()));
-        }
+        if (survivors.size() <= 1) finishRound(survivors.isEmpty() ? null : survivors.get(0), "LAST_STANDING");
     }
 
+    /** Ends the round; in Journey the winner keeps this chapter's shard (+1 roundWins). */
+    private void finishRound(PlayerState winner, String reason) {
+        if (mode == GameMode.JOURNEY && winner != null) {
+            ScoreState score = journeyScores.get(winner.id);
+            if (score != null) {
+                score.points += ROUND_WIN_POINTS;
+                score.roundWins++;
+            }
+        }
+        phase = Phase.FINISHED;
+        String winnerId = winner == null ? "" : winner.id;
+        broadcast(data("type","GAME_OVER","winnerId",winnerId,"room",code,"reason",reason,
+            "mode",mode.name(),"chapterIndex",protocolChapterIndex(),"scores",scores()));
+        if (mode == GameMode.JOURNEY && chapterIndex == JOURNEY_MAPS.size() - 1) {
+            finalRoundWinnerId = winnerId;
+            journeyComplete = true;
+            journeyWinnerIds = selectJourneyWinners();
+            broadcast(journeyCompleteEvent());
+        }
+        broadcast(data("type","ROOM_STATE","room",roomInfo()));
+    }
+
+    /** Most shards wins; ties go to more eliminations, then to the final chapter's winner. */
     private List<String> selectJourneyWinners() {
         if (journeyScores.isEmpty()) return List.of();
-        int bestPoints = journeyScores.values().stream().mapToInt(score -> score.points).max().orElse(0);
+        int bestRoundWins = journeyScores.values().stream().mapToInt(score -> score.roundWins).max().orElse(0);
         List<ScoreState> finalists = journeyScores.values().stream()
-            .filter(score -> score.points == bestPoints).toList();
-        int bestRoundWins = finalists.stream().mapToInt(score -> score.roundWins).max().orElse(0);
-        finalists = finalists.stream().filter(score -> score.roundWins == bestRoundWins).toList();
+            .filter(score -> score.roundWins == bestRoundWins).toList();
+        int bestEliminations = finalists.stream().mapToInt(score -> score.eliminations).max().orElse(0);
+        finalists = finalists.stream().filter(score -> score.eliminations == bestEliminations).toList();
         if (finalists.size() > 1 && !finalRoundWinnerId.isEmpty()) {
             for (ScoreState score : finalists) {
                 if (score.playerId.equals(finalRoundWinnerId)) return List.of(score.playerId);
@@ -375,6 +393,18 @@ final class GameRoom {
         for (GameMap.Obstacle o : obstacles)
             if (GameRules.distance(x,z,o.x(),o.z()) < radius + o.radius()) return false;
         return true;
+    }
+
+    /** Open spot away from the central pedestal, so the shard has to be carried there. */
+    private double[] shardSpawn() {
+        double span = (map.halfSize - 4) * 2;
+        for (int i = 0; i < 500; i++) {
+            double x = -map.halfSize + 4 + random.nextDouble() * span;
+            double z = -map.halfSize + 4 + random.nextDouble() * span;
+            if (GameRules.distance(x, z, ShardObjective.PEDESTAL_X, ShardObjective.PEDESTAL_Z) >= map.halfSize * .45
+                    && freeSpawn(x, z)) return new double[] {x, z};
+        }
+        return new double[] {map.halfSize * .5, 0};
     }
 
     private boolean freeSpawn(double x, double z) {
@@ -515,11 +545,14 @@ final class GameRoom {
             snap.put("obstacles", obstacles);
             snap.put("bushes", bushes);
         }
+        // The objective is public information: every viewer gets it, also in optimized mode.
+        if (objective != null) snap.put("objective", objective.data(now));
         return snap;
     }
 
     synchronized boolean canSee(PlayerState viewer, PlayerState target) {
         if (viewer == null || viewer == target) return true;
+        if (objective != null && phase == Phase.PLAYING && objective.reveals(target)) return true;
         if (GameRules.distance(viewer.x,viewer.z,target.x,target.z) > GameRules.PLAYER_VISIBILITY_DISTANCE)
             return false;
         int targetBush = bushAt(target.x, target.z);

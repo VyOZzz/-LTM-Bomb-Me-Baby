@@ -45,12 +45,35 @@ Server trả `ACK` sau request không phải PING. ACK xác nhận server đã x
 - `code`, `phase`, `mapId`, `mapName`, `arenaSize`, `maxPlayers`, `players`;
 - `mode`: `QUICK` hoặc `JOURNEY`;
 - `chapterIndex`: `-1` cho QUICK; `0`, `1`, `2` cho ba chương JOURNEY;
-- `scores`: mảng `{playerId,name,points,roundWins}`; rỗng trong QUICK;
+- `scores`: mảng `{playerId,name,points,roundWins,eliminations}`; rỗng trong QUICK. `roundWins` là số mảnh Tim Lửa đã mang về, `eliminations` là số lần loại đối thủ;
 - `journeyComplete`: hành trình đã kết thúc hay chưa.
 
 Ba map JOURNEY luôn theo thứ tự `meadow → crossroads → crater`. Người thắng vòng nhận 3 điểm và tăng `roundWins` thêm 1. Mỗi lần trực tiếp loại đối thủ bằng vụ nổ hoặc sát thương phản khiên nhận 1 điểm. Rời trận/disconnect không cho điểm loại đối thủ, nhưng người sống cuối vẫn nhận điểm thắng vòng.
 
-Sau ba vòng, server xếp theo tổng `points`, rồi `roundWins`, rồi ưu tiên người thắng vòng cuối nếu người đó còn nằm trong nhóm hòa. Nếu vẫn hòa, `winnerId` rỗng và `winnerIds` chứa các người đồng hạng.
+Sau ba vòng, server xếp theo số mảnh (`roundWins`), rồi `eliminations`, rồi ưu tiên người thắng vòng cuối nếu người đó còn nằm trong nhóm hòa. Nếu vẫn hòa, `winnerId` rỗng và `winnerIds` chứa các người đồng hạng. `points` vẫn được gửi để hiển thị nhưng không còn dùng để xếp hạng (thay đổi 20/10/2026).
+
+### Mảnh Tim Lửa và bệ đá (chỉ JOURNEY, từ 20/10/2026)
+
+Mỗi chương có một mảnh và một bệ đá ở tâm map (`ShardObjective.java`):
+
+1. Mảnh xuất hiện sau 10 giây ở một chỗ trống ngẫu nhiên, cách bệ ít nhất 45% nửa cạnh map.
+2. Người chạm vào mảnh thì cầm mảnh. Người cầm luôn được mọi viewer nhìn thấy (`visible=true`, kể cả trong bụi hay ngoài tầm nhìn). Người cầm chỉ mất mảnh khi bị loại; mảnh rơi tại chỗ.
+3. Người cầm bước vào vòng bệ (bán kính 3) thì mảnh được đặt lên bệ và người đó thành chủ bệ.
+4. Người khác đứng một mình trong vòng bệ 3 giây thì chiếm bệ. Chủ bệ đứng trong vòng thì tạm dừng việc chiếm; người chiếm rời vòng thì đếm lại từ đầu; nhiều người chiếm cùng lúc thì đứng yên. Chủ bệ bị loại thì bệ vô chủ.
+5. Hết 3 phút, chủ bệ (nếu chưa đặt thì người đang cầm) thắng chương với `reason="TIME"`. Chỉ còn một người sống thì người đó thắng với `reason="LAST_STANDING"`.
+
+Mọi `STATE_UPDATE` của JOURNEY có thêm object công khai, không lọc theo viewer kể cả ở OPTIMIZED:
+
+```json
+"objective": {
+  "state":"PLACED", "x":0, "z":0,
+  "carrierId":"", "ownerId":"...", "challengerId":"...", "capture":0.4,
+  "pedestalX":0, "pedestalZ":0, "pedestalRadius":3,
+  "timeLeft":95.2, "spawnIn":0
+}
+```
+
+`state` là `WAITING`, `GROUND`, `CARRIED` hoặc `PLACED`; `capture` là tiến độ 0..1 của `challengerId`. QUICK không có trường `objective`. Không có event riêng cho mảnh; client so hai snapshot liên tiếp để hiện thông báo.
 
 ## Bắt đầu và đồng bộ trận
 
@@ -74,6 +97,7 @@ Mỗi vòng kết thúc bằng:
   "type":"GAME_OVER",
   "winnerId":"...",
   "room":"ABC123",
+  "reason":"TIME",
   "mode":"JOURNEY",
   "chapterIndex":0,
   "scores":[{"playerId":"...","name":"Bom A","points":4,"roundWins":1}]
