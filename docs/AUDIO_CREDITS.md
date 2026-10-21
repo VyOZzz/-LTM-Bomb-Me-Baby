@@ -24,15 +24,18 @@ Nguồn gợi ý: [Kenney.nl](https://kenney.nl/assets) (CC0), [OpenGameArt.org]
 
 | Sự kiện trong game | File trong project | Tên gốc | Tác giả | Link nguồn | Giấy phép | Chỉnh sửa |
 | --- | --- | --- | --- | --- | --- | --- |
-| Nạp nổ (charge) | | | | | | |
-| Nổ (`PLAYER_EXPLODE`) | | | | | | |
-| Nhặt orb | | | | | | |
-| Nhặt Core | | | | | | |
-| Bật Shield | | | | | | |
-| Boost | | | | | | |
-| Bị trúng nổ / mất HP | | | | | | |
-| Thắng / thua | | | | | | |
-| Nút bấm UI | | | | | | |
+| Nạp nổ (charge) | `Assets/Resources/Audio/sfx_charge_loop.wav` | SFX Charge Loop | Nhóm Bomb Me Baby | `scripts/generate_sfx.ps1` | Tự tạo cho đồ án | Tổng hợp sóng sin tuần hoàn; Unity đổi pitch/volume theo mức nạp. |
+| Nổ (`PLAYER_EXPLODE`) | `Assets/Resources/Audio/sfx_explosion.wav` | SFX Explosion | Nhóm Bomb Me Baby | `scripts/generate_sfx.ps1` | Tự tạo cho đồ án | Trộn noise giảm dần và bass sweep; phát 3D theo bán kính nổ. |
+| Nhặt orb | `Assets/Resources/Audio/sfx_energy_pickup.wav` | SFX Energy Pickup | Nhóm Bomb Me Baby | `scripts/generate_sfx.ps1` | Tự tạo cho đồ án | Chirp tăng cao độ. |
+| Nhặt Core | `Assets/Resources/Audio/sfx_core_pickup.wav` | SFX Core Pickup | Nhóm Bomb Me Baby | `scripts/generate_sfx.ps1` | Tự tạo cho đồ án | Chirp dài hơn, thêm harmonic và shimmer. |
+| Bật Shield | `Assets/Resources/Audio/sfx_shield.wav` | SFX Shield | Nhóm Bomb Me Baby | `scripts/generate_sfx.ps1` | Tự tạo cho đồ án | Sweep cao độ giảm với ba lớp harmonic. |
+| Boost | `Assets/Resources/Audio/sfx_boost.wav` | SFX Boost | Nhóm Bomb Me Baby | `scripts/generate_sfx.ps1` | Tự tạo cho đồ án | Sweep kết hợp noise dạng whoosh. |
+| Bị trúng nổ / mất HP | `Assets/Resources/Audio/sfx_damage.wav` | SFX Damage | Nhóm Bomb Me Baby | `scripts/generate_sfx.ps1` | Tự tạo cho đồ án | Bass impact ngắn kết hợp noise. |
+| Bắt đầu trận | `Assets/Resources/Audio/sfx_match_start.wav` | SFX Match Start | Nhóm Bomb Me Baby | `scripts/generate_sfx.ps1` | Tự tạo cho đồ án | Chuỗi ba nốt báo hiệu. |
+| Thắng / thua | `Assets/Resources/Audio/sfx_victory.wav`, `sfx_defeat.wav` | SFX Victory / Defeat | Nhóm Bomb Me Baby | `scripts/generate_sfx.ps1` | Tự tạo cho đồ án | Hai chuỗi nốt đi lên/đi xuống. |
+| Nút bấm UI | `Assets/Resources/Audio/sfx_ui_click.wav` | SFX UI Click | Nhóm Bomb Me Baby | `scripts/generate_sfx.ps1` | Tự tạo cho đồ án | Click tổng hợp 90 ms. |
+
+Toàn bộ SFX trên là PCM mono 44,1 kHz, 16-bit, được tạo từ công thức trong repository và không dùng sample âm thanh bên ngoài. Có thể tái tạo bằng `powershell -ExecutionPolicy Bypass -File scripts/generate_sfx.ps1` từ thư mục gốc.
 
 ## Bàn giao cho Trưởng nhóm
 
@@ -40,3 +43,5 @@ Nguồn gợi ý: [Kenney.nl](https://kenney.nl/assets) (CC0), [OpenGameArt.org]
 - [ ] Mọi dòng đã có link nguồn và giấy phép.
 - [ ] File đã đặt tên rõ ràng (ví dụ `music_meadow.ogg`, `sfx_explode.wav`) và gửi cho Trưởng nhóm gắn vào Unity.
 - [ ] Phần "Tài nguyên sử dụng" trong báo cáo đã chép lại bảng này.
+
+Trạng thái SFX: đã đủ, đã tích hợp bằng `Assets/Scripts/BombAudio.cs` và dùng thanh âm lượng **Hiệu ứng** trong cài đặt. Phần nhạc theo chương vẫn chưa thực hiện.

@@ -219,7 +219,9 @@ sealed class BombModeMenu {
         cta.normal.textColor = textColor;
         Label(new Rect(button.x, button.y + push, button.width, button.height), text, cta);
         cta.normal.textColor = Night;
-        return GUI.Button(button, GUIContent.none, GUIStyle.none);
+        bool clicked = GUI.Button(button, GUIContent.none, GUIStyle.none);
+        if (clicked) BombAudio.UiClick();
+        return clicked;
     }
 
     bool HeaderButton(Rect rect, string text, Color textColor) {
@@ -231,7 +233,9 @@ sealed class BombModeMenu {
         Label(rect, text, chip);
         chip.alignment = TextAnchor.MiddleLeft;
         chip.normal.textColor = Text;
-        return GUI.Button(rect, GUIContent.none, GUIStyle.none);
+        bool clicked = GUI.Button(rect, GUIContent.none, GUIStyle.none);
+        if (clicked) BombAudio.UiClick();
+        return clicked;
     }
 
     static Rect CardRect(int index, float left, float top, float width, float height, float gap, bool stacked) =>
@@ -281,7 +285,9 @@ sealed class BombModeMenu {
         Fill(new Rect(button.x, button.y + push, button.width, button.height), card.accent, RoundSmall);
         Label(new Rect(button.x, button.y + push, button.width, button.height), "CHỌN", cta);
 
-        return GUI.Button(panel, GUIContent.none, GUIStyle.none);
+        bool clicked = GUI.Button(panel, GUIContent.none, GUIStyle.none);
+        if (clicked) BombAudio.UiClick();
+        return clicked;
     }
 
     /// The in-game bomb: black body, white eyes, lit fuse, orange charge ring.

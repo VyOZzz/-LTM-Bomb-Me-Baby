@@ -131,7 +131,10 @@ sealed class BombOverlay {
         Rect knobTrack = new Rect(row.xMax - S(64), row.y + S(4), S(64), S(28));
         Fill(knobTrack, value ? Health : PanelRaised, RoundSmall);
         Fill(Centered(new Vector2(value ? knobTrack.xMax - S(14) : knobTrack.x + S(14), knobTrack.center.y), S(22)), Text, Circle);
-        if (GUI.Button(row, GUIContent.none, GUIStyle.none)) value = !value;
+        if (GUI.Button(row, GUIContent.none, GUIStyle.none)) {
+            BombAudio.UiClick();
+            value = !value;
+        }
         y += 50;
         return value;
     }
@@ -146,7 +149,9 @@ sealed class BombOverlay {
         Fill(top, hover ? Color.Lerp(face, Color.white, .08f) : face, RoundSmall);
         buttonText.normal.textColor = textColor;
         GUI.Label(top, text, buttonText);
-        return GUI.Button(rect, GUIContent.none, GUIStyle.none);
+        bool clicked = GUI.Button(rect, GUIContent.none, GUIStyle.none);
+        if (clicked) BombAudio.UiClick();
+        return clicked;
     }
 
     Rect Card(float width, float height, Color accent) {

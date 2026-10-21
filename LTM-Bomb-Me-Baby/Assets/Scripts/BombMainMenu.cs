@@ -77,7 +77,10 @@ sealed class BombMainMenu {
             GUI.Label(new Rect(banner.x + 12, banner.y, banner.width - 24, banner.height), status, statusStyle);
         }
 
-        if (GUI.Button(new Rect(Screen.width - 126, 24, 102, 38), "THOÁT", secondary)) result = Choice.Quit;
+        if (GUI.Button(new Rect(Screen.width - 126, 24, 102, 38), "THOÁT", secondary)) {
+            BombAudio.UiClick();
+            result = Choice.Quit;
+        }
         GUI.Label(new Rect(Screen.width - 260, Screen.height - 34, 236, 22), "Bản demo • Unity 6", version);
         return result;
     }
@@ -89,7 +92,9 @@ sealed class BombMainMenu {
         Fill(new Rect(rect.x, rect.y + push, rect.width, rect.height), face, RoundSmall);
         style.normal.textColor = textColor;
         GUI.Label(new Rect(rect.x, rect.y + push, rect.width, rect.height), text, style);
-        return GUI.Button(rect, GUIContent.none, GUIStyle.none);
+        bool clicked = GUI.Button(rect, GUIContent.none, GUIStyle.none);
+        if (clicked) BombAudio.UiClick();
+        return clicked;
     }
 
     void EnsureStyles() {
