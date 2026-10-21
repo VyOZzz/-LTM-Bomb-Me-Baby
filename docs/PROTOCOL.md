@@ -52,14 +52,16 @@ Ba map JOURNEY luôn theo thứ tự `meadow → crossroads → crater`. Ngườ
 
 Sau ba vòng, server xếp theo số mảnh (`roundWins`), rồi `eliminations`, rồi ưu tiên người thắng vòng cuối nếu người đó còn nằm trong nhóm hòa. Nếu vẫn hòa, `winnerId` rỗng và `winnerIds` chứa các người đồng hạng. `points` vẫn được gửi để hiển thị nhưng không còn dùng để xếp hạng (thay đổi 20/10/2026).
 
-### Mảnh Tim Lửa và bệ đá (chỉ JOURNEY, từ 20/10/2026)
+### Mảnh Tim Lửa và bệ đá (chỉ JOURNEY, cập nhật 21/10/2026)
 
 Mỗi chương có một mảnh và một bệ đá ở tâm map (`ShardObjective.java`):
 
 1. Mảnh xuất hiện sau 10 giây ở một chỗ trống ngẫu nhiên, cách bệ ít nhất 45% nửa cạnh map.
-2. Người chạm vào mảnh thì cầm mảnh. Người cầm luôn được mọi viewer nhìn thấy (`visible=true`, kể cả trong bụi hay ngoài tầm nhìn). Người cầm chỉ mất mảnh khi bị loại; mảnh rơi tại chỗ.
-3. Người cầm bước vào vòng bệ (bán kính 3) thì mảnh được đặt lên bệ và người đó thành chủ bệ.
-4. Người khác đứng một mình trong vòng bệ 3 giây thì chiếm bệ. Chủ bệ đứng trong vòng thì tạm dừng việc chiếm; người chiếm rời vòng thì đếm lại từ đầu; nhiều người chiếm cùng lúc thì đứng yên. Chủ bệ bị loại thì bệ vô chủ.
+2. Người chạm vào mảnh thì cầm mảnh, nhận 2 nấc Khóa Lửa và 2 giây bảo hộ. Người cầm luôn được mọi viewer nhìn thấy. Một hit chỉ phá một nấc nếu charge ≥ 35%, gây ≥ 10 damage thực tế, không bị Shield chặn và đã hết bảo hộ. Nấc khóa hồi đầy nếu 6 giây không nhận thêm hit hợp lệ.
+3. Vỡ đủ hai nấc làm mảnh văng 2,5 unit theo hướng rời tâm nổ. Mảnh khóa nhặt 0,5 giây; carrier cũ bị khóa 1,3 giây. Carrier disconnect sẽ tự thả sau tối đa 2 giây.
+4. Người cầm bước vào vòng bệ (bán kính 3) thì đặt mảnh và trở thành owner. Bệ được bảo hộ 5 giây. Sau đó mỗi đối thủ sống/kết nối trong vòng tự phá ấn với progress riêng trong 3 giây. Owner trong vòng chỉ giảm tốc còn 50%, không pause.
+5. Damage thực tế reset riêng progress của challenger trúng đòn và stagger 0,45 giây; Shield chặn cả reset lẫn stagger. Rời vòng, chết hoặc disconnect cũng xóa progress riêng.
+6. Challenger hoàn thành đầu tiên làm mảnh bật ra gần mép vòng, được ưu tiên nhặt 0,75 giây. Bệ quá nhiệt 4 giây và không nhận lại mảnh. Priority mất ngay nếu người đó chết/disconnect.
 5. Hết 3 phút, chủ bệ (nếu chưa đặt thì người đang cầm) thắng chương với `reason="TIME"`. Chỉ còn một người sống thì người đó thắng với `reason="LAST_STANDING"`.
 
 Mọi `STATE_UPDATE` của JOURNEY có thêm object công khai, không lọc theo viewer kể cả ở OPTIMIZED:
@@ -68,12 +70,26 @@ Mọi `STATE_UPDATE` của JOURNEY có thêm object công khai, không lọc the
 "objective": {
   "state":"PLACED", "x":0, "z":0,
   "carrierId":"", "ownerId":"...", "challengerId":"...", "capture":0.4,
+  "fireLock":2, "fireLockMax":2, "carrierProtection":0,
+  "pedestalProtection":0, "pedestalOverheat":0,
+  "pickupPriorityId":"...", "pickupPriority":0.5, "pickupUnlock":0,
+  "sealBreakers":[
+    {"playerId":"...","progress":0.4,"stagger":0,"resetFlash":0}
+  ],
   "pedestalX":0, "pedestalZ":0, "pedestalRadius":3,
   "timeLeft":95.2, "spawnIn":0
 }
 ```
 
-`state` là `WAITING`, `GROUND`, `CARRIED` hoặc `PLACED`; `capture` là tiến độ 0..1 của `challengerId`. QUICK không có trường `objective`. Không có event riêng cho mảnh; client so hai snapshot liên tiếp để hiện thông báo.
+`state` là `WAITING`, `GROUND`, `CARRIED` hoặc `PLACED`. `sealBreakers` là progress 0..1, thời gian stagger và cửa sổ feedback reset của từng challenger. `challengerId`/`capture` vẫn được giữ tương thích và trỏ tới người đang dẫn đầu. Các thời gian còn lại dùng giây. QUICK không có trường `objective`. Client so snapshot objective để hiện thông báo/VFX; mọi quyền nhặt, damage và progress vẫn do server quyết định.
+
+Mọi mục tiêu nằm trong vụ nổ nhận horizontal impulse server-authoritative. Snapshot vị trí vẫn là nguồn chính thức; event sau chỉ dùng để chạy bounce Y/squash thuần hình ảnh:
+
+```json
+{"type":"PLAYER_KNOCKED_BACK","playerId":"...","directionX":0.8,"directionZ":0.6,"strength":12.4,"shielded":false}
+```
+
+Trong `OPTIMIZED`, event chỉ được gửi tới viewer nhìn thấy target. Shield giảm impulse còn 18%. `PlayerData.stagger` cho biết số giây khóa movement input còn lại; knockback vẫn được server tích phân và collision-check trong lúc stagger.
 
 ## Bắt đầu và đồng bộ trận
 
@@ -122,7 +138,7 @@ Không thể READY để tạo vòng thứ tư; server trả `JOURNEY_COMPLETE` 
 
 ## Các event khác
 
-`ENERGY_PICKED`, `CORE_PICKED`, `CORE_SPAWNED`, `SHIELD_ACTIVATED`, `BOOST_ACTIVATED`, `PLAYER_EXPLODE`, `PLAYER_DAMAGED`, `DAMAGE_REFLECTED`, `PLAYER_ELIMINATED`, `PLAYER_DISCONNECTED`, `ACK`, `PONG`, `ERROR` giữ ý nghĩa cũ.
+`ENERGY_PICKED`, `CORE_PICKED`, `CORE_SPAWNED`, `SHIELD_ACTIVATED`, `BOOST_ACTIVATED`, `PLAYER_EXPLODE`, `PLAYER_DAMAGED`, `DAMAGE_REFLECTED`, `PLAYER_ELIMINATED`, `PLAYER_DISCONNECTED`, `ACK`, `PONG`, `ERROR` giữ ý nghĩa cũ. `PLAYER_KNOCKED_BACK` là event mới mô tả impulse đã được server áp dụng.
 
 Server là nguồn chính thức: client chỉ gửi hướng/hành động, không tự khai báo tọa độ, HP, sát thương, điểm hoặc người thắng. TCP message từ client giới hạn 2048 ký tự.
 

@@ -32,8 +32,12 @@ using System;
     public long processingMicros;
     public float x;
     public float z;
+    public float directionX;
+    public float directionZ;
     public float radius;
     public float amount;
+    public float strength;
+    public bool shielded;
     public bool visible;
     public float arenaSize;
     public string mapId;
@@ -62,6 +66,15 @@ using System;
     public string ownerId;
     public string challengerId;
     public float capture;         // 0..1 progress of the current challenger
+    public SealBreakerData[] sealBreakers;
+    public int fireLock;
+    public int fireLockMax;
+    public float carrierProtection;
+    public float pedestalProtection;
+    public float pedestalOverheat;
+    public string pickupPriorityId;
+    public float pickupPriority;
+    public float pickupUnlock;
     public float pedestalX;
     public float pedestalZ;
     public float pedestalRadius;
@@ -69,6 +82,20 @@ using System;
     public float spawnIn;         // seconds until the shard appears
 
     public bool Active => !string.IsNullOrEmpty(state);
+
+    public SealBreakerData Breaker(string playerId) {
+        if (sealBreakers == null || string.IsNullOrEmpty(playerId)) return null;
+        foreach (SealBreakerData breaker in sealBreakers)
+            if (breaker != null && breaker.playerId == playerId) return breaker;
+        return null;
+    }
+}
+
+[Serializable] public class SealBreakerData {
+    public string playerId;
+    public float progress;
+    public float stagger;
+    public float resetFlash;
 }
 
 [Serializable] public class RoomEnvelope {
@@ -123,6 +150,7 @@ using System;
     public float shieldCooldown;
     public bool boost;
     public float boostCooldown;
+    public float stagger;
     public int kills;
 }
 

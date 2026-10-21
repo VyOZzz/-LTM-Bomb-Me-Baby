@@ -7,6 +7,7 @@ using static BombUi;
 sealed class BombHud {
     public struct View {
         public PlayerData me;
+        public string myId;
         public Color myColor;
         public int alive, total;
         public bool journey, inBush;
@@ -139,27 +140,59 @@ sealed class BombHud {
     void DrawObjective(View v, float W) {
         ObjectiveData o = v.objective;
         string text;
-        bool capturing = o.state == "PLACED" && !string.IsNullOrEmpty(o.challengerId);
+        SealBreakerData mine = o.Breaker(v.myId);
+        SealBreakerData leader = o.Breaker(o.challengerId);
+        bool showMine = mine != null;
+        bool showLeader = leader != null && (mine == null || leader.playerId != mine.playerId);
         switch (o.state) {
             case "WAITING": text = $"Mảnh Tim Lửa xuất hiện sau {Mathf.CeilToInt(o.spawnIn)}s"; break;
-            case "GROUND": text = "Mảnh đang nằm trên đất — xem minimap"; break;
-            case "CARRIED": text = $"{v.carrierName} đang cầm mảnh — mang về bệ đá giữa map"; break;
+            case "GROUND":
+                text = o.pickupPriority > 0
+                    ? $"{v.challengerName} có quyền ưu tiên nhặt • {o.pickupPriority:0.0}s"
+                    : o.pickupUnlock > 0 ? $"Mảnh đang bật rơi • nhặt được sau {o.pickupUnlock:0.0}s"
+                    : "Mảnh đang nằm trên đất — xem minimap";
+                if (o.pedestalOverheat > 0) text += $"  •  BỆ QUÁ NHIỆT {o.pedestalOverheat:0.0}s";
+                break;
+            case "CARRIED":
+                text = $"{v.carrierName} đang cầm mảnh — Khóa Lửa {o.fireLock}/{Mathf.Max(2, o.fireLockMax)}";
+                if (o.carrierProtection > 0) text += $"  •  BẢO HỘ {o.carrierProtection:0.0}s";
+                if (o.pedestalOverheat > 0) text += $"  •  BỆ QUÁ NHIỆT {o.pedestalOverheat:0.0}s";
+                break;
             default:
-                text = string.IsNullOrEmpty(o.ownerId)
-                    ? "Bệ đá vô chủ — đứng trên bệ 3 giây để chiếm"
-                    : $"{v.ownerName} đang giữ bệ đá";
-                if (capturing) text += $"  •  {v.challengerName} đang chiếm";
+                text = o.pedestalProtection > 0
+                    ? $"Bệ của {v.ownerName} đang được bảo hộ • {o.pedestalProtection:0.0}s"
+                    : $"{v.ownerName} đang giữ bệ • đối thủ trong vòng tự phá ấn";
                 break;
         }
-        float width = label.CalcSize(new GUIContent(text)).x / u + 40;
-        float height = capturing ? 50 : 36;
+        float width = Mathf.Min(W - 48, Mathf.Max(380, label.CalcSize(new GUIContent(text)).x / u + 40));
+        int bars = (showMine ? 1 : 0) + (showLeader ? 1 : 0);
+        float height = 36 + bars * 24;
         Rect chip = R(W / 2 - width / 2, 82, width, height);
         Fill(chip, Panel, RoundSmall);
-        Fill(new Rect(chip.x + S(14), chip.y + S(13), S(10), S(10)), Core, Circle);
-        label.normal.textColor = Core;
+        Color stateColor = o.pedestalOverheat > 0 ? Danger : o.pedestalProtection > 0 ? Shield : Core;
+        Fill(new Rect(chip.x + S(14), chip.y + S(13), S(10), S(10)), stateColor, Circle);
+        label.normal.textColor = stateColor;
         GUI.Label(R(W / 2 - width / 2 + 32, 82, width - 40, 36), text, label);
         label.normal.textColor = TextMuted;
-        if (capturing) Bar(R(W / 2 - width / 2 + 16, 82 + 36, width - 32, 6), o.capture, v.challengerColor);
+        int row = 0;
+        if (showMine) {
+            DrawSealBar(R(W / 2 - width / 2 + 16, 82 + 36 + row++ * 24, width - 32, 20),
+                mine, "BẠN PHÁ ẤN", v.myColor);
+        }
+        if (showLeader) {
+            DrawSealBar(R(W / 2 - width / 2 + 16, 82 + 36 + row * 24, width - 32, 20),
+                leader, $"DẪN ĐẦU • {v.challengerName}", v.challengerColor);
+        }
+    }
+
+    void DrawSealBar(Rect row, SealBreakerData breaker, string caption, Color color) {
+        Color feedback = breaker.resetFlash > 0 && Mathf.FloorToInt(Time.unscaledTime * 12) % 2 == 0 ? Danger : color;
+        small.normal.textColor = feedback;
+        GUI.Label(new Rect(row.x, row.y, row.width * .42f, row.height), caption, small);
+        small.normal.textColor = TextMuted;
+        Bar(new Rect(row.x + row.width * .43f, row.y + S(6), row.width * .57f, S(8)), breaker.progress, feedback);
+        if (breaker.stagger > 0)
+            GUI.Label(new Rect(row.x, row.y, row.width - S(6), row.height), "KHỰNG", labelRight);
     }
 
     void DrawToast(string text, float alpha, float W) {
@@ -266,14 +299,35 @@ sealed class BombHud {
         GUI.color = saved;
     }
 
-    /// Small name pill above a ball; the local player's name is orange.
-    public void DrawNameTag(Vector2 screenTop, string playerName, bool isMe) {
+    /// Small name pill above a ball; visible opponents also get an overhead HP bar.
+    public void DrawNameTag(Vector2 screenTop, string playerName, float hp, bool isMe,
+                            bool isCarrier, int fireLock, int fireLockMax) {
         EnsureStyles();
         float width = tagName.CalcSize(new GUIContent(playerName)).x + S(18);
-        Rect pill = new Rect(screenTop.x - width / 2, screenTop.y - S(28), width, S(22));
+        float nameOffset = isMe ? S(28) : S(40);
+        Rect pill = new Rect(screenTop.x - width / 2, screenTop.y - nameOffset, width, S(22));
         Fill(pill, WithAlpha(Panel, .8f), RoundSmall);
         tagName.normal.textColor = isMe ? Charge : Text;
         GUI.Label(pill, playerName, tagName);
+
+        if (isCarrier) {
+            int maxLocks = Mathf.Max(2, fireLockMax);
+            float pip = S(8), gap = S(4);
+            float total = maxLocks * pip + (maxLocks - 1) * gap;
+            for (int i = 0; i < maxLocks; i++)
+                Fill(new Rect(screenTop.x - total / 2 + i * (pip + gap), pill.y - S(12), pip, S(7)),
+                    i < fireLock ? Core : WithAlpha(Danger, .35f), RoundSmall);
+        }
+
+        if (isMe) return;
+
+        float health = Mathf.Clamp01(hp / 100f);
+        float barWidth = Mathf.Clamp(width, S(68), S(104));
+        Rect track = new Rect(screenTop.x - barWidth / 2, pill.yMax + S(4), barWidth, S(8));
+        Color healthColor = health <= .3f ? Danger : health <= .6f ? Charge : Health;
+        Fill(new Rect(track.x - S(2), track.y - S(2), track.width + S(4), track.height + S(4)),
+            WithAlpha(Night, .92f), RoundSmall);
+        Bar(track, health, healthColor);
     }
 
     /// Centered result card shown while the round is FINISHED.

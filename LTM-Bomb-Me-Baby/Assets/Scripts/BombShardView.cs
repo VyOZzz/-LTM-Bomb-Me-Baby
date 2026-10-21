@@ -4,18 +4,27 @@ using UnityEngine;
 /// the spinning Fire Heart shard and the glow around whoever carries it.
 sealed class BombShardView {
     GameObject root, shard, carrierAura, ownerRing, captureDisc;
+    readonly GameObject[] lockCracks = new GameObject[2];
     Light glow;
     Vector3 shardTarget;
+    Vector3 ringBaseScale;
     ObjectiveData last;
+    float bounceStartedAt = -10, lockFlashUntil;
 
     public void Apply(ObjectiveData o, Transform parent, Transform carrier, float carrierSize, Color ownerColor, Color challengerColor) {
         if (o == null || !o.Active) { Clear(); return; }
         if (root == null) Build(parent, o);
+        bool bounced = last != null && last.state != "GROUND" && o.state == "GROUND";
+        if (bounced) bounceStartedAt = Time.time;
+        if (last != null && last.state == "CARRIED" && o.state == "CARRIED" && o.fireLock < last.fireLock)
+            lockFlashUntil = Time.time + .35f;
         last = o;
         Vector3 pedestal = new Vector3(o.pedestalX, 0, o.pedestalZ);
 
         bool owned = !string.IsNullOrEmpty(o.ownerId);
-        SetColor(ownerRing, BombUi.WithAlpha(owned ? ownerColor : BombUi.Text, owned ? .45f : .14f));
+        Color ringColor = o.pedestalOverheat > 0 ? BombUi.Danger
+            : o.pedestalProtection > 0 ? BombUi.Shield : owned ? ownerColor : BombUi.Text;
+        SetColor(ownerRing, BombUi.WithAlpha(ringColor, owned || o.pedestalProtection > 0 || o.pedestalOverheat > 0 ? .45f : .14f));
         float capture = string.IsNullOrEmpty(o.challengerId) ? 0 : o.capture;
         captureDisc.SetActive(capture > .001f);
         captureDisc.transform.localScale = new Vector3(o.pedestalRadius * 2 * capture, .01f, o.pedestalRadius * 2 * capture);
@@ -23,6 +32,8 @@ sealed class BombShardView {
 
         shard.SetActive(o.state != "WAITING");
         carrierAura.SetActive(o.state == "CARRIED" && carrier != null);
+        for (int i = 0; i < lockCracks.Length; i++)
+            if (lockCracks[i] != null) lockCracks[i].SetActive(o.state == "CARRIED" && o.fireLock <= i);
         switch (o.state) {
             case "GROUND": shardTarget = new Vector3(o.x, .9f, o.z); break;
             case "PLACED": shardTarget = pedestal + Vector3.up * 1.7f; break;
@@ -44,9 +55,17 @@ sealed class BombShardView {
             carrierAura.transform.position = carrier.position;
         }
         float bob = Mathf.Sin(Time.time * 2.6f) * .15f;
-        shard.transform.position = Vector3.Lerp(shard.transform.position, shardTarget + Vector3.up * bob, 1 - Mathf.Exp(-14 * Time.deltaTime));
+        float bounceAge = Time.time - bounceStartedAt;
+        float bounce = bounceAge >= 0 && bounceAge < .7f ? Mathf.Sin(bounceAge / .7f * Mathf.PI) * 1.4f : 0;
+        shard.transform.position = Vector3.Lerp(shard.transform.position, shardTarget + Vector3.up * (bob + bounce),
+            1 - Mathf.Exp(-14 * Time.deltaTime));
         shard.transform.rotation = Quaternion.Euler(45, Time.time * 90, 45);
-        glow.intensity = 2.2f + Mathf.Sin(Time.time * 4) * .6f;
+        bool protectedPedestal = last.state == "PLACED" && last.pedestalProtection > 0;
+        bool overheated = last.pedestalOverheat > 0;
+        ownerRing.transform.localScale = ringBaseScale * (1 + (protectedPedestal || overheated
+            ? Mathf.PingPong(Time.time * 1.4f, .06f) : 0));
+        glow.color = Time.time < lockFlashUntil ? Color.white : BombUi.Core;
+        glow.intensity = (Time.time < lockFlashUntil ? 5.5f : 2.2f) + Mathf.Sin(Time.time * 4) * .6f;
     }
 
     public void Clear() {
@@ -62,6 +81,7 @@ sealed class BombShardView {
 
         ownerRing = Primitive("Pedestal ring", PrimitiveType.Cylinder, pedestal + Vector3.up * .02f,
             new Vector3(o.pedestalRadius * 2, .01f, o.pedestalRadius * 2), BombGame.TransparentMaterial(BombUi.WithAlpha(BombUi.Text, .14f)));
+        ringBaseScale = ownerRing.transform.localScale;
         captureDisc = Primitive("Capture progress", PrimitiveType.Cylinder, pedestal + Vector3.up * .04f,
             Vector3.zero, BombGame.TransparentMaterial(BombUi.WithAlpha(BombUi.Charge, .4f)));
         Primitive("Pedestal base", PrimitiveType.Cylinder, pedestal + Vector3.up * .2f,
@@ -79,6 +99,14 @@ sealed class BombShardView {
         glow.type = LightType.Point;
         glow.color = BombUi.Core;
         glow.range = 7;
+        for (int i = 0; i < lockCracks.Length; i++) {
+            lockCracks[i] = Primitive("Fire Lock crack", PrimitiveType.Cube, Vector3.zero,
+                new Vector3(.06f, .72f, .64f), BombGame.MaterialFor(BombUi.Text));
+            lockCracks[i].transform.SetParent(shard.transform, false);
+            lockCracks[i].transform.localPosition = new Vector3((i == 0 ? -.16f : .16f), 0, -.36f);
+            lockCracks[i].transform.localRotation = Quaternion.Euler(0, 0, i == 0 ? -28 : 28);
+            lockCracks[i].SetActive(false);
+        }
         carrierAura = Primitive("Carrier glow", PrimitiveType.Sphere, Vector3.zero, Vector3.one,
             BombGame.TransparentMaterial(BombUi.WithAlpha(BombUi.Core, .22f)));
         carrierAura.SetActive(false);

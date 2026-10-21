@@ -60,6 +60,8 @@ Test-NetConnection HOST -Port 7777
 4. Client thứ nhất chọn **Tạo phòng**. Các client còn lại nhập mã 6 ký tự và **Vào phòng**.
 5. Chọn **Sẵn sàng** để bắt đầu. Hiện tại có thể chơi một mình để kiểm thử; khi có nhiều người, trận bắt đầu khi tất cả cùng sẵn sàng (tối đa 10 người). Để chơi nhiều client trên cùng máy, build một bản Windows/Mac rồi chạy cùng lúc với Unity Editor, hoặc chạy nhiều bản build.
 
+Khi người chơi tạo hoặc vào phòng **Hành trình Ba Mảnh** lần đầu trong phiên, client phát phim mở đầu `Assets/StreamingAssets/story_intro.mp4` với phụ đề tiếng Việt; nhấn **Esc** hoặc **Space** để bỏ qua. Nếu máy không giải mã được MP4, client tự chuyển sang ba khung hình minh hoạ trong `Assets/Resources/Menu/`. Có thể thay video bằng bản dựng H.264 1920×1080 khác, giữ nguyên tên file để không phải sửa code.
+
 Điều khiển: **WASD/phím mũi tên** di chuyển theo hướng màn hình, **giữ Space** nạp và **thả Space** để nổ, **E** bật Shield, **Shift** Boost. Camera bám sát quả bóng của người chơi và chỉ hiển thị một vùng nhỏ của map. Đấu nhanh đổi sang một map khác ở vòng sau; Hành trình luôn chạy `meadow → crossroads → crater`, giữ điểm qua ba vòng.
 
 ## Bật AI trong Unity Editor

@@ -117,9 +117,11 @@ final class GameRoom {
         for (int i = 0; i < players.size(); i++) {
             PlayerState p = players.get(i);
             p.x = spawns.get(i)[0]; p.z = spawns.get(i)[1]; p.dx = 0; p.dz = 0;
+            p.knockbackX = 0; p.knockbackZ = 0;
             p.hp = 100; p.size = 1; p.baseSize = 1; p.kills = 0;
             p.alive = true; p.charging = false; p.chargeReadyAt = 0; p.shieldUntil = 0;
             p.shieldReadyAt = 0; p.boostUntil = 0; p.boostReadyAt = 0;
+            p.staggerUntil = 0; p.staggerImmuneUntil = 0;
             p.ready = false;
         }
         for (int i = 0; i < GameRules.INITIAL_ORBS; i++) spawnOrb();
@@ -199,11 +201,16 @@ final class GameRoom {
             if (!p.alive) continue;
             if (p.connected) {
                 double speed = 5.2 / Math.sqrt(p.size) * (now < p.boostUntil ? 1.85 : 1);
-                double nx = GameRules.clamp(p.x + p.dx * speed * dt, -map.halfSize, map.halfSize);
-                double nz = GameRules.clamp(p.z + p.dz * speed * dt, -map.halfSize, map.halfSize);
-                if (free(nx, p.z, GameRules.PLAYER_RADIUS * p.size)) p.x = nx;
-                if (free(p.x, nz, GameRules.PLAYER_RADIUS * p.size)) p.z = nz;
+                if (now >= p.staggerUntil) movePlayer(p, p.dx * speed * dt, p.dz * speed * dt, false);
                 pickup(p, now);
+            }
+            movePlayer(p, p.knockbackX * dt, p.knockbackZ * dt, true);
+            double decay = Math.exp(-GameRules.KNOCKBACK_DECAY_PER_SECOND * Math.max(0, dt));
+            p.knockbackX *= decay;
+            p.knockbackZ *= decay;
+            if (Math.hypot(p.knockbackX, p.knockbackZ) < GameRules.KNOCKBACK_STOP_SPEED) {
+                p.knockbackX = 0;
+                p.knockbackZ = 0;
             }
             if (p.charging && now - p.chargeSince >= GameRules.MAX_CHARGE_MS) explode(p, now);
             if (phase != Phase.PLAYING) return;
@@ -262,13 +269,27 @@ final class GameRoom {
             double distance = GameRules.distance(source.x,source.z,target.x,target.z);
             double damage = GameRules.damage(source.size,charge,distance,radius);
             if (damage <= 0) continue;
-            if (now < target.shieldUntil) {
+            boolean shielded = now < target.shieldUntil;
+            if (mode == GameMode.JOURNEY)
+                applyKnockback(source, target, charge, damage, distance, radius, shielded);
+            if (shielded) {
                 damageDone += damage * 0.5;
                 lastReflector = target;
                 broadcast(data("type","DAMAGE_REFLECTED","from",target.id,"to",source.id,"amount",damage * 0.5));
             } else {
+                double hpBefore = target.hp;
                 target.hp = Math.max(0, target.hp - damage);
+                double actualDamage = hpBefore - target.hp;
                 broadcast(data("type","PLAYER_DAMAGED","playerId",target.id,"by",source.id,"amount",damage));
+                if (target.hp > 0 && objective != null) {
+                    double[] shardDrop = safeShardDrop(target, source.x, source.z);
+                    boolean resetSeal = objective.onDamaged(target, charge, actualDamage, now,
+                        shardDrop[0], shardDrop[1]);
+                    if (resetSeal && now >= target.staggerImmuneUntil) {
+                        target.staggerUntil = now + GameRules.SEAL_STAGGER_MS;
+                        target.staggerImmuneUntil = now + GameRules.SEAL_STAGGER_IMMUNITY_MS;
+                    }
+                }
                 if (target.hp <= 0) {
                     source.kills++;
                     awardElimination(source);
@@ -301,7 +322,8 @@ final class GameRoom {
     private void eliminate(PlayerState p, String reason, long now) {
         if (!p.alive) return;
         p.alive = false; p.hp = 0; p.charging = false; p.dx = 0; p.dz = 0;
-        if (objective != null) objective.onEliminated(p);
+        p.knockbackX = 0; p.knockbackZ = 0;
+        if (objective != null) objective.onEliminated(p, now);
         Pickup core = new Pickup(nextPickupId++, p.x, p.z);
         cores.add(core);
         broadcast(data("type","PLAYER_ELIMINATED","playerId",p.id,"reason",reason));
@@ -315,6 +337,58 @@ final class GameRoom {
                 "x",visible ? source.x : 0,"z",visible ? source.z : 0,
                 "radius",radius,"visible",visible));
         }
+    }
+
+    private void applyKnockback(PlayerState source, PlayerState target, double charge,
+                                double damage, double distance, double radius, boolean shielded) {
+        double dx = target.x - source.x;
+        double dz = target.z - source.z;
+        double length = Math.hypot(dx, dz);
+        if (length < 0.001) {
+            double angle = (target.id.hashCode() & 0xffff) / 65535.0 * Math.PI * 2;
+            dx = Math.cos(angle);
+            dz = Math.sin(angle);
+            length = 1;
+        }
+        double speed = GameRules.knockbackSpeed(charge, damage, distance, radius, target.size, shielded);
+        double dirX = dx / length, dirZ = dz / length;
+        target.knockbackX += dirX * speed;
+        target.knockbackZ += dirZ * speed;
+        double total = Math.hypot(target.knockbackX, target.knockbackZ);
+        if (total > GameRules.KNOCKBACK_MAX_SPEED) {
+            target.knockbackX *= GameRules.KNOCKBACK_MAX_SPEED / total;
+            target.knockbackZ *= GameRules.KNOCKBACK_MAX_SPEED / total;
+        }
+        for (PlayerState viewer : players) {
+            if (syncMode == SyncMode.OPTIMIZED && !canSee(viewer, target)) continue;
+            viewer.send(data("type","PLAYER_KNOCKED_BACK","playerId",target.id,
+                "directionX",dirX,"directionZ",dirZ,"strength",speed,"shielded",shielded));
+        }
+    }
+
+    private void movePlayer(PlayerState p, double moveX, double moveZ, boolean impulse) {
+        double radius = GameRules.PLAYER_RADIUS * p.size;
+        double nx = GameRules.clamp(p.x + moveX, -map.halfSize + radius, map.halfSize - radius);
+        double nz = GameRules.clamp(p.z + moveZ, -map.halfSize + radius, map.halfSize - radius);
+        if (free(nx, p.z, radius)) p.x = nx;
+        else if (impulse) p.knockbackX = 0;
+        if (free(p.x, nz, radius)) p.z = nz;
+        else if (impulse) p.knockbackZ = 0;
+    }
+
+    private double[] safeShardDrop(PlayerState carrier, double explosionX, double explosionZ) {
+        double dx = carrier.x - explosionX;
+        double dz = carrier.z - explosionZ;
+        double length = Math.hypot(dx, dz);
+        if (length < 0.001) { dx = 1; dz = 0; length = 1; }
+        dx /= length;
+        dz /= length;
+        for (double distance = ShardObjective.CARRIER_DROP_DISTANCE; distance >= 0; distance -= 0.25) {
+            double sx = GameRules.clamp(carrier.x + dx * distance, -map.halfSize, map.halfSize);
+            double sz = GameRules.clamp(carrier.z + dz * distance, -map.halfSize, map.halfSize);
+            if (free(sx, sz, 0.25)) return new double[] {sx, sz};
+        }
+        return new double[] {carrier.x, carrier.z};
     }
 
     private void broadcastCoreSpawn(Pickup core) {
@@ -531,6 +605,7 @@ final class GameRoom {
                 "chargeCooldown",Math.max(0,p.chargeReadyAt-now)/1000.0,
                 "shield",now < p.shieldUntil,"shieldCooldown",Math.max(0,p.shieldReadyAt-now)/1000.0,
                 "boost",now < p.boostUntil,"boostCooldown",Math.max(0,p.boostReadyAt-now)/1000.0,
+                "stagger",Math.max(0,p.staggerUntil-now)/1000.0,
                 "kills",p.kills));
         }
 

@@ -18,6 +18,16 @@ final class GameRules {
     static final long BOOST_COOLDOWN_MS = 5_000;
     static final long RECONNECT_MS = 10_000;
 
+    // Server-authoritative explosion impulse. Values are velocities in world units/second;
+    // exponential decay keeps an ordinary blast displacement around 1-2.5 world units.
+    static final double KNOCKBACK_MIN_SPEED = 5.5;
+    static final double KNOCKBACK_MAX_SPEED = 16.0;
+    static final double KNOCKBACK_DECAY_PER_SECOND = 7.0;
+    static final double KNOCKBACK_STOP_SPEED = 0.08;
+    static final double SHIELD_KNOCKBACK_FACTOR = 0.18;
+    static final long SEAL_STAGGER_MS = 450;
+    static final long SEAL_STAGGER_IMMUNITY_MS = 700;
+
     private GameRules() {}
 
     static double clamp(double value, double min, double max) {
@@ -38,5 +48,17 @@ final class GameRules {
         double chargedPower = Math.pow(clamp(charge, 0, 1), 1.35);
         double power = 7 + 25 * (size - 1) + 34 * chargedPower;
         return Math.max(0, power * (1 - 0.75 * distance / radius));
+    }
+
+    static double knockbackSpeed(double charge, double damage, double distance,
+                                 double radius, double targetSize, boolean shielded) {
+        double chargeFactor = clamp(charge, 0, 1);
+        double damageFactor = clamp(damage / 45.0, 0, 1);
+        double distanceFactor = radius <= 0 ? 0 : clamp(1 - distance / radius, 0, 1);
+        double raw = KNOCKBACK_MIN_SPEED
+            + 4.0 * chargeFactor + 3.0 * damageFactor + 3.5 * distanceFactor;
+        double sizeAdjusted = raw / Math.sqrt(Math.max(0.5, targetSize));
+        double speed = clamp(sizeAdjusted, KNOCKBACK_MIN_SPEED, KNOCKBACK_MAX_SPEED);
+        return shielded ? speed * SHIELD_KNOCKBACK_FACTOR : speed;
     }
 }

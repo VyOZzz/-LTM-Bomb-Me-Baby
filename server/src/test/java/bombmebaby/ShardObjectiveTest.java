@@ -32,26 +32,21 @@ class ShardObjectiveTest {
         assertNull(shard.carrier);
     }
 
-    @Test void standingAloneOnPedestalForThreeSecondsStealsItAndOwnerPausesTheCapture() {
+    @Test void ownerInRingOnlySlowsIndependentSealBreaking() {
         GameRoom room = journeyRoom();
         PlayerState a = room.players.get(0), b = room.players.get(1);
         long t = placeShard(room, a);
 
-        park(a, 20, 0);
-        park(b, 1, 0);
-        room.update(t, 0);
-        assertSame(b, room.objective.challenger);
-        room.update(t + 1_500, 0);
-
         park(a, -1, 0);
-        room.update(t + 4_000, 0);
-        assertSame(a, room.objective.owner, "The owner standing in the ring pauses the capture");
-
-        park(a, 20, 0);
-        room.update(t + 5_000, 0);
-        assertSame(a, room.objective.owner, "1.5 s + 1.0 s is still below the 3 s capture");
-        room.update(t + 5_600, 0);
-        assertSame(b, room.objective.owner);
+        park(b, 1, 0);
+        room.update(t + ShardObjective.PEDESTAL_PROTECTION_MS, 0);
+        assertSame(b, room.objective.challenger);
+        room.update(t + ShardObjective.PEDESTAL_PROTECTION_MS + 3_000, 0);
+        assertEquals(ShardObjective.State.PLACED, room.objective.state,
+            "Owner presence slows seal breaking instead of pausing it");
+        room.update(t + ShardObjective.PEDESTAL_PROTECTION_MS + 6_000, 0);
+        assertEquals(ShardObjective.State.GROUND, room.objective.state);
+        assertSame(b, room.objective.pickupPriority);
     }
 
     @Test void leavingTheRingResetsTheCapture() {
@@ -91,8 +86,8 @@ class ShardObjectiveTest {
         assertSame(a, shard.carrier);
 
         a.hp = 1;
-        room.action(b, "CHARGE_START", 0, 0, t0 + 12_000);
-        room.action(b, "EXPLODE", 0, 0, t0 + 12_100);
+        room.action(b, "CHARGE_START", 0, 0, t0 + 14_000);
+        room.action(b, "EXPLODE", 0, 0, t0 + 14_100);
         assertFalse(a.alive);
         assertEquals(ShardObjective.State.GROUND, shard.state);
         assertEquals(20, shard.x, 1e-9);

@@ -374,6 +374,9 @@ sealed class BombModeMenu {
             border = new RectOffset(10, 10, 10, 10), padding = new RectOffset(Px(12), Px(12), Px(8), Px(8))
         };
         field.normal.background = field.hover.background = field.focused.background = RoundSmall.normal.background;
-        field.normal.textColor = field.hover.textColor = field.focused.textColor = Text;
+        // This input is rendered on Unity's light text-field surface.
+        field.normal.textColor = field.hover.textColor = field.active.textColor = Night;
+        field.focused.textColor = field.onNormal.textColor = field.onHover.textColor = Night;
+        field.onActive.textColor = field.onFocused.textColor = Night;
     }
 }

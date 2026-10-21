@@ -90,6 +90,17 @@ class GameRoomTest {
         assertEquals(100,a.hp);
     }
 
+    @Test void quickModeKeepsLegacyMovementWithoutJourneyKnockback() {
+        GameRoom room = startedRoom();
+        PlayerState a = room.players.get(0), b = room.players.get(1);
+        a.x = 0; a.z = 0; b.x = .5; b.z = 0;
+        room.action(a,"CHARGE_START",0,0,1_000);
+        room.action(a,"EXPLODE",0,0,2_000);
+
+        assertEquals(0, b.knockbackX, .0001);
+        assertEquals(0, b.knockbackZ, .0001);
+    }
+
     @Test void shieldReflectsAndDoesNotDamageTarget() {
         GameRoom room = startedRoom();
         PlayerState a = room.players.get(0), b = room.players.get(1);
@@ -299,6 +310,7 @@ class GameRoomTest {
             }
         }
         killer.x = 0; killer.z = 0;
+        killer.chargeReadyAt = 0; // Scoring helper intentionally isolates elimination from cooldown timing.
         victim.x = .5; victim.z = 0; victim.hp = 1;
         room.action(killer,"CHARGE_START",0,0,now);
         room.action(killer,"EXPLODE",0,0,now + 500);

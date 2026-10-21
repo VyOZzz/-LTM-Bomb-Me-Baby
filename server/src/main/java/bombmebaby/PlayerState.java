@@ -9,9 +9,11 @@ final class PlayerState {
     volatile BombServer.Connection connection;
     volatile GameRoom room;
     double x, z, dx, dz, hp = 100, size = 1, baseSize = 1;
+    double knockbackX, knockbackZ;
     boolean ready, alive = true, charging;
     volatile boolean connected = true;
     long chargeSince, chargeReadyAt, shieldUntil, shieldReadyAt, boostUntil, boostReadyAt, disconnectedAt;
+    long staggerUntil, staggerImmuneUntil;
     long lastSeq = -1;
     int kills;
 

@@ -17,6 +17,9 @@ public sealed class BombGame : MonoBehaviour {
         public Color color;
         public Vector3 target;
         public PlayerData state;
+        public float visualY;
+        public float verticalVelocity;
+        public float squash;
     }
 
     sealed class HudNotice {
@@ -28,6 +31,7 @@ public sealed class BombGame : MonoBehaviour {
     }
 
     readonly BombNetwork network = new BombNetwork();
+    readonly BombMainMenu mainMenu = new BombMainMenu();
     readonly BombModeMenu modeMenu = new BombModeMenu();
     readonly BombHud hud = new BombHud();
     readonly BombOverlay overlay = new BombOverlay();
@@ -57,6 +61,7 @@ public sealed class BombGame : MonoBehaviour {
     bool charging;
     bool showNetworkSettings;
     BombStory story;
+    BombStoryCinematic cinematic;
     HudNotice activeNotice;
     float noticeStartedAt, noticeEndsAt;
     [SerializeField] Camera gameCamera;
@@ -91,6 +96,8 @@ public sealed class BombGame : MonoBehaviour {
         LoadServerSettings();
         story = BombStory.Load(out string storyError);
         if (!string.IsNullOrEmpty(storyError)) Debug.LogWarning(storyError);
+        cinematic = GetComponent<BombStoryCinematic>();
+        if (cinematic == null) cinematic = gameObject.AddComponent<BombStoryCinematic>();
         if (gameCamera == null) gameCamera = Camera.main;
         if (actorsRoot == null) actorsRoot = FindSceneRoot("Players");
         if (pickupsRoot == null) pickupsRoot = FindSceneRoot("Pickups");
@@ -173,7 +180,7 @@ public sealed class BombGame : MonoBehaviour {
             BombSettings.ShowNetwork = !BombSettings.ShowNetwork;
             BombSettings.Save();
         }
-        if (Input.GetKeyDown(KeyCode.Escape)) {
+        if (Input.GetKeyDown(KeyCode.Escape) && (cinematic == null || !cinematic.IsPlaying)) {
             if (overlay.IsOpen) overlay.Back();
             else if (room == null && !string.IsNullOrEmpty(myId)) modeMenu.Back();
             else if (room != null) {
@@ -182,12 +189,24 @@ public sealed class BombGame : MonoBehaviour {
                 if (phase == "PLAYING") network.Send(new BombMessage { type = "MOVE", directionX = 0, directionZ = 0 });
             }
         }
-        if (phase == "PLAYING" && !overlay.IsOpen && network.Connected && !string.IsNullOrEmpty(myId)) HandleInput();
+        if (phase == "PLAYING" && !overlay.IsOpen && (cinematic == null || !cinematic.IsPlaying)
+                && network.Connected && !string.IsNullOrEmpty(myId)) HandleInput();
         foreach (Avatar avatar in avatars.Values) {
             if (avatar.body == null) continue;
+            if (avatar.visualY > 0 || avatar.verticalVelocity > 0) {
+                avatar.verticalVelocity -= 12f * Time.deltaTime;
+                avatar.visualY += avatar.verticalVelocity * Time.deltaTime;
+                if (avatar.visualY <= 0) {
+                    avatar.visualY = 0;
+                    avatar.verticalVelocity = 0;
+                    avatar.squash = .16f;
+                }
+            }
+            avatar.squash = Mathf.MoveTowards(avatar.squash, 0, Time.deltaTime * 1.8f);
             Vector3 previous = avatar.body.transform.position;
             float smoothing = 1 - Mathf.Exp(-22 * Time.deltaTime);
-            avatar.body.transform.position = Vector3.Lerp(previous, avatar.target, smoothing);
+            Vector3 visualTarget = avatar.target + Vector3.up * avatar.visualY;
+            avatar.body.transform.position = Vector3.Lerp(previous, visualTarget, smoothing);
             Vector3 travel = avatar.body.transform.position - previous;
             travel.y = 0;
             if (avatar.rollingVisual != null && travel.sqrMagnitude > .000001f) {
@@ -197,7 +216,9 @@ public sealed class BombGame : MonoBehaviour {
             }
             if (avatar.state != null) {
                 float scale = avatar.state.size;
-                avatar.body.transform.localScale = Vector3.Lerp(avatar.body.transform.localScale, Vector3.one * scale, 10 * Time.deltaTime);
+                Vector3 visualScale = new Vector3(scale * (1 + avatar.squash), scale * (1 - avatar.squash * 1.5f),
+                    scale * (1 + avatar.squash));
+                avatar.body.transform.localScale = Vector3.Lerp(avatar.body.transform.localScale, visualScale, 10 * Time.deltaTime);
                 avatar.shield.SetActive(avatar.state.shield);
                 avatar.shield.transform.localScale = Vector3.one * 1.6f;
                 if (avatar.chargeAura != null) {
@@ -319,7 +340,14 @@ public sealed class BombGame : MonoBehaviour {
                 if (msg.playerId == myId) charging = false;
                 if (msg.visible) StartCoroutine(Explosion(new Vector3(msg.x, .45f, msg.z), msg.radius));
                 break;
-            case "ENERGY_PICKED":
+            case "PLAYER_KNOCKED_BACK":
+                if (avatars.TryGetValue(msg.playerId, out Avatar knocked)) {
+                    float bounce = Mathf.Lerp(3.2f, 6.2f, Mathf.InverseLerp(0, 16, msg.strength));
+                    if (msg.shielded) bounce *= .45f;
+                    knocked.verticalVelocity = Mathf.Max(knocked.verticalVelocity, bounce);
+                    knocked.squash = 0;
+                }
+                break;
             case "CORE_PICKED":
             case "PLAYER_DAMAGED":
             case "DAMAGE_REFLECTED":
@@ -547,10 +575,17 @@ public sealed class BombGame : MonoBehaviour {
         if (before == null) return;
         if (before.state == "WAITING" && now.state == "GROUND") Toast("Mảnh Tim Lửa đã xuất hiện! Xem minimap.");
         else if (now.state == "CARRIED" && before.carrierId != now.carrierId) Toast($"{NameOf(now.carrierId)} đã nhặt được mảnh!");
-        else if (before.state == "CARRIED" && now.state == "GROUND") Toast("Người cầm mảnh bị hạ — mảnh rơi xuống đất!");
+        else if (before.state == "CARRIED" && now.state == "GROUND") {
+            Avatar previousCarrier = AvatarOf(before.carrierId);
+            if (previousCarrier?.state != null && !previousCarrier.state.alive)
+                Toast("Người cầm mảnh bị hạ — Mảnh Tim Lửa rơi xuống!");
+            else if (previousCarrier?.state != null && !previousCarrier.state.connected)
+                Toast("Người cầm mất kết nối — Mảnh Tim Lửa rơi xuống!");
+            else Toast("Khóa Lửa đã vỡ — Mảnh Tim Lửa bật khỏi người cầm!");
+        }
         else if (before.state != "PLACED" && now.state == "PLACED") Toast($"{NameOf(now.ownerId)} đã đặt mảnh lên bệ đá!");
-        else if (now.state == "PLACED" && before.ownerId != now.ownerId)
-            Toast(string.IsNullOrEmpty(now.ownerId) ? "Chủ bệ bị hạ — bệ đá đang vô chủ!" : $"{NameOf(now.ownerId)} đã chiếm bệ đá!");
+        else if (before.state == "PLACED" && now.state == "GROUND")
+            Toast($"{NameOf(now.pickupPriorityId)} đã phá ấn — mảnh bật khỏi bệ!");
     }
 
     static string ErrorText(string code, string roomMode) {
@@ -749,6 +784,10 @@ public sealed class BombGame : MonoBehaviour {
     }
 
     void OnGUI() {
+        if (cinematic != null && cinematic.IsPlaying) {
+            cinematic.Draw();
+            return;
+        }
         // While the overlay is open the screen underneath is drawn but not interactive.
         GUI.enabled = !overlay.IsOpen;
         DrawScreen();
@@ -794,16 +833,31 @@ public sealed class BombGame : MonoBehaviour {
             switch (modeMenu.Draw(playerName, status, ref joinCode)) {
                 case BombModeMenu.Choice.Create:
                     status = "";
-                    network.Send(new BombMessage { type = "CREATE_ROOM", mode = modeMenu.SelectedMode });
+                    RunAfterJourneyIntro(() => network.Send(new BombMessage {
+                        type = "CREATE_ROOM", mode = modeMenu.SelectedMode
+                    }));
                     break;
                 case BombModeMenu.Choice.Join:
                     status = "Đang tìm phòng " + joinCode + "...";
-                    network.Send(new BombMessage { type = "JOIN_ROOM", code = joinCode, mode = modeMenu.SelectedMode });
+                    RunAfterJourneyIntro(() => network.Send(new BombMessage {
+                        type = "JOIN_ROOM", code = joinCode, mode = modeMenu.SelectedMode
+                    }));
                     break;
                 case BombModeMenu.Choice.Settings:
                     overlay.OpenSettings();
                     break;
                 case BombModeMenu.Choice.Quit:
+                    QuitGame();
+                    break;
+            }
+            return;
+        }
+        if (string.IsNullOrEmpty(myId)) {
+            switch (mainMenu.Draw(ref playerName, ref host, ref port, status)) {
+                case BombMainMenu.Choice.Connect:
+                    ConnectToConfiguredServer();
+                    break;
+                case BombMainMenu.Choice.Quit:
                     QuitGame();
                     break;
             }
@@ -825,14 +879,7 @@ public sealed class BombGame : MonoBehaviour {
         GUILayout.Label("BOMB ME BABY", titleStyle);
         if (!string.IsNullOrEmpty(status) && phase != "FINISHED") GUILayout.Label(status, bodyStyle);
         GUILayout.Space(8);
-        if (string.IsNullOrEmpty(myId)) {
-            GUILayout.Label("Tên", smallStyle); playerName = GUILayout.TextField(playerName,20,fieldStyle);
-            GUILayout.Label("Server IP", smallStyle); host = GUILayout.TextField(host,fieldStyle);
-            GUILayout.Label("Port", smallStyle); port = GUILayout.TextField(port,5,fieldStyle);
-            GUILayout.Space(6);
-            if (PanelButton("Kết nối", BombUi.Charge) && int.TryParse(port,out int parsed))
-                network.Connect(host,parsed,playerName);
-        } else {
+        {
             GUILayout.Label(room.mode == "JOURNEY"
                 ? $"Hành trình Ba Mảnh  •  Chương {room.chapterIndex + 1}/3" : "Đấu nhanh", bodyStyle);
             GUILayout.Label($"Mã phòng: {room.code}" + (string.IsNullOrEmpty(room.mapName) ? "" : $"  •  {room.mapName}"), smallStyle);
@@ -862,11 +909,21 @@ public sealed class BombGame : MonoBehaviour {
         if (phase == "FINISHED") DrawResultPopup();
     }
 
+    void RunAfterJourneyIntro(Action action) {
+        if (modeMenu.SelectedMode == "JOURNEY" && cinematic != null) {
+            status = "Đang mở câu chuyện Hành trình Ba Mảnh...";
+            cinematic.Play(() => {
+                status = "";
+                action();
+            });
+        } else action();
+    }
+
     void DrawMatchHud() {
         avatars.TryGetValue(myId, out Avatar me);
         PlayerData state = me?.state;
         hud.Draw(new BombHud.View {
-            me = state, myColor = me != null ? me.color : BombUi.TextMuted,
+            me = state, myId = myId, myColor = me != null ? me.color : BombUi.TextMuted,
             alive = aliveCount, total = playerCount,
             journey = room != null && room.mode == "JOURNEY", chapter = room != null ? room.chapterIndex : 0,
             mapName = activeMapName, matchTime = Time.unscaledTime - matchStartedAt,
@@ -880,9 +937,11 @@ public sealed class BombGame : MonoBehaviour {
             objective = objective,
             carrierName = objective != null ? NameOf(objective.carrierId) : "",
             ownerName = objective != null ? NameOf(objective.ownerId) : "",
-            challengerName = objective != null ? NameOf(objective.challengerId) : "",
+            challengerName = objective != null ? NameOf(!string.IsNullOrEmpty(objective.challengerId)
+                ? objective.challengerId : objective.pickupPriorityId) : "",
             ownerColor = objective != null ? ColorOf(objective.ownerId) : BombUi.Text,
-            challengerColor = objective != null ? ColorOf(objective.challengerId) : BombUi.Charge,
+            challengerColor = objective != null ? ColorOf(!string.IsNullOrEmpty(objective.challengerId)
+                ? objective.challengerId : objective.pickupPriorityId) : BombUi.Charge,
             toast = toast, toastAlpha = Mathf.Clamp01(toastUntil - Time.unscaledTime)
         });
         foreach (KeyValuePair<string, Avatar> entry in avatars) {
@@ -890,7 +949,14 @@ public sealed class BombGame : MonoBehaviour {
             if (a.body == null || a.state == null || !a.state.alive || !a.body.activeInHierarchy) continue;
             Vector3 pos = gameCamera.WorldToScreenPoint(a.body.transform.position + Vector3.up * (a.state.size * .5f + .3f));
             if (pos.z > 0 && pos.x >= 0 && pos.x <= Screen.width && pos.y >= 0 && pos.y <= Screen.height)
-                hud.DrawNameTag(new Vector2(pos.x, Screen.height - pos.y), a.state.name, entry.Key == myId);
+                hud.DrawNameTag(
+                    new Vector2(pos.x, Screen.height - pos.y),
+                    a.state.name,
+                    a.state.hp,
+                    entry.Key == myId,
+                    objective != null && objective.carrierId == entry.Key,
+                    objective != null ? objective.fireLock : 0,
+                    objective != null ? objective.fireLockMax : 2);
         }
         DrawStoryNotice();
     }
@@ -1151,15 +1217,22 @@ public sealed class BombGame : MonoBehaviour {
     }
 
     void ConnectToConfiguredServer() {
+        playerName = playerName.Trim();
+        if (string.IsNullOrEmpty(playerName)) {
+            status = "Hãy nhập tên người chơi trước khi vào đấu trường.";
+            return;
+        }
         host = host.Trim();
         if (string.IsNullOrEmpty(host)) {
             status = "Bản game chưa được cấu hình server. Hãy liên hệ người gửi game.";
             showNetworkSettings = true;
+            mainMenu.ShowNetworkSettings();
             return;
         }
         if (!int.TryParse(port, out int parsed) || parsed < 1 || parsed > 65535) {
             status = "Cấu hình server có port không hợp lệ.";
             showNetworkSettings = true;
+            mainMenu.ShowNetworkSettings();
             return;
         }
         PlayerPrefs.SetString("BombServerHost", host);

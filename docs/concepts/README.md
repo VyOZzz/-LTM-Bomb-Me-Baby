@@ -18,6 +18,18 @@ These images are concept references generated with the built-in imagegen tool on
 
 The runtime UI in `Assets/Scripts/BombGame.cs` follows this direction: dark translucent panels, orange attack/charge, cyan shield, blue boost, green HP, a compact top-center survivor counter, and unobtrusive network diagnostics. The concept images remain references only and must not be presented as screenshots of the running game.
 
+## Runtime menu and cinematic assets
+
+Generated with the built-in ImageGen tool on 2026-10-21 and used by the Unity client:
+
+- `Assets/Resources/Menu/menu_background.png`: 16:9 main-menu key art; dark negative space on the left for controls, three floating biomes and the Fire Heart on the right.
+- `Assets/Resources/Menu/story_01.png`: the intact Fire Heart protecting the peaceful floating arenas.
+- `Assets/Resources/Menu/story_02.png`: the heart shattering into exactly three fragments sent toward the three regions.
+- `Assets/Resources/Menu/story_03.png`: the bomb heroes beginning their journey toward the pedestal.
+- `Assets/StreamingAssets/story_intro.mp4`: 16-second H.264 cinematic assembled from the three frames with FFmpeg; Vietnamese narration is rendered as a Unity subtitle overlay.
+
+All four image prompts requested premium stylized 3D animated-game art, a 16:9 frame, family-friendly round bomb heroes, no text/logo/watermark, and space for runtime UI or subtitles. The menu prompt additionally requested twilight navy with ember-orange/cyan/magenta light and left-side negative space. The three story prompts respectively described the intact heart, its three-way shattering, and the heroes' departure across meadow, crossroads and crater.
+
 ## Generation prompts
 
 ### Arena visual direction
