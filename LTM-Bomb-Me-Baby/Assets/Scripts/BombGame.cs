@@ -62,7 +62,7 @@ public sealed class BombGame : MonoBehaviour {
     bool showNetworkSettings;
     BombStory story;
     BombStoryCinematic cinematic;
-    BombAudio audio;
+    BombAudio gameAudio;
     HudNotice activeNotice;
     float noticeStartedAt, noticeEndsAt;
     [SerializeField] Camera gameCamera;
@@ -99,8 +99,8 @@ public sealed class BombGame : MonoBehaviour {
         if (!string.IsNullOrEmpty(storyError)) Debug.LogWarning(storyError);
         cinematic = GetComponent<BombStoryCinematic>();
         if (cinematic == null) cinematic = gameObject.AddComponent<BombStoryCinematic>();
-        audio = GetComponent<BombAudio>();
-        if (audio == null) audio = gameObject.AddComponent<BombAudio>();
+        gameAudio = GetComponent<BombAudio>();
+        if (gameAudio == null) gameAudio = gameObject.AddComponent<BombAudio>();
         if (gameCamera == null) gameCamera = Camera.main;
         if (actorsRoot == null) actorsRoot = FindSceneRoot("Players");
         if (pickupsRoot == null) pickupsRoot = FindSceneRoot("Pickups");
@@ -319,7 +319,7 @@ public sealed class BombGame : MonoBehaviour {
             case "LEFT_ROOM":
                 room = null; phase = "MENU"; winnerId = "";
                 status = "Đã rời phòng. Tạo phòng hoặc nhập mã phòng.";
-                audio.StopGameplayLoops();
+                gameAudio.StopGameplayLoops();
                 ClearNotices();
                 ClearActors();
                 break;
@@ -335,7 +335,7 @@ public sealed class BombGame : MonoBehaviour {
                     : "Trận đấu bắt đầu" + (string.IsNullOrEmpty(msg.mapName) ? "!" : ": " + msg.mapName);
                 ClearNotices();
                 ShowMapIntro(msg.mapId);
-                audio.PlayMatchStart();
+                gameAudio.PlayMatchStart();
                 break;
             case "STATE_UPDATE":
                 phase = msg.phase;
@@ -345,7 +345,7 @@ public sealed class BombGame : MonoBehaviour {
                 if (msg.playerId == myId) charging = false;
                 if (msg.visible) {
                     Vector3 explosionPosition = new Vector3(msg.x, .45f, msg.z);
-                    audio.PlayExplosion(explosionPosition, msg.radius);
+                    gameAudio.PlayExplosion(explosionPosition, msg.radius);
                     StartCoroutine(Explosion(explosionPosition, msg.radius));
                 }
                 break;
@@ -358,39 +358,39 @@ public sealed class BombGame : MonoBehaviour {
                 }
                 break;
             case "ENERGY_PICKED":
-                audio.PlayEnergyPickup(msg.playerId == myId, PositionOf(msg.playerId));
+                gameAudio.PlayEnergyPickup(msg.playerId == myId, PositionOf(msg.playerId));
                 ShowStoryEvent(msg);
                 break;
             case "CORE_PICKED":
-                audio.PlayCorePickup(msg.playerId == myId, PositionOf(msg.playerId));
+                gameAudio.PlayCorePickup(msg.playerId == myId, PositionOf(msg.playerId));
                 ShowStoryEvent(msg);
                 break;
             case "PLAYER_DAMAGED":
-                audio.PlayDamage(msg.playerId == myId, PositionOf(msg.playerId));
+                gameAudio.PlayDamage(msg.playerId == myId, PositionOf(msg.playerId));
                 ShowStoryEvent(msg);
                 break;
             case "DAMAGE_REFLECTED":
-                audio.PlayDamage(msg.to == myId, PositionOf(msg.to));
+                gameAudio.PlayDamage(msg.to == myId, PositionOf(msg.to));
                 ShowStoryEvent(msg);
                 break;
             case "SHIELD_ACTIVATED":
-                audio.PlayShield(msg.playerId == myId, PositionOf(msg.playerId));
+                gameAudio.PlayShield(msg.playerId == myId, PositionOf(msg.playerId));
                 ShowStoryEvent(msg);
                 break;
             case "BOOST_ACTIVATED":
-                audio.PlayBoost(msg.playerId == myId, PositionOf(msg.playerId));
+                gameAudio.PlayBoost(msg.playerId == myId, PositionOf(msg.playerId));
                 ShowStoryEvent(msg);
                 break;
             case "PLAYER_ELIMINATED":
-                if (msg.playerId == myId) audio.StopGameplayLoops();
-                else audio.PlayDamage(false, PositionOf(msg.playerId));
+                if (msg.playerId == myId) gameAudio.StopGameplayLoops();
+                else gameAudio.PlayDamage(false, PositionOf(msg.playerId));
                 ShowStoryEvent(msg);
                 break;
             case "GAME_OVER":
                 phase = "FINISHED";
                 winnerId = msg.winnerId;
-                audio.StopGameplayLoops();
-                if (msg.mode != "JOURNEY" || msg.chapterIndex < 2) audio.PlayResult(winnerId == myId);
+                gameAudio.StopGameplayLoops();
+                if (msg.mode != "JOURNEY" || msg.chapterIndex < 2) gameAudio.PlayResult(winnerId == myId);
                 if (msg.mode != "JOURNEY")
                     status = winnerId == myId ? "Bạn chiến thắng!" : "Trận đấu kết thúc.";
                 else if (string.IsNullOrEmpty(winnerId))
@@ -405,8 +405,8 @@ public sealed class BombGame : MonoBehaviour {
             case "JOURNEY_COMPLETE":
                 phase = "FINISHED";
                 winnerId = msg.winnerId;
-                audio.StopGameplayLoops();
-                audio.PlayResult(winnerId == myId);
+                gameAudio.StopGameplayLoops();
+                gameAudio.PlayResult(winnerId == myId);
                 int shards = 0;
                 if (msg.scores != null) foreach (ScoreData s in msg.scores) if (s.playerId == winnerId) shards = s.roundWins;
                 if (string.IsNullOrEmpty(winnerId)) status = "Hành trình kết thúc: đồng hạng.";
@@ -428,7 +428,7 @@ public sealed class BombGame : MonoBehaviour {
                 status = ErrorText(msg.code, msg.mode);
                 break;
             case "NETWORK_ERROR":
-                audio.StopGameplayLoops();
+                gameAudio.StopGameplayLoops();
                 status = network.LastError + " Đang tự thử lại...";
                 break;
         }
@@ -522,7 +522,7 @@ public sealed class BombGame : MonoBehaviour {
         foreach (PlayerData p in snapshot.players) {
             if (p.alive) aliveCount++;
             playerNames[p.id] = p.name;
-            if (p.id == myId) audio.SetCharging(p.alive && p.charging, p.charge);
+            if (p.id == myId) gameAudio.SetCharging(p.alive && p.charging, p.charge);
         }
         HashSet<string> seen = new HashSet<string>();
         for (int i = 0; i < snapshot.players.Length; i++) {
