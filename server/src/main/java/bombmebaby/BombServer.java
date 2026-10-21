@@ -12,6 +12,7 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -27,6 +28,7 @@ public final class BombServer {
     final Map<String,GameRoom> rooms = new ConcurrentHashMap<>();
     final Map<String,PlayerState> sessions = new ConcurrentHashMap<>();
     final Set<Connection> connections = ConcurrentHashMap.newKeySet();
+    final Matchmaker matchmaker = new Matchmaker();
     final ExecutorService clients = Executors.newFixedThreadPool(64);
     final ScheduledExecutorService gameLoop = Executors.newSingleThreadScheduledExecutor();
     final SyncMode syncMode;
@@ -50,6 +52,8 @@ public final class BombServer {
             previousTick = nowNs;
             long now = System.currentTimeMillis();
             connections.forEach(connection -> connection.closeIfUnhealthy(now));
+            try { matchmake(now); }
+            catch (RuntimeException e) { System.err.println("Matchmaking: " + e); }
             for (GameRoom room : rooms.values()) {
                 try { room.update(now, dt); }
                 catch (RuntimeException e) { System.err.println("Room " + room.code + ": " + e); }
@@ -69,6 +73,47 @@ public final class BombServer {
                 clients.execute(new Connection(socket));
             }
         }
+    }
+
+    GameRoom createRoom(GameMode mode) {
+        GameRoom created;
+        do {
+            String code = UUID.randomUUID().toString().substring(0,6).toUpperCase();
+            created = new GameRoom(code, syncMode, mode);
+        } while (rooms.putIfAbsent(created.code, created) != null);
+        return created;
+    }
+
+    /** Game-loop thread: turns queued players into rooms that start right away. */
+    void matchmake(long now) {
+        for (Matchmaker.Match match : matchmaker.takeMatches(now)) {
+            GameRoom room = createRoom(match.mode());
+            for (PlayerState p : match.players()) {
+                // Same player -> room order as Connection: a CREATE/JOIN racing us wins or loses cleanly.
+                synchronized (p) {
+                    if (p.room != null || !p.connected) continue;
+                    p.send(GameRoom.data("type","MATCH_FOUND","room",room.code,"mode",match.mode().name()));
+                    room.join(p);
+                }
+            }
+            synchronized (room) {
+                if (room.startMatched(now)) continue;
+                // Someone vanished between queueing and joining: the rest keep their place.
+                List<PlayerState> rest = List.copyOf(room.players);
+                for (PlayerState p : rest) {
+                    room.leave(p);
+                    p.send(GameRoom.data("type","LEFT_ROOM"));
+                }
+                rooms.remove(room.code, room);
+                announceQueue(match.mode(), matchmaker.requeue(match.mode(), rest));
+            }
+        }
+    }
+
+    static void announceQueue(GameMode mode, List<PlayerState> waiting) {
+        Object status = GameRoom.data("type","MATCHMAKING","status","SEARCHING","mode",mode.name(),
+            "waiting",waiting.size(),"minPlayers",GameRules.MIN_PLAYERS,"maxPlayers",GameRules.MATCH_MAX_PLAYERS);
+        for (PlayerState p : waiting) p.send(status);
     }
 
     final class Connection implements Runnable {
@@ -183,6 +228,7 @@ public final class BombServer {
 
         void disconnect() {
             if (player == null) return;
+            if (player.connection == this) leaveQueue(player);
             withSessionState(player, () -> {
                 if (player.connection != this) return;
                 player.disconnectedAt = System.currentTimeMillis();
@@ -254,19 +300,17 @@ public final class BombServer {
             GameRoom room = player.room;
             switch (type) {
                 case "PING" -> send(GameRoom.data("type","PONG","clientTime",number(m,"clientTime",0),"serverTime",System.currentTimeMillis()));
+                // Entering a room locks the player first, like matchmake(), so a match that is
+                // being formed and a manual CREATE/JOIN can never both seat the same player.
                 case "CREATE_ROOM" -> {
-                    if (room != null) { error("ALREADY_IN_ROOM"); return; }
                     GameMode mode = GameMode.fromProtocol(string(m,"mode"));
                     if (mode == null) { error("INVALID_MODE"); return; }
-                    GameRoom created;
-                    do {
-                        String code = UUID.randomUUID().toString().substring(0,6).toUpperCase();
-                        created = new GameRoom(code, syncMode, mode);
-                    } while (rooms.putIfAbsent(created.code, created) != null);
-                    created.join(player);
+                    synchronized (player) {
+                        if (!canEnterRoom()) return;
+                        createRoom(mode).join(player);
+                    }
                 }
                 case "JOIN_ROOM" -> {
-                    if (room != null) { error("ALREADY_IN_ROOM"); return; }
                     GameRoom target = rooms.get(string(m,"code").trim().toUpperCase());
                     if (target == null) { error("ROOM_NOT_FOUND"); return; }
                     // Optional: a client that picked a mode first only joins rooms of that mode.
@@ -275,9 +319,24 @@ public final class BombServer {
                         send(GameRoom.data("type","ERROR","code","MODE_MISMATCH","mode",target.mode.name()));
                         return;
                     }
-                    synchronized (target) {
-                        if (rooms.get(target.code) != target || !target.join(player)) error("ROOM_UNAVAILABLE");
+                    synchronized (player) {
+                        if (!canEnterRoom()) return;
+                        synchronized (target) {
+                            if (rooms.get(target.code) != target || !target.join(player)) error("ROOM_UNAVAILABLE");
+                        }
                     }
+                }
+                case "FIND_MATCH" -> {
+                    GameMode mode = GameMode.fromProtocol(string(m,"mode"));
+                    if (mode == null) { error("INVALID_MODE"); return; }
+                    synchronized (player) {
+                        if (!canEnterRoom()) return;
+                        announceQueue(mode, matchmaker.enqueue(player, mode));
+                    }
+                }
+                case "CANCEL_MATCH" -> {
+                    if (!leaveQueue(player)) { error("NOT_SEARCHING"); return; }
+                    send(GameRoom.data("type","MATCHMAKING","status","CANCELLED"));
                 }
                 case "LEAVE_ROOM" -> {
                     if (room != null) {
@@ -299,6 +358,21 @@ public final class BombServer {
                 }
                 default -> error("UNKNOWN_ACTION");
             }
+        }
+
+        /** Caller holds the player monitor. */
+        private boolean canEnterRoom() {
+            if (player.room != null) { error("ALREADY_IN_ROOM"); return false; }
+            if (matchmaker.modeOf(player) != null) { error("ALREADY_SEARCHING"); return false; }
+            return true;
+        }
+
+        private boolean leaveQueue(PlayerState session) {
+            GameMode mode = matchmaker.modeOf(session);
+            List<PlayerState> waiting = matchmaker.remove(session);
+            if (waiting == null) return false;
+            announceQueue(mode, waiting);
+            return true;
         }
 
         private void error(String code) { send(GameRoom.data("type","ERROR","code",code)); }

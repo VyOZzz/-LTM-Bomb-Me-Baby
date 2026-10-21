@@ -38,7 +38,7 @@ Muốn demo lặp lại một map Đấu nhanh, thêm `"-Ddemo.map=meadow"` vào
 
 - `mvn test`: 12 test, 0 failure, 0 error tại commit ngày 13/10.
 - `scripts/network_smoke.py`: PASS với 2 client giả lập, create/join/ready/snapshot/move/explode.
-- Build Windows khởi động được, đọc `server.txt`, kết nối localhost và bắt đầu trận solo.
+- Build Windows khởi động được, đọc `server.txt`, kết nối localhost và bắt đầu trận solo (trước 21/10; nay mỗi trận cần ít nhất 2 người).
 - Hai Windows client thật cùng join phòng, cùng ready và nhận phase `PLAYING`; RTT, message count và byte count cập nhật trên cả hai.
 
 Đây là kiểm thử chức năng, chưa thay thế số liệu thực nghiệm cho báo cáo. Benchmark phải được sinh từ script đo lặp lại, giữ nguyên map/kịch bản/cấu hình máy và lưu dữ liệu thô. Kết quả 13/10 không được dùng để khẳng định build 21/10 đã chơi trọn hai mode.

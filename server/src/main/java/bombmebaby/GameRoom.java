@@ -53,7 +53,6 @@ final class GameRoom {
     String finalRoundWinnerId = "";
     private int nextPickupId = 1;
     private long lastOrbAt;
-    private boolean soloRound;
     private boolean hasStarted;
 
     GameRoom(String code) {
@@ -98,7 +97,15 @@ final class GameRoom {
         if (journeyComplete) { reject(player,"JOURNEY_COMPLETE"); return; }
         player.ready = value;
         broadcast(data("type", "ROOM_STATE", "room", roomInfo()));
-        if (!players.isEmpty() && players.stream().allMatch(p -> p.ready && p.connected)) start(System.currentTimeMillis());
+        if (players.size() >= GameRules.MIN_PLAYERS && players.stream().allMatch(p -> p.ready && p.connected))
+            start(System.currentTimeMillis());
+    }
+
+    /** Matchmade rooms skip the ready check: everyone in them already asked to play. */
+    synchronized boolean startMatched(long now) {
+        if (phase != Phase.WAITING || players.size() < GameRules.MIN_PLAYERS) return false;
+        start(now);
+        return true;
     }
 
     private void start(long now) {
@@ -111,7 +118,6 @@ final class GameRoom {
         List<double[]> spawns = randomSpawns(players.size());
         hasStarted = true;
         phase = Phase.PLAYING;
-        soloRound = players.size() == 1;
         tick = 0;
         orbs.clear(); cores.clear();
         for (int i = 0; i < players.size(); i++) {
@@ -405,10 +411,6 @@ final class GameRoom {
     private void checkGameOver() {
         if (phase != Phase.PLAYING) return;
         List<PlayerState> survivors = players.stream().filter(p -> p.alive).toList();
-        // Solo rooms are a gameplay-test mode: one living player must not end
-        // the round after every explosion. A solo round still finishes if the
-        // player is eliminated or disconnects and no survivors remain.
-        if (soloRound && survivors.size() == 1) return;
         if (survivors.size() <= 1) finishRound(survivors.isEmpty() ? null : survivors.get(0), "LAST_STANDING");
     }
 
@@ -561,7 +563,7 @@ final class GameRoom {
 
     synchronized Map<String,Object> roomInfo() {
         return data("code",code,"phase",phase.name(),"mapId",map.id,"mapName",map.name,
-            "arenaSize",map.halfSize,"maxPlayers",GameRules.MAX_PLAYERS,
+            "arenaSize",map.halfSize,"minPlayers",GameRules.MIN_PLAYERS,"maxPlayers",GameRules.MAX_PLAYERS,
             "mode",mode.name(),"chapterIndex",protocolChapterIndex(),"scores",scores(),
             "journeyComplete",journeyComplete,"players",players.stream().map(p -> data(
             "id",p.id,"name",p.name,"ready",p.ready,"connected",p.connected,

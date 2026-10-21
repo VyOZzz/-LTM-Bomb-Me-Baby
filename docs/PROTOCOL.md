@@ -33,10 +33,26 @@ Khi TCP đứt, client mở socket mới trong vòng 10 giây và gửi HELLO v�
 {"type":"USE_SHIELD","seq":7}
 {"type":"USE_BOOST","seq":8}
 {"type":"LEAVE_ROOM","seq":9}
+{"type":"FIND_MATCH","seq":10,"mode":"QUICK"}
+{"type":"CANCEL_MATCH","seq":11}
 {"type":"PING","clientTime":1720000000000}
 ```
 
-`CREATE_ROOM.mode` không phân biệt hoa/thường. Thiếu hoặc rỗng mặc định thành `QUICK` để tương thích client cũ. Giá trị khác QUICK/JOURNEY nhận `INVALID_MODE`. Người vào phòng dùng mode do chủ phòng đã chọn.
+`CREATE_ROOM.mode` và `FIND_MATCH.mode` không phân biệt hoa/thường. Thiếu hoặc rỗng mặc định thành `QUICK` để tương thích client cũ. Giá trị khác QUICK/JOURNEY nhận `INVALID_MODE`. Người vào phòng dùng mode do chủ phòng đã chọn.
+
+## Tìm trận (cập nhật 21/10/2026)
+
+Mỗi phòng, kể cả phòng tạo bằng mã, cần ít nhất `minPlayers` = 2 người mới bắt đầu được. Một người bấm `READY` một mình vẫn ở `WAITING`.
+
+`FIND_MATCH` đưa người chơi vào hàng chờ của mode đó; QUICK và JOURNEY không ghép lẫn. Mỗi khi hàng chờ thay đổi, mọi người trong hàng nhận:
+
+```json
+{"type":"MATCHMAKING","status":"SEARCHING","mode":"QUICK","waiting":2,"minPlayers":2,"maxPlayers":4}
+```
+
+Đủ 4 người thì ghép ngay. Có 2–3 người thì server chờ thêm 4 giây cho người đến sau rồi ghép cả hàng. Server tạo phòng mới, gửi `{"type":"MATCH_FOUND","room":"ABC123","mode":"QUICK"}` cho từng người, rồi `ROOM_STATE` và `GAME_START` ngay, không cần `READY`. Sau trận, phòng ghép hoạt động như phòng thường: mọi người bấm `READY` để chơi tiếp hoặc `LEAVE_ROOM` để tìm trận khác.
+
+`CANCEL_MATCH` rời hàng chờ và nhận `{"type":"MATCHMAKING","status":"CANCELLED"}`; không ở trong hàng nhận `NOT_SEARCHING`. Đang trong hàng chờ thì `CREATE_ROOM`, `JOIN_ROOM`, `FIND_MATCH` nhận `ALREADY_SEARCHING`; đang ở trong phòng thì `FIND_MATCH` nhận `ALREADY_IN_ROOM`. Mất kết nối khi đang chờ thì bị xóa khỏi hàng; reconnect không tự vào lại hàng.
 
 Server trả `ACK` sau request không phải PING. ACK xác nhận server đã xử lý message đến điểm phản hồi, không tự khẳng định hành động gameplay thành công; client vẫn phải đọc `ERROR` nếu có.
 
@@ -44,7 +60,7 @@ Server trả `ACK` sau request không phải PING. ACK xác nhận server đã x
 
 `ROOM_STATE.room` có:
 
-- `code`, `phase`, `mapId`, `mapName`, `arenaSize`, `maxPlayers`, `players`;
+- `code`, `phase`, `mapId`, `mapName`, `arenaSize`, `minPlayers`, `maxPlayers`, `players`;
 - `mode`: `QUICK` hoặc `JOURNEY`;
 - `chapterIndex`: `-1` cho QUICK; `0`, `1`, `2` cho ba chương JOURNEY;
 - `scores`: mảng `{playerId,name,points,roundWins,eliminations}`; rỗng trong QUICK. `roundWins` là số mảnh Tim Lửa đã mang về, `eliminations` là số lần loại đối thủ;

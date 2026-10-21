@@ -320,6 +320,21 @@ public sealed class BombGame : MonoBehaviour {
                 reconnectExpired = false;
                 status = resumed ? "Đã kết nối lại với server." : "";
                 if (resumed) Toast("Đã kết nối lại — trận đấu tiếp tục.");
+                // The server drops a disconnected player from the matchmaking queue.
+                modeMenu.StopSearch();
+                break;
+            case "MATCHMAKING":
+                if (msg.status == "SEARCHING") {
+                    status = "";
+                    modeMenu.ShowSearch(msg.mode, msg.waiting, msg.minPlayers);
+                } else {
+                    modeMenu.StopSearch();
+                    status = "Đã hủy tìm trận.";
+                }
+                break;
+            case "MATCH_FOUND":
+                modeMenu.StopSearch();
+                status = "Đã tìm thấy trận!";
                 break;
             case "ROOM_STATE":
                 if (room == null) status = "";
@@ -328,14 +343,14 @@ public sealed class BombGame : MonoBehaviour {
                     TrackReconnectDeadlines(room.players);
                     phase = room.phase;
                     if (phase == "WAITING")
-                        status = "Đã vào phòng " + room.code + ". Chờ mọi người sẵn sàng.";
+                        status = "Đã vào phòng " + room.code + ". Chờ đủ người và mọi người sẵn sàng.";
                     else if (phase == "PLAYING" && status.Contains("Đang tự thử lại"))
                         status = "Đã kết nối lại vào trận.";
                 }
                 break;
             case "LEFT_ROOM":
                 room = null; phase = "MENU"; winnerId = "";
-                status = "Đã rời phòng. Tạo phòng hoặc nhập mã phòng.";
+                status = "Đã rời phòng. Tìm trận, tạo phòng hoặc nhập mã phòng.";
                 gameAudio.StopGameplayLoops();
                 gameAudio.SetMenuMusic();
                 ClearNotices();
@@ -448,6 +463,7 @@ public sealed class BombGame : MonoBehaviour {
                 if (msg.code == "RESUME_FAILED") {
                     ExpireReconnect();
                 } else status = ErrorText(msg.code, msg.mode);
+                if (msg.code == "NOT_SEARCHING") modeMenu.StopSearch();
                 break;
             case "PLAYER_DISCONNECTED":
                 reconnectDeadlines[msg.playerId] = Time.unscaledTime + Mathf.Max(0, msg.reconnectMs / 1000f);
@@ -462,6 +478,7 @@ public sealed class BombGame : MonoBehaviour {
                 if (room != null && reconnectStartedAt < 0) reconnectStartedAt = Time.unscaledTime;
                 charging = false;
                 status = network.LastError + " Đang thử kết nối lại...";
+                modeMenu.StopSearch();
                 break;
         }
     }
@@ -666,6 +683,8 @@ public sealed class BombGame : MonoBehaviour {
                 return "Mã này là phòng " + (roomMode == "JOURNEY" ? "Hành trình Ba Mảnh" : "Đấu nhanh")
                     + ". Quay lại chọn đúng chế độ rồi nhập lại mã.";
             case "ALREADY_IN_ROOM": return "Bạn đang ở trong một phòng khác.";
+            case "ALREADY_SEARCHING": return "Bạn đang tìm trận. Hủy tìm trước khi tạo hoặc vào phòng.";
+            case "NOT_SEARCHING": return "Bạn không còn trong hàng chờ tìm trận.";
             default: return "Server từ chối: " + code;
         }
     }
@@ -924,6 +943,15 @@ public sealed class BombGame : MonoBehaviour {
                         type = "JOIN_ROOM", code = joinCode, mode = modeMenu.SelectedMode
                     }));
                     break;
+                case BombModeMenu.Choice.FindMatch:
+                    status = "";
+                    RunAfterJourneyIntro(() => network.Send(new BombMessage {
+                        type = "FIND_MATCH", mode = modeMenu.SelectedMode
+                    }));
+                    break;
+                case BombModeMenu.Choice.CancelMatch:
+                    network.Send(new BombMessage { type = "CANCEL_MATCH" });
+                    break;
                 case BombModeMenu.Choice.Settings:
                     overlay.OpenSettings();
                     break;
@@ -981,7 +1009,11 @@ public sealed class BombGame : MonoBehaviour {
                 if (PanelButton(myReady ? "Bỏ sẵn sàng" : "Sẵn sàng", myReady ? BombUi.TextMuted : BombUi.Health))
                     network.Send(new BombMessage { type = "READY", ready = !myReady });
                 int capacity = room.maxPlayers > 0 ? room.maxPlayers : 10;
-                GUILayout.Label($"Có thể bắt đầu một mình để test; tối đa {capacity} người.", smallStyle);
+                int minimum = room.minPlayers > 0 ? room.minPlayers : 2;
+                int missing = minimum - (room.players == null ? 0 : room.players.Length);
+                GUILayout.Label(missing > 0
+                    ? $"Cần thêm {missing} người nữa mới bắt đầu được. Gửi mã phòng cho bạn bè."
+                    : $"Bắt đầu khi mọi người sẵn sàng; tối thiểu {minimum}, tối đa {capacity} người.", smallStyle);
             }
             if (PanelButton("Rời phòng", BombUi.PanelRaised, BombUi.Text)) network.Send(new BombMessage { type = "LEAVE_ROOM" });
         }

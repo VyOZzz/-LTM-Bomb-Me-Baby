@@ -2,10 +2,11 @@ using UnityEngine;
 using static BombUi;
 
 /// Main menu after connecting, in two steps like most party games:
-/// 1. pick a mode (two cards), 2. create a room of that mode or join a friend's with a code.
+/// 1. pick a mode (two cards), 2. find a random match of that mode, create a private room,
+/// or join a friend's with a code.
 /// Drawn with IMGUI like the rest of the client; colors and shapes come from BombUi.
 sealed class BombModeMenu {
-    public enum Choice { None, Create, Join, Settings, Quit }
+    public enum Choice { None, Create, Join, FindMatch, CancelMatch, Settings, Quit }
 
     sealed class Card {
         public string mode, key, tag, title, description;
@@ -20,7 +21,7 @@ sealed class BombModeMenu {
 
     readonly Card[] cards = {
         new Card {
-            mode = "QUICK", key = "1", tag = "1 TRẬN  •  1–10 NGƯỜI", title = "ĐẤU NHANH",
+            mode = "QUICK", key = "1", tag = "1 TRẬN  •  2–10 NGƯỜI", title = "ĐẤU NHANH",
             description = "Vào trận ngay. Ăn năng lượng cho bóng to ra, nạp nổ và là quả bom cuối cùng còn lăn.",
             rows = new[,] { { "Bản đồ", "Ngẫu nhiên mỗi trận" }, { "Thắng khi", "Chỉ còn mình bạn" } },
             accent = Charge
@@ -35,6 +36,10 @@ sealed class BombModeMenu {
 
     bool roomStep;
     int selected;
+    // Matchmaking state as last reported by the server (MATCHMAKING messages).
+    bool searching;
+    int waiting, minPlayers = 2;
+    float searchStartedAt;
     Vector2 lastMouse;
     // Layout is in virtual units scaled by GUI.matrix; text is drawn unscaled with
     // font sizes multiplied by s, because IMGUI stretches glyph bitmaps and blurs them.
@@ -44,12 +49,26 @@ sealed class BombModeMenu {
     /// Protocol mode of the card the player picked: QUICK or JOURNEY.
     public string SelectedMode => cards[selected].mode;
 
-    /// Esc on the menu: from the room step back to the mode cards. Returns false on the first step.
+    public bool Searching => searching;
+
+    /// Esc on the menu: from the room step back to the mode cards. Returns false on the first step
+    /// and while searching, so the queued mode stays on screen until the search is cancelled.
     public bool Back() {
-        if (!roomStep) return false;
+        if (!roomStep || searching) return false;
         roomStep = false;
         return true;
     }
+
+    public void ShowSearch(string mode, int waitingPlayers, int requiredPlayers) {
+        if (!searching) searchStartedAt = Time.unscaledTime;
+        searching = true;
+        waiting = waitingPlayers;
+        if (requiredPlayers > 0) minPlayers = requiredPlayers;
+        for (int i = 0; i < cards.Length; i++) if (cards[i].mode == mode) selected = i;
+        roomStep = true;
+    }
+
+    public void StopSearch() { searching = false; }
 
     public Choice Draw(string playerName, string status, ref string joinCode) {
         s = Mathf.Clamp(Screen.height / 860f, .7f, 1.6f);
@@ -69,7 +88,7 @@ sealed class BombModeMenu {
         if (!string.IsNullOrEmpty(status))
             Label(new Rect(0, height - 76, width, 24), status, footer);
         Label(new Rect(0, height - 40, width, 24),
-            roomStep ? "Esc để chọn chế độ khác" : "1 / 2 hoặc ← → rồi Enter để chọn", footer);
+            searching ? "Bấm Hủy tìm để đổi chế độ" : roomStep ? "Esc để chọn chế độ khác" : "1 / 2 hoặc ← → rồi Enter để chọn", footer);
 
         GUI.matrix = baseMatrix;
         return choice;
@@ -121,12 +140,12 @@ sealed class BombModeMenu {
         return Choice.None;
     }
 
-    /// Step 2: create a room of the chosen mode, or join a friend's room with its code.
+    /// Step 2: find a random match of the chosen mode, create a private room, or join one with its code.
     Choice DrawRoomStep(float width, float height, ref string joinCode) {
         Card card = cards[selected];
         Choice choice = Choice.None;
         Rect back = new Rect(56, 124, 210, 36);
-        if (HeaderButton(back, "← Chọn chế độ khác", TextMuted)) roomStep = false;
+        if (!searching && HeaderButton(back, "← Chọn chế độ khác", TextMuted)) roomStep = false;
 
         bool stacked = width < 820;
         float gap = 28;
@@ -141,7 +160,8 @@ sealed class BombModeMenu {
         Event e = Event.current;
         bool fieldFocused = GUI.GetNameOfFocusedControl() == "join-code";
         string code = joinCode ?? "";
-        bool codeReady = code.Length == CodeLength;
+        // The server refuses rooms while queued, so joining waits until the search is cancelled.
+        bool codeReady = code.Length == CodeLength && !searching;
         // Read Enter before the text field gets the event: a focused TextField swallows it.
         bool enter = GUI.enabled && e.type == EventType.KeyDown
             && (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter);
@@ -150,15 +170,28 @@ sealed class BombModeMenu {
             e.Use();
         }
 
-        // Create panel
+        // Matchmaking panel; a private room is the small secondary action in its corner.
         Panel3D(create, card.accent);
         tagStyle.normal.textColor = card.accent;
-        Label(new Rect(create.x + 28, create.y + 26, create.width - 56, 18), "CHỦ PHÒNG", tagStyle);
-        Label(new Rect(create.x + 28, create.y + 48, create.width - 56, 40), "TẠO PHÒNG MỚI", cardTitle);
-        Label(new Rect(create.x + 28, create.y + 96, create.width - 56, 80),
-            "Bạn tạo phòng rồi gửi mã 6 ký tự cho bạn bè. Mọi người bấm Sẵn sàng là bắt đầu.", bodyText);
-        if (BigButton(new Rect(create.x + 28, create.yMax - 74, create.width - 56, 50), "TẠO PHÒNG", card.accent, Night))
-            choice = Choice.Create;
+        Rect button = new Rect(create.x + 28, create.yMax - 74, create.width - 56, 50);
+        if (searching) {
+            int seconds = Mathf.FloorToInt(Time.unscaledTime - searchStartedAt);
+            string dots = new string('.', 1 + Mathf.FloorToInt(Time.unscaledTime * 2) % 3);
+            Label(new Rect(create.x + 28, create.y + 26, create.width - 56, 18), $"ĐANG TÌM  •  {seconds / 60}:{seconds % 60:00}", tagStyle);
+            Label(new Rect(create.x + 28, create.y + 48, create.width - 56, 40), "ĐANG TÌM TRẬN" + dots, cardTitle);
+            Label(new Rect(create.x + 28, create.y + 96, create.width - 56, 80), waiting >= minPlayers
+                ? $"Đã có {waiting} người. Trận sẽ bắt đầu sau vài giây, chờ thêm người vào cùng."
+                : $"{waiting}/{minPlayers} người đang chờ chế độ này. Cần ít nhất {minPlayers} người để bắt đầu.", bodyText);
+            if (BigButton(button, "HỦY TÌM", PanelRaised, Danger)) choice = Choice.CancelMatch;
+        } else {
+            Label(new Rect(create.x + 28, create.y + 26, create.width - 56, 18), "GHÉP NGẪU NHIÊN", tagStyle);
+            Label(new Rect(create.x + 28, create.y + 48, create.width - 56, 40), "TÌM TRẬN", cardTitle);
+            Label(new Rect(create.x + 28, create.y + 96, create.width - 56, 80),
+                "Ghép với người chơi khác cũng đang tìm chế độ này. Đủ người là vào trận ngay.", bodyText);
+            if (HeaderButton(new Rect(create.xMax - 28 - 150, create.y + 20, 150, 34), "Tạo phòng riêng", TextMuted))
+                choice = Choice.Create;
+            if (BigButton(button, "TÌM TRẬN", card.accent, Night)) choice = Choice.FindMatch;
+        }
 
         // Join panel
         Panel3D(join, Text);
@@ -171,16 +204,16 @@ sealed class BombModeMenu {
         Matrix4x4 savedMatrix = GUI.matrix;
         GUI.matrix = Matrix4x4.identity;
         GUI.SetNextControlName("join-code");
-        string typed = GUI.TextField(ToScreen(input), code, CodeLength + 2, field);
+        string typed = TextField(ToScreen(input), code, CodeLength + 2, field);
         GUI.matrix = savedMatrix;
         GUI.backgroundColor = savedBackground;
         joinCode = NormalizeCode(typed);
         if (joinCode.Length == 0 && !fieldFocused) Label(input, "Nhập mã, ví dụ 3FA9C1", keycap);
         Label(new Rect(join.x + 28, input.yMax + 8, join.width - 56, 20),
             $"{joinCode.Length}/{CodeLength}  •  chỉ gồm số 0–9 và chữ A–F", rowLabel);
+        codeReady = joinCode.Length == CodeLength && !searching;
         if (BigButton(new Rect(join.x + 28, join.yMax - 74, join.width - 56, 50), "VÀO PHÒNG",
-                joinCode.Length == CodeLength ? Text : PanelRaised, joinCode.Length == CodeLength ? Night : TextFaint)
-                && joinCode.Length == CodeLength)
+                codeReady ? Text : PanelRaised, codeReady ? Night : TextFaint) && codeReady)
             choice = Choice.Join;
         return choice;
     }
