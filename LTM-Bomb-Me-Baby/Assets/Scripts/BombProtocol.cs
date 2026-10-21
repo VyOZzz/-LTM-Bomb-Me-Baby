@@ -118,6 +118,7 @@ using System;
     public bool visible;
     public bool charging;
     public float charge;
+    public float chargeCooldown;
     public bool shield;
     public float shieldCooldown;
     public bool boost;

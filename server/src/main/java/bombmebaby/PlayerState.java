@@ -11,7 +11,7 @@ final class PlayerState {
     double x, z, dx, dz, hp = 100, size = 1, baseSize = 1;
     boolean ready, alive = true, charging;
     volatile boolean connected = true;
-    long chargeSince, shieldUntil, shieldReadyAt, boostUntil, boostReadyAt, disconnectedAt;
+    long chargeSince, chargeReadyAt, shieldUntil, shieldReadyAt, boostUntil, boostReadyAt, disconnectedAt;
     long lastSeq = -1;
     int kills;
 

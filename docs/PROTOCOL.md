@@ -125,3 +125,24 @@ Không thể READY để tạo vòng thứ tư; server trả `JOURNEY_COMPLETE` 
 `ENERGY_PICKED`, `CORE_PICKED`, `CORE_SPAWNED`, `SHIELD_ACTIVATED`, `BOOST_ACTIVATED`, `PLAYER_EXPLODE`, `PLAYER_DAMAGED`, `DAMAGE_REFLECTED`, `PLAYER_ELIMINATED`, `PLAYER_DISCONNECTED`, `ACK`, `PONG`, `ERROR` giữ ý nghĩa cũ.
 
 Server là nguồn chính thức: client chỉ gửi hướng/hành động, không tự khai báo tọa độ, HP, sát thương, điểm hoặc người thắng. TCP message từ client giới hạn 2048 ký tự.
+
+## Luồng input và snapshot
+
+`STATE_UPDATE` là trạng thái chính thức. Client nội suy hình ảnh, dựng layout theo dữ liệu map, không tự tính hit hoặc tự cộng HP. Server giới hạn input hướng về vector dài tối đa 1, tự tích phân vị trí, kiểm tra ranh giới/vật cản và quyết định khả năng nhìn thấy đối thủ. Mỗi phòng chứa tối đa 10 người. TCP message từ client giới hạn 2048 ký tự.
+
+## Luồng input → server → snapshot
+
+1. `BombGame.Update()` đọc WASD/Space/E/Shift và chỉ tạo **ý định** hành động.
+2. `BombNetwork.Send()` gắn `seq` và `clientTime`, serialize JSON rồi ghi một dòng UTF-8 lên TCP.
+3. Một `BombServer.Connection` đọc dòng JSON trên thread của client, kiểm tra session và sequence, sau đó gọi `GameRoom.action()`.
+4. Mọi thay đổi trong một phòng đi qua monitor `synchronized` của `GameRoom`; game loop 20 Hz cũng dùng cùng monitor khi gọi `update()`. Vì vậy input, tick và tranh nhặt Core không sửa đồng thời cùng một room.
+5. Server tích phân movement, collision, pickup, cooldown và damage. Mỗi hai tick, server gửi `STATE_UPDATE` — baseline hiện tại là full snapshot 10 Hz.
+6. Thread đọc của `BombNetwork` chỉ đưa JSON vào queue. `BombGame.Update()` trên Unity main thread lấy message, áp snapshot, nội suy transform và cập nhật HUD/VFX.
+
+```text
+Input Unity → BombNetwork (TCP JSON) → BombServer.Connection
+            → GameRoom.action/update → STATE_UPDATE
+            → BombNetwork inbox → BombGame.ApplySnapshot → scene/HUD/VFX
+```
+
+Không được cập nhật Unity `GameObject` từ network thread. Không được để client tự quyết định vị trí, HP, damage, pickup hoặc người thắng.

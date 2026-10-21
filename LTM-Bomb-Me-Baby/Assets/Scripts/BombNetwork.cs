@@ -21,8 +21,12 @@ public sealed class BombNetwork : IDisposable {
     int receivedMessages;
     string host, name;
     int port;
+    int connectionGeneration;
+    string lastError = "";
     public string ResumeToken { get; set; }
     public bool Connected { get; private set; }
+    public string LastError => lastError;
+    public string Endpoint => string.IsNullOrEmpty(host) ? "" : host + ":" + port;
     public int SentMessages => Volatile.Read(ref sentMessages);
     public int ReceivedMessages => Volatile.Read(ref receivedMessages);
     public long SentBytes => Interlocked.Read(ref sentBytes);
@@ -30,23 +34,30 @@ public sealed class BombNetwork : IDisposable {
 
     public void Connect(string host, int port, string name) {
         Dispose();
-        this.host = host;
+        this.host = host.Trim();
         this.port = port;
         this.name = name;
+        lastError = "";
         running = true;
-        worker = new Thread(Run) { IsBackground = true, Name = "Bomb TCP client" };
+        int generation = Interlocked.Increment(ref connectionGeneration);
+        worker = new Thread(() => Run(generation)) { IsBackground = true, Name = "Bomb TCP client" };
         worker.Start();
     }
 
-    void Run() {
-        while (running) {
+    void Run(int generation) {
+        while (running && generation == Volatile.Read(ref connectionGeneration)) {
             try {
                 using (var client = new TcpClient()) {
                     client.NoDelay = true;
-                    client.Connect(host, port);
+                    socket = client;
+                    var pending = client.ConnectAsync(host, port);
+                    if (!pending.Wait(TimeSpan.FromSeconds(5)))
+                        throw new SocketException((int)SocketError.TimedOut);
+                    if (generation != Volatile.Read(ref connectionGeneration)) return;
                     socket = client;
                     var stream = client.GetStream();
                     lock (writeLock) writer = new StreamWriter(stream, new UTF8Encoding(false)) { AutoFlush = true };
+                    lastError = "";
                     Connected = true;
                     Send(new BombMessage { type = "HELLO", name = name, resumeToken = ResumeToken });
                     using (var reader = new StreamReader(stream, Encoding.UTF8)) {
@@ -58,15 +69,38 @@ public sealed class BombNetwork : IDisposable {
                         }
                     }
                 }
-            } catch (Exception e) when (e is IOException || e is SocketException) {
+            } catch (Exception e) when (e is IOException || e is SocketException || e is AggregateException) {
+                if (generation != Volatile.Read(ref connectionGeneration)) return;
+                Exception cause = e is AggregateException aggregate ? aggregate.GetBaseException() : e;
+                lastError = Describe(cause);
                 inbox.Enqueue("{\"type\":\"NETWORK_ERROR\"}");
             } finally {
-                Connected = false;
-                lock (writeLock) writer = null;
-                socket = null;
+                if (generation == Volatile.Read(ref connectionGeneration)) {
+                    Connected = false;
+                    lock (writeLock) writer = null;
+                    socket = null;
+                }
             }
-            if (running) Thread.Sleep(1200);
+            if (running && generation == Volatile.Read(ref connectionGeneration)) Thread.Sleep(1200);
         }
+    }
+
+    string Describe(Exception error) {
+        if (error is SocketException socketError) {
+            switch (socketError.SocketErrorCode) {
+                case SocketError.HostNotFound:
+                case SocketError.NoData:
+                    return "Không tìm thấy địa chỉ server '" + host + "'.";
+                case SocketError.ConnectionRefused:
+                    return "Server " + Endpoint + " từ chối kết nối (server chưa chạy hoặc sai port).";
+                case SocketError.TimedOut:
+                    return "Hết thời gian chờ " + Endpoint + " (kiểm tra IP, firewall và port forwarding).";
+                case SocketError.NetworkUnreachable:
+                case SocketError.HostUnreachable:
+                    return "Không thể đi tới " + Endpoint + " từ mạng hiện tại.";
+            }
+        }
+        return "Không kết nối được tới " + Endpoint + ": " + error.Message;
     }
 
     public void Send(BombMessage message) {
@@ -96,6 +130,7 @@ public sealed class BombNetwork : IDisposable {
 
     public void Dispose() {
         running = false;
+        Interlocked.Increment(ref connectionGeneration);
         try { socket?.Close(); } catch (Exception) { }
         if (worker != null && worker.IsAlive) worker.Join(300);
         Connected = false;

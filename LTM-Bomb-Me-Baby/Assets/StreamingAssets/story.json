@@ -1,0 +1,76 @@
+{
+  "maps": [
+    {
+      "mapId": "meadow",
+      "chapter": "KHU VỰC",
+      "title": "ĐỒNG CỎ RỘNG",
+      "intro": "Thu thập Energy để lớn mạnh trước khi giao tranh.",
+      "hint": "Bụi che bạn khỏi tầm nhìn của đối thủ ở bên ngoài."
+    },
+    {
+      "mapId": "crossroads",
+      "chapter": "KHU VỰC",
+      "title": "NGÃ TƯ BỎ HOANG",
+      "intro": "Các lối giao nhau khiến đối thủ có thể xuất hiện rất nhanh.",
+      "hint": "Giữ Shield cho lúc đi qua khu vực trống và khó né vụ nổ."
+    },
+    {
+      "mapId": "crater",
+      "chapter": "KHU VỰC",
+      "title": "MIỆNG NÚI LỬA",
+      "intro": "Đấu trường cuối rộng hơn nhưng tâm bản đồ rất nguy hiểm.",
+      "hint": "Boost giúp thoát khỏi bán kính nổ, nhưng sẽ tiêu hao Size."
+    }
+  ],
+  "events": [
+    {
+      "type": "ENERGY_PICKED",
+      "title": "ENERGY",
+      "self": "Bạn nhận thêm Size và hồi một ít HP.",
+      "other": "",
+      "duration": 1.8
+    },
+    {
+      "type": "CORE_PICKED",
+      "title": "CORE",
+      "self": "Base Size của bạn đã tăng.",
+      "other": "{player} vừa chiếm được Core.",
+      "duration": 2.6
+    },
+    {
+      "type": "PLAYER_DAMAGED",
+      "title": "TRÚNG ĐÒN",
+      "self": "Bạn nhận {amount} sát thương từ {source}.",
+      "other": "",
+      "duration": 2.2
+    },
+    {
+      "type": "DAMAGE_REFLECTED",
+      "title": "PHẢN SÁT THƯƠNG",
+      "self": "Bạn nhận lại {amount} sát thương do Shield của {source}.",
+      "other": "",
+      "duration": 2.2
+    },
+    {
+      "type": "SHIELD_ACTIVATED",
+      "title": "SHIELD",
+      "self": "Khiên đang hoạt động. Sát thương nhận vào sẽ bị phản lại.",
+      "other": "",
+      "duration": 1.8
+    },
+    {
+      "type": "BOOST_ACTIVATED",
+      "title": "BOOST",
+      "self": "Tốc độ tăng tạm thời. Một phần Size đã bị tiêu hao.",
+      "other": "",
+      "duration": 1.8
+    },
+    {
+      "type": "PLAYER_ELIMINATED",
+      "title": "BỊ LOẠI",
+      "self": "Bạn bị loại bởi {reason}.",
+      "other": "{player} đã bị loại.",
+      "duration": 3.0
+    }
+  ]
+}

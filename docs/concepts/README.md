@@ -14,6 +14,10 @@ These images are concept references generated with the built-in imagegen tool on
 - Build one polished arena first. Test line of sight, safe spawn points, routes around rocks, bushes for ambushes, and enough encounters despite the large map.
 - Generate bitmap art only where useful (for example menu art and UI portraits). Build the 3D scene, VFX, lighting, and interactive HUD in Unity.
 
+## Implementation status
+
+The runtime UI in `Assets/Scripts/BombGame.cs` follows this direction: dark translucent panels, orange attack/charge, cyan shield, blue boost, green HP, a compact top-center survivor counter, and unobtrusive network diagnostics. The concept images remain references only and must not be presented as screenshots of the running game.
+
 ## Generation prompts
 
 ### Arena visual direction

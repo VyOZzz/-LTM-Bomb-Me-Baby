@@ -46,6 +46,19 @@ class GameRoomTest {
         assertTrue(fullCharge > quickTap * 3);
     }
 
+    @Test void explosionStartsServerAuthoritativeBombCooldown() {
+        GameRoom room = startedRoom();
+        PlayerState player = room.players.get(0);
+        room.action(player,"CHARGE_START",0,0,1000);
+        room.action(player,"EXPLODE",0,0,1500);
+
+        assertEquals(1500 + GameRules.BOMB_COOLDOWN_MS, player.chargeReadyAt);
+        room.action(player,"CHARGE_START",0,0,2000);
+        assertFalse(player.charging);
+        room.action(player,"CHARGE_START",0,0,1500 + GameRules.BOMB_COOLDOWN_MS);
+        assertTrue(player.charging);
+    }
+
     @Test void bushesHidePlayersWithoutBlockingMovement() {
         GameRoom room = startedRoom();
         PlayerState hidden = room.players.get(0), viewer = room.players.get(1);

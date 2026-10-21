@@ -11,6 +11,7 @@ final class GameRules {
     static final double MAX_SIZE = 2.6;
     static final double MAX_BASE = 1.4;
     static final long MAX_CHARGE_MS = 8_000;
+    static final long BOMB_COOLDOWN_MS = 2_500;
     static final long SHIELD_MS = 1_500;
     static final long SHIELD_COOLDOWN_MS = 9_000;
     static final long BOOST_MS = 900;

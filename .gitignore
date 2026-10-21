@@ -21,3 +21,6 @@ LTM-Bomb-Me-Baby/UserSettings/
 __pycache__/
 *.pyc
 legacy/
+/builds/
+LTM-Bomb-Me-Baby/Assets/_Recovery/
+LTM-Bomb-Me-Baby/Assets/_Recovery.meta

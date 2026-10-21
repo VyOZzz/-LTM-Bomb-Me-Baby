@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.IO;
 using UnityEngine;
 
 public sealed class BombGame : MonoBehaviour {
@@ -18,6 +19,14 @@ public sealed class BombGame : MonoBehaviour {
         public PlayerData state;
     }
 
+    sealed class HudNotice {
+        public string title;
+        public string body;
+        public float duration;
+        public int priority;
+        public Color accent;
+    }
+
     readonly BombNetwork network = new BombNetwork();
     readonly BombModeMenu modeMenu = new BombModeMenu();
     readonly BombHud hud = new BombHud();
@@ -30,6 +39,7 @@ public sealed class BombGame : MonoBehaviour {
     ObstacleData[] activeObstacles = Array.Empty<ObstacleData>();
     string toast = "";
     float toastUntil;
+    readonly Queue<HudNotice> noticeQueue = new Queue<HudNotice>();
     readonly Dictionary<string, Avatar> avatars = new Dictionary<string, Avatar>();
     readonly Dictionary<int, GameObject> orbViews = new Dictionary<int, GameObject>();
     readonly Dictionary<int, GameObject> coreViews = new Dictionary<int, GameObject>();
@@ -45,6 +55,10 @@ public sealed class BombGame : MonoBehaviour {
     int previousSent, previousReceived, sentPerSecond, receivedPerSecond;
     long previousSentBytes, previousReceivedBytes, sentBytesPerSecond, receivedBytesPerSecond;
     bool charging;
+    bool showNetworkSettings;
+    BombStory story;
+    HudNotice activeNotice;
+    float noticeStartedAt, noticeEndsAt;
     [SerializeField] Camera gameCamera;
     [SerializeField] Transform actorsRoot;
     [SerializeField] Transform pickupsRoot;
@@ -55,6 +69,17 @@ public sealed class BombGame : MonoBehaviour {
     string activeMapId = "", activeMapName = "";
     float activeArenaSize;
     GUIStyle titleStyle, bodyStyle, smallStyle, panelStyle, buttonStyle, fieldStyle;
+    GUIStyle heroStyle, sectionStyle, quietButtonStyle, metricStyle;
+    GUIStyle noticeTitleStyle, noticeBodyStyle;
+    Texture2D buttonTexture, buttonHoverTexture, quietButtonTexture;
+    static readonly Color HudPanel = new Color(.035f,.047f,.075f,.88f);
+    static readonly Color HudPanelSoft = new Color(.055f,.075f,.11f,.78f);
+    static readonly Color WarmWhite = new Color(1f,.96f,.88f);
+    static readonly Color AttackOrange = new Color(1f,.43f,.08f);
+    static readonly Color ShieldCyan = new Color(.12f,.9f,1f);
+    static readonly Color BoostBlue = new Color(.18f,.55f,1f);
+    static readonly Color EnergyGreen = new Color(.35f,.92f,.24f);
+    static readonly Color CoreMagenta = new Color(1f,.16f,.72f);
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     static void Bootstrap() {
@@ -63,11 +88,53 @@ public sealed class BombGame : MonoBehaviour {
 
     void Awake() {
         playerName = "Bom " + UnityEngine.Random.Range(100, 999);
+        LoadServerSettings();
+        story = BombStory.Load(out string storyError);
+        if (!string.IsNullOrEmpty(storyError)) Debug.LogWarning(storyError);
         if (gameCamera == null) gameCamera = Camera.main;
         if (actorsRoot == null) actorsRoot = FindSceneRoot("Players");
         if (pickupsRoot == null) pickupsRoot = FindSceneRoot("Pickups");
         if (effectsRoot == null) effectsRoot = FindSceneRoot("Effects");
         authoredEnvironment = GameObject.Find("Environment");
+    }
+
+    void LoadServerSettings() {
+        // Keep localhost convenient in the Editor, but never silently ship it as the
+        // destination of a standalone client running on somebody else's computer.
+        host = PlayerPrefs.GetString("BombServerHost", Application.isEditor ? host : "");
+        port = PlayerPrefs.GetString("BombServerPort", port);
+
+        // A server.txt file beside the executable lets a release be pointed at a server
+        // without rebuilding it. Its first non-empty line is HOST or HOST:PORT.
+        try {
+            string directory = Directory.GetParent(Application.dataPath)?.FullName;
+            string path = string.IsNullOrEmpty(directory) ? "" : Path.Combine(directory, "server.txt");
+            if (!string.IsNullOrEmpty(path) && File.Exists(path)) {
+                foreach (string rawLine in File.ReadAllLines(path)) {
+                    string line = rawLine.Trim();
+                    if (line.Length == 0 || line.StartsWith("#")) continue;
+                    int separator = line.LastIndexOf(':');
+                    if (separator > 0 && separator < line.Length - 1 && int.TryParse(line.Substring(separator + 1), out int configuredPort)) {
+                        host = line.Substring(0, separator).Trim();
+                        port = configuredPort.ToString();
+                    } else host = line;
+                    break;
+                }
+            }
+        } catch (Exception e) {
+            Debug.LogWarning("Cannot read server.txt: " + e.Message);
+        }
+
+        foreach (string argument in Environment.GetCommandLineArgs()) {
+            const string prefix = "--server=";
+            if (!argument.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
+            string endpoint = argument.Substring(prefix.Length).Trim();
+            int separator = endpoint.LastIndexOf(':');
+            if (separator > 0 && separator < endpoint.Length - 1 && int.TryParse(endpoint.Substring(separator + 1), out int configuredPort)) {
+                host = endpoint.Substring(0, separator).Trim();
+                port = configuredPort.ToString();
+            } else host = endpoint;
+        }
     }
 
     void Start() {
@@ -92,6 +159,7 @@ public sealed class BombGame : MonoBehaviour {
     void OnDestroy() { network.Dispose(); }
 
     void Update() {
+        TickNotice();
         while (network.TryReceive(out string line)) {
             try { Handle(line); }
             catch (Exception e) { status = "Dữ liệu server không hợp lệ: " + e.Message; }
@@ -176,7 +244,9 @@ public sealed class BombGame : MonoBehaviour {
             Vector3 worldDirection = Vector3.ClampMagnitude(cameraRight * horizontal + cameraForward * vertical, 1);
             network.Send(new BombMessage { type = "MOVE", directionX = worldDirection.x, directionZ = worldDirection.z });
         }
-        if (Input.GetKeyDown(KeyCode.Space) && !charging) {
+        float bombCooldown = avatars.TryGetValue(myId, out Avatar localAvatar) && localAvatar.state != null
+            ? localAvatar.state.chargeCooldown : 0;
+        if (Input.GetKeyDown(KeyCode.Space) && !charging && bombCooldown <= 0) {
             charging = true;
             network.Send(new BombMessage { type = "CHARGE_START" });
         }
@@ -214,10 +284,18 @@ public sealed class BombGame : MonoBehaviour {
             case "ROOM_STATE":
                 if (room == null) status = "";
                 room = JsonUtility.FromJson<RoomEnvelope>(line).room;
-                if (room != null) phase = room.phase;
+                if (room != null) {
+                    phase = room.phase;
+                    if (phase == "WAITING")
+                        status = "Đã vào phòng " + room.code + ". Chờ mọi người sẵn sàng.";
+                    else if (phase == "PLAYING" && status.Contains("Đang tự thử lại"))
+                        status = "Đã kết nối lại vào trận.";
+                }
                 break;
             case "LEFT_ROOM":
                 room = null; phase = "MENU"; winnerId = "";
+                status = "Đã rời phòng. Tạo phòng hoặc nhập mã phòng.";
+                ClearNotices();
                 ClearActors();
                 break;
             case "GAME_START":
@@ -230,6 +308,8 @@ public sealed class BombGame : MonoBehaviour {
                 status = msg.mode == "JOURNEY"
                     ? $"Chương {msg.chapterIndex + 1}/3: {msg.mapName}"
                     : "Trận đấu bắt đầu" + (string.IsNullOrEmpty(msg.mapName) ? "!" : ": " + msg.mapName);
+                ClearNotices();
+                ShowMapIntro(msg.mapId);
                 break;
             case "STATE_UPDATE":
                 phase = msg.phase;
@@ -238,6 +318,15 @@ public sealed class BombGame : MonoBehaviour {
             case "PLAYER_EXPLODE":
                 if (msg.playerId == myId) charging = false;
                 if (msg.visible) StartCoroutine(Explosion(new Vector3(msg.x, .45f, msg.z), msg.radius));
+                break;
+            case "ENERGY_PICKED":
+            case "CORE_PICKED":
+            case "PLAYER_DAMAGED":
+            case "DAMAGE_REFLECTED":
+            case "SHIELD_ACTIVATED":
+            case "BOOST_ACTIVATED":
+            case "PLAYER_ELIMINATED":
+                ShowStoryEvent(msg);
                 break;
             case "GAME_OVER":
                 phase = "FINISHED";
@@ -265,6 +354,7 @@ public sealed class BombGame : MonoBehaviour {
                 else
                     status = winnerId == myId ? $"Bạn là Người Giữ Lửa với {shards} mảnh!"
                         : $"{NameOf(winnerId)} là Người Giữ Lửa với {shards} mảnh.";
+                ClearNotices();
                 break;
             case "PONG":
                 rttMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - msg.clientTime;
@@ -276,9 +366,89 @@ public sealed class BombGame : MonoBehaviour {
                 status = ErrorText(msg.code, msg.mode);
                 break;
             case "NETWORK_ERROR":
-                status = "Mất kết nối. Đang thử kết nối lại...";
+                status = network.LastError + " Đang tự thử lại...";
                 break;
         }
+    }
+
+    void ShowMapIntro(string mapId) {
+        BombStoryMap map = story?.FindMap(mapId);
+        if (map == null) return;
+        string title = string.IsNullOrEmpty(map.chapter) ? map.title : map.chapter + "  •  " + map.title;
+        string body = map.intro;
+        if (!string.IsNullOrEmpty(map.hint)) body += "\n" + map.hint;
+        EnqueueNotice(title, body, 6f, AttackOrange, 2);
+    }
+
+    void ShowStoryEvent(ServerMessage message) {
+        BombStoryEvent item = story?.FindEvent(message.type);
+        if (item == null) return;
+        bool localSubject = message.playerId == myId || message.to == myId;
+        string template = localSubject ? item.self : item.other;
+        string body = BombStory.Format(template, message, PlayerName);
+        if (string.IsNullOrEmpty(body)) return;
+        EnqueueNotice(item.title, body, Mathf.Max(1.2f, item.duration), NoticeAccent(message.type), 1);
+    }
+
+    string PlayerName(string playerId) {
+        if (string.IsNullOrEmpty(playerId)) return "đối thủ";
+        if (playerId == myId) return "bạn";
+        if (room?.players != null)
+            foreach (LobbyPlayer player in room.players)
+                if (player.id == playerId) return player.name;
+        if (avatars.TryGetValue(playerId, out Avatar avatar) && avatar.state != null)
+            return avatar.state.name;
+        return "đối thủ";
+    }
+
+    static Color NoticeAccent(string type) {
+        switch (type) {
+            case "ENERGY_PICKED": return EnergyGreen;
+            case "CORE_PICKED": return CoreMagenta;
+            case "SHIELD_ACTIVATED": return ShieldCyan;
+            case "BOOST_ACTIVATED": return BoostBlue;
+            case "PLAYER_DAMAGED":
+            case "DAMAGE_REFLECTED":
+            case "PLAYER_ELIMINATED": return new Color(1f,.28f,.22f);
+            default: return AttackOrange;
+        }
+    }
+
+    void EnqueueNotice(string title, string body, float duration, Color accent, int priority) {
+        var notice = new HudNotice { title = title, body = body, duration = duration, accent = accent, priority = priority };
+        if (activeNotice == null) {
+            ActivateNotice(notice);
+            return;
+        }
+        if (activeNotice.title == title) {
+            ActivateNotice(notice);
+            return;
+        }
+        if (priority > activeNotice.priority) {
+            if (noticeQueue.Count < 4) noticeQueue.Enqueue(activeNotice);
+            ActivateNotice(notice);
+            return;
+        }
+        foreach (HudNotice queued in noticeQueue)
+            if (queued.title == title) return;
+        if (noticeQueue.Count < 4) noticeQueue.Enqueue(notice);
+    }
+
+    void ActivateNotice(HudNotice notice) {
+        activeNotice = notice;
+        noticeStartedAt = Time.unscaledTime;
+        noticeEndsAt = noticeStartedAt + notice.duration;
+    }
+
+    void TickNotice() {
+        if (activeNotice == null || Time.unscaledTime < noticeEndsAt) return;
+        activeNotice = null;
+        if (noticeQueue.Count > 0) ActivateNotice(noticeQueue.Dequeue());
+    }
+
+    void ClearNotices() {
+        activeNotice = null;
+        noticeQueue.Clear();
     }
 
     void ApplySnapshot(ServerMessage snapshot) {
@@ -593,14 +763,6 @@ public sealed class BombGame : MonoBehaviour {
         }
     }
 
-    static void QuitGame() {
-#if UNITY_EDITOR
-        UnityEditor.EditorApplication.isPlaying = false;
-#else
-        Application.Quit();
-#endif
-    }
-
     void DrawScreen() {
         if (titleStyle == null) {
             BombUi.EnsureShapes();
@@ -697,6 +859,7 @@ public sealed class BombGame : MonoBehaviour {
         GUILayout.EndVertical();
         GUI.backgroundColor = Color.white;
         GUILayout.EndArea();
+        if (phase == "FINISHED") DrawResultPopup();
     }
 
     void DrawMatchHud() {
@@ -729,6 +892,299 @@ public sealed class BombGame : MonoBehaviour {
             if (pos.z > 0 && pos.x >= 0 && pos.x <= Screen.width && pos.y >= 0 && pos.y <= Screen.height)
                 hud.DrawNameTag(new Vector2(pos.x, Screen.height - pos.y), a.state.name, entry.Key == myId);
         }
+        DrawStoryNotice();
+    }
+
+    void EnsureGuiStyles() {
+        if (titleStyle != null) return;
+        titleStyle = LabelStyle(28, FontStyle.Bold, WarmWhite, TextAnchor.MiddleLeft);
+        heroStyle = LabelStyle(42, FontStyle.Bold, WarmWhite, TextAnchor.MiddleCenter);
+        sectionStyle = LabelStyle(18, FontStyle.Bold, WarmWhite, TextAnchor.MiddleLeft);
+        bodyStyle = LabelStyle(16, FontStyle.Normal, WarmWhite, TextAnchor.MiddleLeft);
+        smallStyle = LabelStyle(13, FontStyle.Normal, new Color(.82f,.86f,.92f), TextAnchor.MiddleLeft);
+        metricStyle = LabelStyle(12, FontStyle.Normal, new Color(.65f,.74f,.82f), TextAnchor.MiddleRight);
+        noticeTitleStyle = LabelStyle(16, FontStyle.Bold, WarmWhite, TextAnchor.MiddleLeft);
+        noticeBodyStyle = LabelStyle(14, FontStyle.Normal, WarmWhite, TextAnchor.UpperLeft);
+        noticeBodyStyle.wordWrap = true;
+        buttonTexture = SolidTexture(new Color(.94f,.28f,.06f));
+        buttonHoverTexture = SolidTexture(new Color(1f,.43f,.08f));
+        quietButtonTexture = SolidTexture(new Color(.12f,.16f,.23f));
+        buttonStyle = new GUIStyle(GUI.skin.button) {
+            fontSize = 18, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter,
+            padding = new RectOffset(16,16,10,10)
+        };
+        buttonStyle.normal.background = buttonTexture;
+        buttonStyle.hover.background = buttonHoverTexture;
+        buttonStyle.active.background = buttonHoverTexture;
+        buttonStyle.normal.textColor = Color.white;
+        buttonStyle.hover.textColor = Color.white;
+        quietButtonStyle = new GUIStyle(buttonStyle) { fontSize = 15 };
+        quietButtonStyle.normal.background = quietButtonTexture;
+    }
+
+    static GUIStyle LabelStyle(int size, FontStyle weight, Color color, TextAnchor alignment) {
+        var style = new GUIStyle(GUI.skin.label) { fontSize = size, fontStyle = weight, alignment = alignment };
+        style.normal.textColor = color;
+        return style;
+    }
+
+    static Texture2D SolidTexture(Color color) {
+        var texture = new Texture2D(1,1) { hideFlags = HideFlags.HideAndDontSave };
+        texture.SetPixel(0,0,color);
+        texture.Apply();
+        return texture;
+    }
+
+    static void FillRect(Rect rect, Color color) {
+        Color previous = GUI.color;
+        GUI.color = color;
+        GUI.DrawTexture(rect, Texture2D.whiteTexture);
+        GUI.color = previous;
+    }
+
+    static void Panel(Rect rect, Color accent) {
+        FillRect(rect, HudPanel);
+        FillRect(new Rect(rect.x,rect.y,5,rect.height),accent);
+        FillRect(new Rect(rect.x,rect.y,rect.width,1),new Color(1,1,1,.12f));
+    }
+
+    void DrawFrontEnd() {
+        FillRect(new Rect(0,0,Screen.width,Screen.height),new Color(.02f,.03f,.055f,.42f));
+        float width = Mathf.Min(520,Screen.width - 40);
+        float height = room == null ? (string.IsNullOrEmpty(myId) ? 430 : 420) : Mathf.Min(610,Screen.height - 40);
+        Rect card = new Rect((Screen.width-width)*.5f,(Screen.height-height)*.5f,width,height);
+        Panel(card,AttackOrange);
+        GUILayout.BeginArea(new Rect(card.x+34,card.y+24,card.width-68,card.height-48));
+        GUILayout.Label("BOMB ME BABY", heroStyle);
+        GUILayout.Label("Đấu trường bom nhiều người chơi", new GUIStyle(smallStyle) { alignment = TextAnchor.MiddleCenter });
+        GUILayout.Space(18);
+        DrawStatusBanner();
+        GUILayout.Space(14);
+        if (string.IsNullOrEmpty(myId)) DrawConnectMenu();
+        else if (room == null) DrawRoomMenu();
+        else DrawLobbyMenu();
+        GUILayout.FlexibleSpace();
+        GUILayout.BeginHorizontal();
+        GUILayout.Label(network.Connected ? "● ĐÃ KẾT NỐI" : "● NGOẠI TUYẾN", new GUIStyle(smallStyle) {
+            normal = { textColor = network.Connected ? EnergyGreen : new Color(1f,.4f,.35f) }
+        });
+        GUILayout.FlexibleSpace();
+        if (GUILayout.Button("Thoát",quietButtonStyle,GUILayout.Width(100),GUILayout.Height(34))) QuitGame();
+        GUILayout.EndHorizontal();
+        GUILayout.EndArea();
+    }
+
+    void DrawStatusBanner() {
+        Rect banner = GUILayoutUtility.GetRect(10,44,GUILayout.ExpandWidth(true));
+        FillRect(banner,HudPanelSoft);
+        GUI.Label(new Rect(banner.x+14,banner.y,banner.width-28,banner.height),status,smallStyle);
+    }
+
+    void DrawConnectMenu() {
+        GUILayout.Label("TÊN NGƯỜI CHƠI",sectionStyle);
+        playerName = GUILayout.TextField(playerName,20,GUILayout.Height(40));
+        GUILayout.Space(12);
+        if (GUILayout.Button("VÀO ĐẤU TRƯỜNG",buttonStyle,GUILayout.Height(48))) ConnectToConfiguredServer();
+        GUILayout.Space(8);
+        if (GUILayout.Button(showNetworkSettings ? "Ẩn cài đặt mạng" : "Cài đặt mạng nâng cao",quietButtonStyle,GUILayout.Height(38)))
+            showNetworkSettings = !showNetworkSettings;
+        if (showNetworkSettings) DrawNetworkSettings();
+    }
+
+    void DrawRoomMenu() {
+        GUILayout.Label("CHỌN CÁCH CHƠI",sectionStyle);
+        GUILayout.Space(8);
+        if (GUILayout.Button("TẠO PHÒNG MỚI",buttonStyle,GUILayout.Height(50)))
+            network.Send(new BombMessage { type = "CREATE_ROOM" });
+        GUILayout.Space(18);
+        GUILayout.Label("HOẶC NHẬP MÃ PHÒNG",sectionStyle);
+        joinCode = GUILayout.TextField(joinCode.ToUpperInvariant(),6,GUILayout.Height(40));
+        GUILayout.Space(8);
+        if (GUILayout.Button("VÀO PHÒNG",quietButtonStyle,GUILayout.Height(44)))
+            network.Send(new BombMessage { type = "JOIN_ROOM", code = joinCode });
+    }
+
+    void DrawLobbyMenu() {
+        GUILayout.BeginHorizontal();
+        GUILayout.Label("PHÒNG " + room.code,titleStyle);
+        GUILayout.FlexibleSpace();
+        if (!string.IsNullOrEmpty(room.mapName)) GUILayout.Label(room.mapName.ToUpperInvariant(),smallStyle);
+        GUILayout.EndHorizontal();
+        GUILayout.Space(8);
+        int playerCount = room.players == null ? 0 : room.players.Length;
+        int capacity = room.maxPlayers > 0 ? room.maxPlayers : 10;
+        GUILayout.Label($"NGƯỜI CHƠI  {playerCount}/{capacity}",sectionStyle);
+        GUILayout.Space(5);
+        if (room.players != null) foreach (LobbyPlayer player in room.players) {
+            Rect row = GUILayoutUtility.GetRect(10,38,GUILayout.ExpandWidth(true));
+            FillRect(row,player.id == myId ? new Color(1f,.43f,.08f,.18f) : HudPanelSoft);
+            GUI.Label(new Rect(row.x+12,row.y,row.width-120,row.height),(player.id == myId ? "▶  " : "    ") + player.name,bodyStyle);
+            string state = !player.connected ? "MẤT KẾT NỐI" : player.ready ? "SẴN SÀNG" : "ĐANG CHỜ";
+            Color stateColor = !player.connected ? new Color(1f,.4f,.35f) : player.ready ? EnergyGreen : new Color(.7f,.74f,.8f);
+            GUI.Label(new Rect(row.x+row.width-150,row.y,138,row.height),state,new GUIStyle(smallStyle) { alignment = TextAnchor.MiddleRight, normal = { textColor = stateColor } });
+        }
+        GUILayout.FlexibleSpace();
+        bool myReady = IsLocalPlayerReady();
+        if (GUILayout.Button(myReady ? "BỎ SẴN SÀNG" : "SẴN SÀNG",myReady ? quietButtonStyle : buttonStyle,GUILayout.Height(48)))
+            network.Send(new BombMessage { type = "READY", ready = !myReady });
+        GUILayout.Space(7);
+        if (GUILayout.Button("Rời phòng",quietButtonStyle,GUILayout.Height(36)))
+            network.Send(new BombMessage { type = "LEAVE_ROOM" });
+    }
+
+    void DrawGameplayHud() {
+        avatars.TryGetValue(myId,out Avatar me);
+        PlayerData state = me?.state;
+        int alive = 0, total = 0;
+        foreach (Avatar avatar in avatars.Values) if (avatar.state != null) { total++; if (avatar.state.alive) alive++; }
+
+        Rect playerPanel = new Rect(22,20,320,112);
+        Panel(playerPanel,EnergyGreen);
+        GUI.Label(new Rect(40,28,280,28),state == null ? playerName : state.name,sectionStyle);
+        float hp = state == null ? 0 : Mathf.Clamp01(state.hp/100f);
+        GUI.Label(new Rect(40,58,45,22),"HP",smallStyle);
+        DrawBar(new Rect(82,62,228,16),hp,EnergyGreen);
+        GUI.Label(new Rect(40,87,270,24),state == null ? "Đang đồng bộ..." : $"{state.hp:0} / 100    •    KÍCH THƯỚC {state.size:0.00}",smallStyle);
+
+        Rect roundPanel = new Rect((Screen.width-330)*.5f,20,330,66);
+        Panel(roundPanel,AttackOrange);
+        GUI.Label(new Rect(roundPanel.x+16,roundPanel.y+5,298,28),$"{alive} / {Mathf.Max(total,alive)} NGƯỜI CÒN LẠI",new GUIStyle(sectionStyle) { alignment = TextAnchor.MiddleCenter });
+        GUI.Label(new Rect(roundPanel.x+16,roundPanel.y+32,298,22),string.IsNullOrEmpty(activeMapName) ? "ĐANG CHIẾN ĐẤU" : activeMapName.ToUpperInvariant(),new GUIStyle(smallStyle) { alignment = TextAnchor.MiddleCenter });
+
+        float charge = state == null ? 0 : Mathf.Clamp01(state.charge);
+        Rect chargePanel = new Rect((Screen.width-540)*.5f,Screen.height-104,540,76);
+        Panel(chargePanel,AttackOrange);
+        GUI.Label(new Rect(chargePanel.x+18,chargePanel.y+7,160,24),charging ? "THẢ SPACE ĐỂ NỔ" : "GIỮ SPACE • NẠP BOM",smallStyle);
+        DrawBar(new Rect(chargePanel.x+18,chargePanel.y+39,504,20),charge,AttackOrange);
+
+        float abilityWidth = 132;
+        float abilityY = Screen.height-126;
+        DrawAbility(new Rect(Screen.width-298,abilityY,abilityWidth,98),"E","KHIÊN",state?.shieldCooldown ?? 0,ShieldCyan);
+        DrawAbility(new Rect(Screen.width-154,abilityY,abilityWidth,98),"SHIFT","TĂNG TỐC",state?.boostCooldown ?? 0,BoostBlue);
+
+        Rect helpPanel = new Rect(22,Screen.height-105,300,77);
+        FillRect(helpPanel,HudPanelSoft);
+        GUI.Label(new Rect(35,helpPanel.y+8,275,24),"WASD / PHÍM MŨI TÊN  •  DI CHUYỂN",smallStyle);
+        GUI.Label(new Rect(35,helpPanel.y+34,275,24),state != null && BushIndex(state.x,state.z) >= 0 ? "ẨN THÂN TRONG BỤI" : "SPACE  •  NẠP VÀ NỔ BOM",new GUIStyle(smallStyle) { normal = { textColor = state != null && BushIndex(state.x,state.z) >= 0 ? EnergyGreen : smallStyle.normal.textColor } });
+
+        GUI.Label(new Rect(Screen.width-420,10,398,22),$"RTT {rttMs:0} ms  •  {sentPerSecond}/{receivedPerSecond} msg/s  •  {sentBytesPerSecond}/{receivedBytesPerSecond} B/s",metricStyle);
+    }
+
+    void DrawStoryNotice() {
+        if (activeNotice == null) return;
+        if (noticeTitleStyle == null) {
+            noticeTitleStyle = BombUi.TextStyle(16, FontStyle.Bold, BombUi.Text);
+            noticeBodyStyle = BombUi.TextStyle(14, FontStyle.Normal, BombUi.Text);
+            noticeBodyStyle.wordWrap = true;
+        }
+        float remaining = noticeEndsAt - Time.unscaledTime;
+        float fadeIn = Mathf.Clamp01((Time.unscaledTime - noticeStartedAt) / .18f);
+        float fadeOut = Mathf.Clamp01(remaining / .22f);
+        float alpha = Mathf.Min(fadeIn, fadeOut);
+        float width = Mathf.Min(620, Screen.width - 44);
+        Rect card = new Rect((Screen.width - width) * .5f, 98, width, 88);
+        FillRect(card, new Color(HudPanel.r, HudPanel.g, HudPanel.b, HudPanel.a * alpha));
+        FillRect(new Rect(card.x, card.y, 5, card.height), new Color(activeNotice.accent.r, activeNotice.accent.g, activeNotice.accent.b, alpha));
+        FillRect(new Rect(card.x, card.yMax - 4, card.width * Mathf.Clamp01(remaining / activeNotice.duration), 4),
+            new Color(activeNotice.accent.r, activeNotice.accent.g, activeNotice.accent.b, alpha));
+        Color previous = GUI.color;
+        GUI.color = new Color(1, 1, 1, alpha);
+        GUI.Label(new Rect(card.x + 18, card.y + 8, card.width - 36, 24), activeNotice.title, noticeTitleStyle);
+        GUI.Label(new Rect(card.x + 18, card.y + 34, card.width - 36, 47), activeNotice.body, noticeBodyStyle);
+        GUI.color = previous;
+    }
+
+    void DrawAbility(Rect rect, string key, string label, float cooldown, Color accent) {
+        Panel(rect,accent);
+        Rect keyRect = new Rect(rect.x+12,rect.y+12,44,44);
+        FillRect(keyRect,new Color(accent.r,accent.g,accent.b,.2f));
+        GUI.Label(keyRect,key,new GUIStyle(sectionStyle) { alignment = TextAnchor.MiddleCenter, normal = { textColor = accent } });
+        GUI.Label(new Rect(rect.x+64,rect.y+12,rect.width-74,26),label,new GUIStyle(smallStyle) { fontStyle = FontStyle.Bold });
+        string value = cooldown > 0 ? cooldown.ToString("0.0") + "s" : "SẴN SÀNG";
+        GUI.Label(new Rect(rect.x+64,rect.y+39,rect.width-74,22),value,new GUIStyle(smallStyle) { normal = { textColor = cooldown > 0 ? WarmWhite : accent } });
+        DrawBar(new Rect(rect.x+12,rect.y+75,rect.width-24,8),cooldown > 0 ? Mathf.Clamp01(1-cooldown/8f) : 1,accent);
+    }
+
+    void DrawBar(Rect rect, float value, Color fill) {
+        FillRect(rect,new Color(0,0,0,.55f));
+        Rect inner = new Rect(rect.x+2,rect.y+2,Mathf.Max(0,(rect.width-4)*Mathf.Clamp01(value)),Mathf.Max(0,rect.height-4));
+        FillRect(inner,fill);
+    }
+
+    void DrawWorldNameplate(Rect rect, string text) {
+        FillRect(rect,new Color(.02f,.03f,.05f,.76f));
+        GUI.Label(rect,text,new GUIStyle(smallStyle) { alignment = TextAnchor.MiddleCenter });
+    }
+
+    void DrawResultPopup() {
+        const float width = 430;
+        const float height = 230;
+        Rect popup = new Rect((Screen.width - width) * .5f, (Screen.height - height) * .5f, width, height);
+        GUI.Box(popup, GUIContent.none);
+        GUILayout.BeginArea(new Rect(popup.x + 24, popup.y + 22, width - 48, height - 44));
+        bool won = !string.IsNullOrEmpty(winnerId) && winnerId == myId;
+        GUILayout.Label(won ? "CHIẾN THẮNG!" : "BẠN ĐÃ THUA", titleStyle);
+        GUILayout.Space(8);
+        GUILayout.Label(won ? "Bạn là người sống sót cuối cùng." : WinnerText(), bodyStyle);
+        GUILayout.FlexibleSpace();
+        bool ready = IsLocalPlayerReady();
+        if (GUILayout.Button(ready ? "Đang chờ người chơi khác..." : "Chơi lại", GUILayout.Height(38)) && !ready)
+            network.Send(new BombMessage { type = "READY", ready = true });
+        if (GUILayout.Button("Rời phòng", GUILayout.Height(32)))
+            network.Send(new BombMessage { type = "LEAVE_ROOM" });
+        GUILayout.EndArea();
+    }
+
+    string WinnerText() {
+        if (string.IsNullOrEmpty(winnerId)) return "Không còn người chơi sống sót.";
+        if (room?.players != null)
+            foreach (LobbyPlayer player in room.players)
+                if (player.id == winnerId) return player.name + " đã chiến thắng.";
+        return "Đối thủ đã chiến thắng.";
+    }
+
+    bool IsLocalPlayerReady() {
+        if (room?.players == null) return false;
+        foreach (LobbyPlayer player in room.players)
+            if (player.id == myId) return player.ready;
+        return false;
+    }
+
+    void ConnectToConfiguredServer() {
+        host = host.Trim();
+        if (string.IsNullOrEmpty(host)) {
+            status = "Bản game chưa được cấu hình server. Hãy liên hệ người gửi game.";
+            showNetworkSettings = true;
+            return;
+        }
+        if (!int.TryParse(port, out int parsed) || parsed < 1 || parsed > 65535) {
+            status = "Cấu hình server có port không hợp lệ.";
+            showNetworkSettings = true;
+            return;
+        }
+        PlayerPrefs.SetString("BombServerHost", host);
+        PlayerPrefs.SetString("BombServerPort", port);
+        PlayerPrefs.Save();
+        status = "Đang vào server...";
+        network.Connect(host, parsed, playerName);
+    }
+
+    void DrawNetworkSettings() {
+        GUILayout.Space(6);
+        GUILayout.Label("Dành cho chủ phòng / kiểm thử", smallStyle);
+        GUILayout.Label("Địa chỉ server", bodyStyle); host = GUILayout.TextField(host);
+        GUILayout.Label("Port", bodyStyle); port = GUILayout.TextField(port,5);
+        if (host == "127.0.0.1" || host.Equals("localhost", StringComparison.OrdinalIgnoreCase))
+            GUILayout.Label("Chỉ dùng khi server chạy trên chính máy này.", smallStyle);
+    }
+
+    void QuitGame() {
+        network.Dispose();
+#if UNITY_EDITOR
+        UnityEditor.EditorApplication.isPlaying = false;
+#else
+        Application.Quit();
+#endif
     }
 
     /// Players this client is allowed to see: itself, visible opponents and the shard carrier.

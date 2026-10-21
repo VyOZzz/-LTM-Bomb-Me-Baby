@@ -36,11 +36,27 @@ mvn test "-Dsync.mode=optimized"
 
 Chạy server bằng `mvn compile exec:java "-Dexec.args=7777" "-Dsync.mode=baseline"`. Unity có nút tạo phòng Đấu nhanh và Hành trình Ba Mảnh. Chế độ `optimized` gửi geometry một lần ở GAME_START và lọc snapshot theo viewer; đây là đồng bộ chọn lọc, chưa phải delta từng trường giữa hai snapshot.
 
+> Bản Unity build chỉ là **client**, không chứa Java server. `127.0.0.1` luôn là máy đang chạy game: nếu gửi build cho người khác mà giữ IP này, game sẽ tìm server trên máy của họ và kết nối thất bại.
+
+Để máy khác kết nối:
+
+- Cùng Wi-Fi/LAN: chạy server trên một máy, nhập IPv4 LAN của máy đó (ví dụ `192.168.1.20`) trong game và cho phép TCP `7777` qua firewall.
+- Khác mạng Internet: chạy server trên VPS có IP/domain public, hoặc cấu hình port forwarding TCP `7777` trên router tới máy chạy server. Không dùng IP dạng `192.168.x.x` qua Internet.
+- Có thể đặt một file `server.txt` cạnh file `.exe`, dòng đầu là `HOST:PORT` (ví dụ `game.example.com:7777`), hoặc chạy `Bomb Me Baby.exe --server=HOST:PORT`. Client cũng ghi nhớ địa chỉ đã nhập.
+
+Kiểm tra từ máy người chơi trước khi mở game (PowerShell):
+
+```powershell
+Test-NetConnection HOST -Port 7777
+```
+
+`TcpTestSucceeded: False` nghĩa là lỗi nằm ở việc server chưa chạy, IP/port sai, firewall hoặc port forwarding; build Unity chưa thể tự khắc phục các phần mạng này.
+
 ## Chạy Unity client
 
 1. Cài Unity `6000.3.6f1` bằng Unity Hub, sau đó mở thư mục `LTM-Bomb-Me-Baby/` và chờ Unity import xong.
 2. Mở `Assets/Scenes/Main.unity`. Nếu scene chưa có hierarchy `Bomb Me Baby`, chọn **Tools > Bomb Me Baby > Rebuild Main Scene**.
-3. Nhấn Play. Nhập tên, IP server, port rồi chọn **Kết nối**.
+3. Nhấn Play, nhập tên rồi chọn **Chơi**. Client dùng server đã lưu hoặc được cấu hình bằng `server.txt`; IP/port chỉ nằm trong **Cài đặt mạng nâng cao** dành cho chủ phòng và kiểm thử.
 4. Client thứ nhất chọn **Tạo phòng**. Các client còn lại nhập mã 6 ký tự và **Vào phòng**.
 5. Chọn **Sẵn sàng** để bắt đầu. Hiện tại có thể chơi một mình để kiểm thử; khi có nhiều người, trận bắt đầu khi tất cả cùng sẵn sàng (tối đa 10 người). Để chơi nhiều client trên cùng máy, build một bản Windows/Mac rồi chạy cùng lúc với Unity Editor, hoặc chạy nhiều bản build.
 
@@ -60,7 +76,7 @@ Unity AI Assistant cần kết nối mạng và quyền sử dụng/trial hoặc
 ## Luật prototype
 
 - 100 HP, không hồi sinh; người cuối cùng sống thắng. Energy tăng Size 0.12 và hồi 3 HP, tối đa 100 HP. Size tối đa 2.6.
-- Nạp tối đa 8 giây, sau đó tự nổ. Nhấn nhanh tạo vụ nổ nhỏ; bán kính và sát thương tăng mạnh theo đường cong thời gian nạp, Size và khoảng cách. Người nổ không bị sát thương bởi vụ nổ của chính mình; sau nổ Size về Base Size. Bom Size 1 vẫn gây sát thương ở cự ly gần.
+- Nạp tối đa 8 giây, sau đó tự nổ. Sau mỗi lần nổ, bom có cooldown 2.5 giây do server kiểm soát để không thể spam. Nhấn nhanh tạo vụ nổ nhỏ; bán kính và sát thương tăng mạnh theo đường cong thời gian nạp, Size và khoảng cách. Người nổ không bị sát thương bởi vụ nổ của chính mình; sau nổ Size về Base Size. Bom Size 1 vẫn gây sát thương ở cự ly gần.
 - Shield hoạt động ngay trong 1.5 giây, chặn 100% sát thương nổ và phản 50% về người tấn công; cooldown 9 giây.
 - Boost tăng tốc trong 0.9 giây, giảm Size 0.23 và rơi một Energy Orb, cooldown 5 giây.
 - Đá là vật cản. Bụi không có collision: người chơi có thể đi xuyên vào để ẩn; đối thủ ở ngoài không nhìn thấy người trong bụi, còn người ở cùng bụi vẫn nhìn thấy nhau.

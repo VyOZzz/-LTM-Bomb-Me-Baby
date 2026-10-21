@@ -118,7 +118,7 @@ final class GameRoom {
             PlayerState p = players.get(i);
             p.x = spawns.get(i)[0]; p.z = spawns.get(i)[1]; p.dx = 0; p.dz = 0;
             p.hp = 100; p.size = 1; p.baseSize = 1; p.kills = 0;
-            p.alive = true; p.charging = false; p.shieldUntil = 0;
+            p.alive = true; p.charging = false; p.chargeReadyAt = 0; p.shieldUntil = 0;
             p.shieldReadyAt = 0; p.boostUntil = 0; p.boostReadyAt = 0;
             p.ready = false;
         }
@@ -147,7 +147,8 @@ final class GameRoom {
                 p.dz = length > 1 ? dz / length : dz;
             }
             case "CHARGE_START" -> {
-                if (!p.charging) { p.charging = true; p.chargeSince = now; }
+                if (now < p.chargeReadyAt) reject(p,"BOMB_COOLDOWN");
+                else if (!p.charging) { p.charging = true; p.chargeSince = now; }
                 else reject(p,"ALREADY_CHARGING");
             }
             case "EXPLODE" -> {
@@ -251,6 +252,7 @@ final class GameRoom {
 
     private void explode(PlayerState source, long now) {
         source.charging = false;
+        source.chargeReadyAt = now + GameRules.BOMB_COOLDOWN_MS;
         double charge = GameRules.clamp((now - source.chargeSince) / (double) GameRules.MAX_CHARGE_MS, 0, 1);
         double radius = GameRules.blastRadius(source.size, charge);
         double damageDone = 0;
@@ -414,7 +416,13 @@ final class GameRoom {
         return true;
     }
 
-    /** Farthest-point sampling keeps every randomized start outside initial visibility range. */
+    /**
+     * Farthest-point sampling keeps every randomized start outside initial visibility range.
+     *
+     * A single greedy pass is not sufficient: an unlucky first point near the middle can
+     * make a valid ten-player layout appear impossible. Try several well-spread starting
+     * points and only fail after every candidate produces an incomplete layout.
+     */
     private List<double[]> randomSpawns(int count) {
         List<double[]> candidates = new ArrayList<>();
         double margin = 3.0;
@@ -426,33 +434,37 @@ final class GameRoom {
         }
         if (candidates.size() < count) throw new IllegalStateException("Map has too few spawn candidates: " + map.id);
 
-        // A greedy layout can get stuck for 10 players even on a valid map.
-        // Retry with a different first candidate, preserving the 28-unit rule.
-        for (int attempt = 0; attempt < 32; attempt++) {
-            List<double[]> result = separatedSpawns(new ArrayList<>(candidates), count);
-            if (result != null) return result;
-        }
-        throw new IllegalStateException("Cannot separate " + count + " spawns on map " + map.id);
-    }
-
-    private List<double[]> separatedSpawns(List<double[]> candidates, int count) {
-        List<double[]> result = new ArrayList<>();
-        result.add(candidates.remove(random.nextInt(candidates.size())));
-        while (result.size() < count) {
-            int bestIndex = -1;
-            double bestDistance = -1;
-            for (int i = 0; i < candidates.size(); i++) {
-                double[] candidate = candidates.get(i);
-                double nearest = result.stream()
-                    .mapToDouble(spawn -> GameRules.distance(candidate[0],candidate[1],spawn[0],spawn[1]))
-                    .min().orElse(Double.POSITIVE_INFINITY);
-                if (nearest > bestDistance) { bestDistance = nearest; bestIndex = i; }
+        // Boundary points are the best seeds for packing many players. Random tie-breaking
+        // still gives different rounds while the retries prevent a flaky start failure.
+        candidates.sort((a,b) -> Double.compare(Math.hypot(b[0],b[1]), Math.hypot(a[0],a[1])));
+        int attempts = Math.min(96, candidates.size());
+        List<double[]> largest = List.of();
+        for (int attempt = 0; attempt < attempts; attempt++) {
+            int seedIndex = (attempt * Math.max(1, candidates.size() / attempts)) % candidates.size();
+            List<double[]> available = new ArrayList<>(candidates);
+            List<double[]> result = new ArrayList<>();
+            result.add(available.remove(seedIndex));
+            while (result.size() < count) {
+                int bestIndex = -1;
+                double bestDistance = -1;
+                for (int i = 0; i < available.size(); i++) {
+                    double[] candidate = available.get(i);
+                    double nearest = result.stream()
+                        .mapToDouble(spawn -> GameRules.distance(candidate[0],candidate[1],spawn[0],spawn[1]))
+                        .min().orElse(Double.POSITIVE_INFINITY);
+                    if (nearest > bestDistance) { bestDistance = nearest; bestIndex = i; }
+                }
+                if (bestIndex < 0 || bestDistance < GameRules.MIN_SPAWN_DISTANCE) break;
+                result.add(available.remove(bestIndex));
             }
-            if (bestIndex < 0 || bestDistance < GameRules.MIN_SPAWN_DISTANCE)
-                return null;
-            result.add(candidates.remove(bestIndex));
+            if (result.size() == count) {
+                java.util.Collections.shuffle(result, random);
+                return result;
+            }
+            if (result.size() > largest.size()) largest = result;
         }
-        return result;
+        throw new IllegalStateException("Cannot separate " + count + " spawns on map " + map.id
+            + " (best layout contained " + largest.size() + ")");
     }
 
     private void applyMap(GameMap selected) {
@@ -516,6 +528,7 @@ final class GameRoom {
                 "baseSize",p.baseSize,"alive",p.alive,"connected",p.connected,
                 "visible",visible,
                 "charging",p.charging,"charge",p.charging ? GameRules.clamp((now-p.chargeSince)/8000.0,0,1) : 0,
+                "chargeCooldown",Math.max(0,p.chargeReadyAt-now)/1000.0,
                 "shield",now < p.shieldUntil,"shieldCooldown",Math.max(0,p.shieldReadyAt-now)/1000.0,
                 "boost",now < p.boostUntil,"boostCooldown",Math.max(0,p.boostReadyAt-now)/1000.0,
                 "kills",p.kills));
