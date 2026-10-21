@@ -15,6 +15,7 @@ final class PlayerState {
     long chargeSince, chargeReadyAt, shieldUntil, shieldReadyAt, boostUntil, boostReadyAt, disconnectedAt;
     long staggerUntil, staggerImmuneUntil;
     long lastSeq = -1;
+    long lastMoveAt;
     int kills;
 
     PlayerState(String name, BombServer.Connection connection) {

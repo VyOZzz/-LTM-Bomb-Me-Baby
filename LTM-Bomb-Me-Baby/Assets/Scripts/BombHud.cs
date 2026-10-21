@@ -19,6 +19,8 @@ sealed class BombHud {
         public long sentBytesPerSecond, receivedBytesPerSecond;
         public bool showNetwork;
         public string endpoint, syncMode, demoMap;
+        public float networkSilence;
+        public string[] disconnectedPlayers;
 
         // Minimap (both modes) and Journey objective.
         public string mapId;
@@ -58,6 +60,7 @@ sealed class BombHud {
         DrawPlayerCard(v);
         DrawMatchPill(v, W);
         DrawNetwork(v, W);
+        DrawDisconnectedPlayers(v, W);
         DrawMinimap(v, W);
         if (v.objective != null && v.objective.Active) DrawObjective(v, W);
         if (!string.IsNullOrEmpty(v.toast) && v.toastAlpha > 0) DrawToast(v.toast, v.toastAlpha, W);
@@ -117,13 +120,14 @@ sealed class BombHud {
     }
 
     void DrawNetwork(View v, float W) {
-        Color dot = v.rttMs < 60 ? Health : v.rttMs < 150 ? Charge : Danger;
+        bool delayed = v.networkSilence >= 1.5f;
+        Color dot = delayed ? Danger : v.rttMs < 60 ? Health : v.rttMs < 150 ? Charge : Danger;
         if (!v.showNetwork) {
-            Rect chip = R(W - 24 - 150, 20, 150, 34);
+            Rect chip = R(W - 24 - 180, 20, 180, 34);
             Fill(chip, Panel, RoundSmall);
             Fill(Centered(new Vector2(chip.x + S(18), chip.center.y), S(9)), dot, Circle);
-            GUI.Label(R(W - 24 - 150 + 32, 20, 110, 34), $"RTT {v.rttMs:0} ms", label);
-            GUI.Label(R(W - 24 - 150, 20, 136, 34), "F3", labelRight);
+            GUI.Label(R(W - 24 - 180 + 32, 20, 140, 34), delayed ? "MẠNG ĐANG CHẬM" : $"RTT {v.rttMs:0} ms", label);
+            GUI.Label(R(W - 24 - 180, 20, 166, 34), "F3", labelRight);
             return;
         }
         Rect panel = R(W - 24 - 300, 20, 300, 176);
@@ -139,6 +143,19 @@ sealed class BombHud {
         };
         for (int i = 0; i < lines.Length; i++)
             GUI.Label(R(W - 24 - 300 + 18, 32 + i * 24, 264, 22), lines[i], i == lines.Length - 1 ? small : label);
+    }
+
+    void DrawDisconnectedPlayers(View v, float W) {
+        if (v.disconnectedPlayers == null || v.disconnectedPlayers.Length == 0) return;
+        float y = v.showNetwork ? 208 : 64;
+        float height = 34 + v.disconnectedPlayers.Length * 24;
+        Rect panel = R(W - 24 - 270, y, 270, height);
+        Fill(panel, Panel, RoundBig);
+        small.normal.textColor = Danger;
+        GUI.Label(R(W - 24 - 252, y + 7, 234, 22), "MẤT KẾT NỐI — ĐANG GIỮ CHỖ", small);
+        small.normal.textColor = TextMuted;
+        for (int i = 0; i < v.disconnectedPlayers.Length; i++)
+            GUI.Label(R(W - 24 - 252, y + 31 + i * 24, 234, 22), v.disconnectedPlayers[i], label);
     }
 
     static string Short(string value, int max) {
@@ -310,14 +327,16 @@ sealed class BombHud {
 
     /// Small name pill above a ball; visible opponents also get an overhead HP bar.
     public void DrawNameTag(Vector2 screenTop, string playerName, float hp, bool isMe,
+                            bool connected, float reconnectRemaining,
                             bool isCarrier, int fireLock, int fireLockMax) {
         EnsureStyles();
-        float width = tagName.CalcSize(new GUIContent(playerName)).x + S(18);
+        string shownName = connected ? playerName : $"{playerName}  •  MẤT KẾT NỐI {Mathf.CeilToInt(reconnectRemaining)}s";
+        float width = tagName.CalcSize(new GUIContent(shownName)).x + S(18);
         float nameOffset = isMe ? S(28) : S(40);
         Rect pill = new Rect(screenTop.x - width / 2, screenTop.y - nameOffset, width, S(22));
         Fill(pill, WithAlpha(Panel, .8f), RoundSmall);
-        tagName.normal.textColor = isMe ? Charge : Text;
-        GUI.Label(pill, playerName, tagName);
+        tagName.normal.textColor = !connected ? Danger : isMe ? Charge : Text;
+        GUI.Label(pill, shownName, tagName);
 
         if (isCarrier) {
             int maxLocks = Mathf.Max(2, fireLockMax);
@@ -340,11 +359,11 @@ sealed class BombHud {
     }
 
     /// Centered result card shown while the round is FINISHED.
-    public void DrawReconnect(float secondsRemaining, string endpoint, int attempt) {
+    public bool DrawReconnect(float secondsRemaining, string endpoint, int attempt) {
         u = Mathf.Clamp(Screen.height / 1080f, .75f, 1.6f);
         EnsureStyles();
         bool expired = secondsRemaining <= 0;
-        float width = S(560), height = S(104);
+        float width = S(560), height = S(expired ? 154 : 104);
         Rect card = new Rect(Screen.width / 2f - width / 2, S(154), width, height);
         Fill(new Rect(card.x + S(6), card.y + S(8), width, height), new Color(0, 0, 0, .48f), RoundBig);
         Fill(card, Panel, RoundBig);
@@ -357,6 +376,11 @@ sealed class BombHud {
             ? "Server không phản hồi trong 10 giây. Bạn có thể quay lại menu."
             : $"{Short(endpoint, 34)}  •  còn {secondsRemaining:0.0}s  •  lần thử {Mathf.Max(1, attempt)}";
         GUI.Label(new Rect(card.x + S(20), card.y + S(60), width - S(40), S(34)), detail, bannerSub);
+        if (expired) {
+            Rect button = new Rect(card.center.x - S(90), card.y + S(105), S(180), S(34));
+            return GUI.Button(button, "VỀ MENU");
+        }
+        return false;
     }
 
     public void DrawBanner(string title, string subtitle, Color accent) {

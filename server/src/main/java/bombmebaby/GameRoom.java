@@ -144,6 +144,7 @@ final class GameRoom {
         switch (type) {
             case "MOVE" -> {
                 if (!Double.isFinite(dx) || !Double.isFinite(dz)) { reject(p,"INVALID_MOVEMENT"); return; }
+                p.lastMoveAt = now;
                 double length = Math.hypot(dx, dz);
                 p.dx = length > 1 ? dx / length : dx;
                 p.dz = length > 1 ? dz / length : dz;
@@ -180,12 +181,10 @@ final class GameRoom {
 
     synchronized void update(long now, double dt) {
         if (phase != Phase.PLAYING) {
-            if (mode == GameMode.JOURNEY && hasStarted && !journeyComplete) {
-                List<PlayerState> expired = players.stream()
-                    .filter(p -> !p.connected && now - p.disconnectedAt >= GameRules.RECONNECT_MS)
-                    .toList();
-                for (PlayerState player : expired) leave(player);
-            }
+            List<PlayerState> expired = players.stream()
+                .filter(p -> !p.connected && now - p.disconnectedAt >= GameRules.RECONNECT_MS)
+                .toList();
+            for (PlayerState player : expired) leave(player);
             return;
         }
         tick++;
@@ -200,6 +199,10 @@ final class GameRoom {
         for (PlayerState p : players) {
             if (!p.alive) continue;
             if (p.connected) {
+                if ((p.dx != 0 || p.dz != 0) && now - p.lastMoveAt >= GameRules.MOVEMENT_STALE_MS) {
+                    p.dx = 0;
+                    p.dz = 0;
+                }
                 double speed = 5.2 / Math.sqrt(p.size) * (now < p.boostUntil ? 1.85 : 1);
                 if (now >= p.staggerUntil) movePlayer(p, p.dx * speed * dt, p.dz * speed * dt, false);
                 pickup(p, now);
@@ -561,7 +564,8 @@ final class GameRoom {
             "arenaSize",map.halfSize,"maxPlayers",GameRules.MAX_PLAYERS,
             "mode",mode.name(),"chapterIndex",protocolChapterIndex(),"scores",scores(),
             "journeyComplete",journeyComplete,"players",players.stream().map(p -> data(
-            "id",p.id,"name",p.name,"ready",p.ready,"connected",p.connected)).toList());
+            "id",p.id,"name",p.name,"ready",p.ready,"connected",p.connected,
+            "reconnectRemaining",p.connected ? 0 : Math.max(0,p.disconnectedAt + GameRules.RECONNECT_MS - System.currentTimeMillis()) / 1000.0)).toList());
     }
 
     /** Snapshot without visibility filtering; still uses this room's sync mode. */
@@ -600,6 +604,7 @@ final class GameRoom {
             states.add(data(
                 "id",p.id,"name",p.name,"x",px,"z",pz,"hp",p.hp,"size",p.size,
                 "baseSize",p.baseSize,"alive",p.alive,"connected",p.connected,
+                "reconnectRemaining",p.connected ? 0 : Math.max(0,p.disconnectedAt + GameRules.RECONNECT_MS - now)/1000.0,
                 "visible",visible,
                 "charging",p.charging,"charge",p.charging ? GameRules.clamp((now-p.chargeSince)/8000.0,0,1) : 0,
                 "chargeCooldown",Math.max(0,p.chargeReadyAt-now)/1000.0,
@@ -650,6 +655,8 @@ final class GameRoom {
     synchronized boolean keepsDisconnectedSession() {
         return phase == Phase.PLAYING || (mode == GameMode.JOURNEY && hasStarted && !journeyComplete);
     }
+
+    synchronized boolean isEmpty() { return players.isEmpty(); }
 
     private int bushAt(double x, double z) {
         for (int i = 0; i < bushes.size(); i++) {

@@ -72,6 +72,31 @@ class ConnectionTest {
         assertEquals(1, peer.player.lastSeq);
     }
 
+    @Test void heartbeatWatchdogClosesASilentConnection() throws Exception {
+        Peer peer = hello();
+        peer.connection.lastReceivedAt = System.currentTimeMillis() - GameRules.CONNECTION_TIMEOUT_MS;
+        peer.connection.closeIfUnhealthy(System.currentTimeMillis());
+        peer.finished.get(5, TimeUnit.SECONDS);
+        assertFalse(peer.player.connected);
+        assertNull(peer.player.connection);
+    }
+
+    @Test void outboundQueueCoalescesSnapshotsButKeepsEvents() throws Exception {
+        try (ServerSocket listener = new ServerSocket(0, 1, InetAddress.getLoopbackAddress());
+             Socket client = new Socket(listener.getInetAddress(), listener.getLocalPort())) {
+            var connection = server.new Connection(listener.accept());
+            connection.send(GameRoom.data("type", "PLAYER_DAMAGED", "playerId", "A"));
+            connection.send(GameRoom.data("type", "STATE_UPDATE", "tick", 1));
+            connection.send(GameRoom.data("type", "STATE_UPDATE", "tick", 2));
+            synchronized (connection.outboundLock) {
+                assertEquals(2, connection.outbound.size());
+                assertTrue(connection.outbound.getFirst().json().contains("PLAYER_DAMAGED"));
+                assertTrue(connection.outbound.getLast().json().contains("\"tick\":2"));
+            }
+            connection.close();
+        }
+    }
+
     @Test void disconnectInLobbyRemovesPlayerAndEmptyRoom() throws Exception {
         Peer peer = hello();
         peer.request("type", "CREATE_ROOM", "seq", 1);
@@ -86,9 +111,11 @@ class ConnectionTest {
         Peer old = playing();
         GameRoom room = old.player.room;
         old.request("type", "MOVE", "seq", 10, "directionX", 1);
+        old.player.charging = true;
         old.disconnect();
         assertFalse(old.player.connected);
         assertEquals(0, old.player.dx);
+        assertFalse(old.player.charging);
         assertSame(room, old.player.room);
         Peer resumed = connect();
         resumed.send("type", "HELLO", "resumeToken", old.player.resumeToken);
@@ -264,7 +291,9 @@ class ConnectionTest {
         a.request("type", "READY", "seq", 2, "ready", true);
         b.request("type", "READY", "seq", 2, "ready", true);
         a.disconnect();
-        assertEquals(a.player.id, b.until("PLAYER_DISCONNECTED").get("playerId").getAsString());
+        JsonObject disconnected = b.until("PLAYER_DISCONNECTED");
+        assertEquals(a.player.id, disconnected.get("playerId").getAsString());
+        assertEquals(GameRules.RECONNECT_MS, disconnected.get("reconnectMs").getAsLong());
         long deadline = a.player.disconnectedAt + GameRules.RECONNECT_MS;
         room.update(deadline - 1, 0);
         synchronized (room) { assertTrue(a.player.alive); }

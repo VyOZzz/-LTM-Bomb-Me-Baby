@@ -30,6 +30,8 @@ using System;
     public long clientTime;
     public long serverTime;
     public long processingMicros;
+    public long reconnectMs;
+    public long reconnectDeadline;
     public float x;
     public float z;
     public float directionX;
@@ -124,6 +126,7 @@ using System;
     public string name;
     public bool ready;
     public bool connected;
+    public float reconnectRemaining;
 }
 
 [Serializable] public class ScoreData {
@@ -144,6 +147,7 @@ using System;
     public float baseSize;
     public bool alive;
     public bool connected;
+    public float reconnectRemaining;
     public bool visible;
     public bool charging;
     public float charge;

@@ -11,7 +11,9 @@ import java.io.PrintWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayDeque;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -24,6 +26,7 @@ public final class BombServer {
     static final Gson JSON = new Gson();
     final Map<String,GameRoom> rooms = new ConcurrentHashMap<>();
     final Map<String,PlayerState> sessions = new ConcurrentHashMap<>();
+    final Set<Connection> connections = ConcurrentHashMap.newKeySet();
     final ExecutorService clients = Executors.newFixedThreadPool(64);
     final ScheduledExecutorService gameLoop = Executors.newSingleThreadScheduledExecutor();
     final SyncMode syncMode;
@@ -46,9 +49,11 @@ public final class BombServer {
             double dt = Math.min(0.1, (nowNs - previousTick) / 1_000_000_000.0);
             previousTick = nowNs;
             long now = System.currentTimeMillis();
+            connections.forEach(connection -> connection.closeIfUnhealthy(now));
             for (GameRoom room : rooms.values()) {
                 try { room.update(now, dt); }
                 catch (RuntimeException e) { System.err.println("Room " + room.code + ": " + e); }
+                if (room.isEmpty()) rooms.remove(room.code, room);
             }
             sessions.values().removeIf(p -> {
                 synchronized (p) {
@@ -67,23 +72,84 @@ public final class BombServer {
     }
 
     final class Connection implements Runnable {
+        record Outbound(String json, boolean snapshot) {}
+
+        static final int MAX_OUTBOUND = 128;
         final Socket socket;
         final PrintWriter writer;
+        final Object outboundLock = new Object();
+        final ArrayDeque<Outbound> outbound = new ArrayDeque<>();
         PlayerState player;
+        volatile boolean closed;
+        volatile long lastReceivedAt = System.currentTimeMillis();
+        volatile long writeStartedAt;
+        Thread outputThread;
 
         Connection(Socket socket) throws IOException {
             this.socket = socket;
             this.writer = new PrintWriter(socket.getOutputStream(), true, StandardCharsets.UTF_8);
+            connections.add(this);
         }
 
-        synchronized void send(Object value) {
-            writer.println(JSON.toJson(value));
-            if (writer.checkError()) close();
+        void send(Object value) {
+            boolean snapshot = value instanceof Map<?,?> map && "STATE_UPDATE".equals(map.get("type"));
+            Outbound item = new Outbound(JSON.toJson(value), snapshot);
+            boolean overflow = false;
+            synchronized (outboundLock) {
+                if (closed) return;
+                if (snapshot) outbound.removeIf(Outbound::snapshot);
+                if (outbound.size() >= MAX_OUTBOUND) overflow = true;
+                else {
+                    outbound.addLast(item);
+                    outboundLock.notifyAll();
+                }
+            }
+            if (overflow) close();
         }
 
-        void close() { try { socket.close(); } catch (IOException ignored) { } }
+        void close() {
+            if (closed) return;
+            closed = true;
+            connections.remove(this);
+            try { socket.close(); } catch (IOException ignored) { }
+            synchronized (outboundLock) { outboundLock.notifyAll(); }
+        }
+
+        void closeIfUnhealthy(long now) {
+            if (closed) return;
+            if (now - lastReceivedAt >= GameRules.CONNECTION_TIMEOUT_MS
+                    || writeStartedAt > 0 && now - writeStartedAt >= GameRules.WRITE_STALL_MS) close();
+        }
+
+        private void startWriter() {
+            outputThread = new Thread(this::writeLoop, "Bomb TCP writer");
+            outputThread.setDaemon(true);
+            outputThread.start();
+        }
+
+        private void writeLoop() {
+            try {
+                while (!closed) {
+                    Outbound item;
+                    synchronized (outboundLock) {
+                        while (outbound.isEmpty() && !closed) outboundLock.wait();
+                        if (closed) return;
+                        item = outbound.removeFirst();
+                    }
+                    writeStartedAt = System.currentTimeMillis();
+                    writer.println(item.json());
+                    if (writer.checkError()) throw new IOException("Socket write failed");
+                    writeStartedAt = 0;
+                }
+            } catch (IOException | InterruptedException ignored) {
+                close();
+            } finally {
+                writeStartedAt = 0;
+            }
+        }
 
         @Override public void run() {
+            startWriter();
             try (socket; BufferedReader input = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8))) {
                 String line;
                 while ((line = input.readLine()) != null) {
@@ -91,6 +157,7 @@ public final class BombServer {
                     long begin = System.nanoTime();
                     try {
                         JsonObject message = JsonParser.parseString(line).getAsJsonObject();
+                        lastReceivedAt = System.currentTimeMillis();
                         handle(message);
                         if (player != null && !"PING".equals(string(message,"type")))
                             send(GameRoom.data("type","ACK","seq",number(message,"seq",-1),
@@ -100,6 +167,7 @@ public final class BombServer {
             } catch (IOException ignored) {
             } finally {
                 disconnect();
+                close();
             }
         }
 
@@ -120,14 +188,18 @@ public final class BombServer {
                 player.disconnectedAt = System.currentTimeMillis();
                 player.connection = null;
                 player.connected = false;
-                player.dx = 0; player.dz = 0;
+                player.dx = 0; player.dz = 0; player.charging = false;
                 GameRoom room = player.room;
                 if (room == null) return;
                 if (!room.keepsDisconnectedSession()) {
                     room.leave(player);
                     if (room.players.isEmpty()) rooms.remove(room.code, room);
                 } else {
-                    room.players.forEach(p -> p.send(GameRoom.data("type","PLAYER_DISCONNECTED","playerId",player.id)));
+                    Map<String,Object> roomState = GameRoom.data("type","ROOM_STATE","room",room.roomInfo());
+                    room.players.forEach(p -> p.send(roomState));
+                    room.players.forEach(p -> p.send(GameRoom.data("type","PLAYER_DISCONNECTED",
+                        "playerId",player.id,"reconnectMs",GameRules.RECONNECT_MS,
+                        "reconnectDeadline",player.disconnectedAt + GameRules.RECONNECT_MS)));
                 }
             });
         }
@@ -146,9 +218,11 @@ public final class BombServer {
                 player.connected = true;
                 GameRoom room = player.room;
                 if (room != null) {
-                    send(GameRoom.data("type","ROOM_STATE","room",room.roomInfo()));
+                    Map<String,Object> roomState = GameRoom.data("type","ROOM_STATE","room",room.roomInfo());
+                    room.players.forEach(p -> p.send(roomState));
                     if (room.phase == GameRoom.Phase.PLAYING)
                         send(room.snapshot(System.currentTimeMillis(), player, true));
+                    room.players.forEach(p -> p.send(GameRoom.data("type","PLAYER_RECONNECTED","playerId",player.id)));
                 }
             });
             return player != null;

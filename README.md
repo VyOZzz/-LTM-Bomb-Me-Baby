@@ -20,7 +20,7 @@ Java authoritative server
   ├─ thread pool nhận và kiểm tra request
   ├─ khóa riêng theo room khi đổi trạng thái
   ├─ game loop 20 Hz
-  └─ snapshot 10 Hz + event gameplay
+  └─ hàng đợi ghi riêng/client, snapshot 10 Hz được gộp bản mới nhất + event gameplay
         │
         └─ STATE_UPDATE / ACK / PONG / GAME_OVER / JOURNEY_COMPLETE
 ```
@@ -42,7 +42,7 @@ Server mặc định nghe TCP port `7777`. Mở firewall cho port này nếu ng�
 ## Tài liệu và kiểm thử phần Java server (thành viên A)
 
 - [Học từ đầu và giải thích từng phần code](docs/THANH_VIEN_A_HUONG_DAN.md).
-- [Kết quả 68 test và phạm vi đã kiểm chứng](docs/THANH_VIEN_A_KIEM_THU.md).
+- [Kết quả 71 test và phạm vi đã kiểm chứng](docs/THANH_VIEN_A_KIEM_THU.md).
 - [Bàn giao cho T/B: tích hợp JSON và so sánh baseline/optimized](docs/THANH_VIEN_A_BAN_GIAO.md).
 
 Server mặc định dùng baseline. Từ thư mục `server/`, kiểm tra cả hai cấu hình:
@@ -84,7 +84,7 @@ Khi người chơi tạo hoặc vào phòng **Hành trình Ba Mảnh** lần đ�
 
 Điều khiển: **WASD/phím mũi tên** di chuyển theo hướng màn hình, **giữ Space** nạp và **thả Space** để nổ, **E** bật Shield, **Shift** Boost. Camera bám sát quả bóng của người chơi và chỉ hiển thị một vùng nhỏ của map. Đấu nhanh đổi sang một map khác ở vòng sau; Hành trình luôn chạy `meadow → crossroads → crater`, giữ điểm qua ba vòng.
 
-Game có nhạc riêng cho menu và ba map. Nhạc tự hạ khi có tiếng nổ/kết quả; tối đa 10 nguồn SFX 3D được phát đồng thời để tránh chồng âm trong trận đông người. Khi mất kết nối trong trận, client hiện số giây còn lại của cửa sổ reconnect 10 giây và số lần thử lại.
+Game có nhạc riêng cho menu và ba map. Nhạc tự hạ khi có tiếng nổ/kết quả; tối đa 10 nguồn SFX 3D được phát đồng thời để tránh chồng âm trong trận đông người. Khi mất kết nối trong trận, client hiện số giây còn lại của cửa sổ reconnect 10 giây và số lần thử lại. Người còn trong phòng thấy thông báo, tên người mất kết nối và thời gian giữ chỗ; vị trí đang ẩn trong bụi không bị lộ.
 
 ## Bật AI trong Unity Editor (tùy chọn)
 
@@ -135,7 +135,7 @@ Contribution kỹ thuật chính là **selective state synchronization**:
 
 Trạng thái kiểm tra ngày 21/10/2026:
 
-- 68/68 test Java qua ở cả `baseline` và `optimized`;
+- 71/71 test Java qua ở cả `baseline` và `optimized`;
 - Unity `6000.3.6f1` batch compile thành công, 11 SFX và 4 track nhạc được import;
 - source Unity đã hiểu snapshot optimized, hai game mode, reconnect geometry và tọa độ event bị ẩn;
 - vẫn cần phát hành lại Windows build và kiểm tra end-to-end 2–4 client trên commit cuối.

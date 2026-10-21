@@ -18,7 +18,7 @@ Server trả token cho session mới:
 
 `syncMode` cho client/debug biết server đang chạy `BASELINE` hay `OPTIMIZED`. `demoMap` rỗng khi QUICK chọn map ngẫu nhiên; có giá trị khi server chạy với `-Ddemo.map=...` hoặc `DEMO_MAP`.
 
-Khi TCP đứt, client mở socket mới trong vòng 10 giây và gửi HELLO với token. WELCOME khôi phục có thêm `lastSeq`; request tiếp theo phải lớn hơn giá trị này. Token lạ, hết hạn, đang được socket khác giữ nhận `RESUME_FAILED`. Unity hiện banner đếm ngược cửa sổ 10 giây và số lần thử kết nối.
+Khi TCP đứt, client mở socket mới trong vòng 10 giây và gửi HELLO với token. WELCOME khôi phục có thêm `lastSeq`; request tiếp theo phải lớn hơn giá trị này. Token lạ, hết hạn, đang được socket khác giữ nhận `RESUME_FAILED`. Unity hiện banner đếm ngược cửa sổ 10 giây và số lần thử kết nối. Server đóng connection không nhận message hợp lệ trong 6 giây; Unity chủ động đóng socket nếu không nhận dữ liệu server trong 7 giây. Hướng di chuyển cũ tự về 0 sau 0,5 giây nhưng không đổi trạng thái kết nối, nên đứng yên/ẩn bụi vẫn hợp lệ vì client tiếp tục gửi `MOVE(0,0)` và `PING`.
 
 ## Client → server
 
@@ -140,7 +140,7 @@ Không thể READY để tạo vòng thứ tư; server trả `JOURNEY_COMPLETE` 
 
 ## Các event khác
 
-`ENERGY_PICKED`, `CORE_PICKED`, `CORE_SPAWNED`, `SHIELD_ACTIVATED`, `BOOST_ACTIVATED`, `PLAYER_EXPLODE`, `PLAYER_DAMAGED`, `DAMAGE_REFLECTED`, `PLAYER_ELIMINATED`, `PLAYER_DISCONNECTED`, `ACK`, `PONG`, `ERROR` giữ ý nghĩa cũ. `PLAYER_KNOCKED_BACK` là event mới mô tả impulse đã được server áp dụng.
+`ENERGY_PICKED`, `CORE_PICKED`, `CORE_SPAWNED`, `SHIELD_ACTIVATED`, `BOOST_ACTIVATED`, `PLAYER_EXPLODE`, `PLAYER_DAMAGED`, `DAMAGE_REFLECTED`, `PLAYER_ELIMINATED`, `ACK`, `PONG`, `ERROR` giữ ý nghĩa cũ. `PLAYER_DISCONNECTED` có thêm `reconnectMs` và `reconnectDeadline`; `PLAYER_RECONNECTED` báo session đã quay lại. `PLAYER_KNOCKED_BACK` mô tả impulse đã được server áp dụng.
 
 Server là nguồn chính thức: client chỉ gửi hướng/hành động, không tự khai báo tọa độ, HP, sát thương, điểm hoặc người thắng. TCP message từ client giới hạn 2048 ký tự.
 
@@ -151,11 +151,11 @@ Server là nguồn chính thức: client chỉ gửi hướng/hành động, kh�
 ## Luồng input → server → snapshot
 
 1. `BombGame.Update()` đọc WASD/Space/E/Shift và chỉ tạo **ý định** hành động.
-2. `BombNetwork.Send()` gắn `seq` và `clientTime`, serialize JSON rồi ghi một dòng UTF-8 lên TCP.
+2. `BombNetwork.Send()` gắn `seq` và `clientTime`, serialize JSON rồi đưa vào hàng đợi giới hạn; thread ghi riêng phát một dòng UTF-8 lên TCP để Unity main thread không bị chặn.
 3. Một `BombServer.Connection` đọc dòng JSON trên thread của client, kiểm tra session và sequence, sau đó gọi `GameRoom.action()`.
 4. Mọi thay đổi trong một phòng đi qua monitor `synchronized` của `GameRoom`; game loop 20 Hz cũng dùng cùng monitor khi gọi `update()`. Vì vậy input, tick và tranh nhặt Core không sửa đồng thời cùng một room.
-5. Server tích phân movement, collision, pickup, cooldown và damage. Mỗi hai tick, server gửi `STATE_UPDATE` — baseline hiện tại là full snapshot 10 Hz.
-6. Thread đọc của `BombNetwork` chỉ đưa JSON vào queue. `BombGame.Update()` trên Unity main thread lấy message, áp snapshot, nội suy transform và cập nhật HUD/VFX.
+5. Server tích phân movement, collision, pickup, cooldown và damage. Mỗi hai tick, server tạo `STATE_UPDATE`; hàng đợi ghi riêng của từng connection thay snapshot chưa gửi bằng bản mới nhất và giữ thứ tự event. Client đọc chậm không chặn khóa room/game loop; write quá 3 giây hoặc queue control đầy sẽ đóng riêng connection đó.
+6. Thread đọc của `BombNetwork` đưa event vào queue giới hạn và chỉ giữ `STATE_UPDATE` mới nhất. `BombGame.Update()` trên Unity main thread áp snapshot, nội suy transform và cập nhật HUD/VFX.
 
 ```text
 Input Unity → BombNetwork (TCP JSON) → BombServer.Connection

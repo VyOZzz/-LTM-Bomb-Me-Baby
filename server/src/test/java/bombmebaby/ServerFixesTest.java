@@ -33,6 +33,21 @@ class ServerFixesTest {
         assertEquals(GameRoom.Phase.PLAYING, room.phase);
     }
 
+    @Test void staleMovementStopsWithoutTreatingStandingStillAsDisconnect() {
+        GameRoom room = startedRoom(SyncMode.BASELINE);
+        PlayerState a = room.players.get(0);
+        a.x = 0; a.z = 0;
+        room.action(a, "MOVE", 1, 0, 1_000);
+        room.update(1_000 + GameRules.MOVEMENT_STALE_MS - 1, .1);
+        double movedTo = a.x;
+        assertTrue(movedTo > 0);
+
+        room.update(1_000 + GameRules.MOVEMENT_STALE_MS, .1);
+        assertEquals(movedTo, a.x, .0001);
+        assertEquals(0, a.dx);
+        assertTrue(a.connected, "Movement expiry only stops stale input");
+    }
+
     @Test void disconnectAtDeadlineEliminatesAndDropsOnlyOneCore() {
         GameRoom room = startedRoom(SyncMode.BASELINE);
         PlayerState a = room.players.get(0);
@@ -51,6 +66,8 @@ class ServerFixesTest {
         assertTrue(room.players.stream().noneMatch(p -> p.alive));
         assertEquals(2, room.cores.size());
         assertEquals(GameRoom.Phase.FINISHED, room.phase);
+        room.update(1001 + GameRules.RECONNECT_MS, 0);
+        assertTrue(room.players.isEmpty(), "Finished rooms release every expired offline player");
     }
 
     @Test void closestEligiblePlayerWinsCoreEvenIfListedSecond() {

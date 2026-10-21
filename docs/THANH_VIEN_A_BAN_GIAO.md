@@ -8,7 +8,7 @@ Cập nhật 21/10/2026, đối chiếu với source đã commit trên nhánh hi
 - JOURNEY chạy `meadow → crossroads → crater`, giữ điểm/vòng thắng và phát `JOURNEY_COMPLETE`.
 - Novelty selective sync hoạt động ở server; Unity đã dựng/cache geometry từ GAME_START và hiểu tọa độ ẩn.
 - Reconnect, sequence trùng, tranh Core và Hành trình có test tự động.
-- 68/68 test Java qua ở baseline và optimized; xem [kết quả](THANH_VIEN_A_KIEM_THU.md).
+- 71/71 test Java qua ở baseline và optimized; xem [kết quả](THANH_VIEN_A_KIEM_THU.md).
 - Unity `6000.3.6f1` đã batch compile thành công; 11 SFX import được. Đã có 18 lượt benchmark loopback 2/4/8 client giả lập trong `experiments/`.
 - Chưa phát hành lại Windows build và chưa chơi end-to-end 2–4 client thật trên cùng commit cuối.
 
@@ -74,7 +74,7 @@ Phép đo fixture tự động hiện cho `baseline=1799`, `optimized=821` byte 
 
 - Selective sync hiện không phải delta encoding từng trường.
 - Reconnect optimized gửi lại geometry nhưng vẫn che player vô hình/cull pickup. Event nổ che tọa độ theo viewer và Core spawn xa không được gửi; vẫn không tuyên bố chống gian lận toàn diện vì chưa có xác thực/TLS và event không tọa độ vẫn để lộ một phần diễn biến.
-- Socket được ghi đồng bộ khi giữ khóa; client đọc chậm có thể ảnh hưởng phòng/game loop.
+- Socket được ghi bằng writer riêng cho từng connection; snapshot chờ được gộp về bản mới nhất. Client im lặng 6 giây, write treo 3 giây hoặc queue control đầy sẽ bị đóng riêng, không giữ khóa room/game loop.
 - Người vào phòng bị chặn sau khi JOURNEY bắt đầu. Người mất mạng giữa chương có 10 giây reconnect; hết hạn rời roster và phòng cần những người còn lại READY.
 - Unity source đã compile nhưng chưa có bằng chứng playtest cuối bằng 2–4 Windows client thật ở cả QUICK/JOURNEY.
 - `scripts/network_smoke.py` đã đọc geometry từ GAME_START để dùng được với cả baseline và optimized; cần lưu lại kết quả chạy trên commit/tag phát hành.

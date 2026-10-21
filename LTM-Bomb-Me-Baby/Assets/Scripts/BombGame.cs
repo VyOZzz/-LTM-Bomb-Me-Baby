@@ -37,6 +37,7 @@ public sealed class BombGame : MonoBehaviour {
     readonly BombOverlay overlay = new BombOverlay();
     readonly BombShardView shardView = new BombShardView();
     readonly Dictionary<string, string> playerNames = new Dictionary<string, string>();
+    readonly Dictionary<string, float> reconnectDeadlines = new Dictionary<string, float>();
     int aliveCount, playerCount;
     float matchStartedAt;
     ObjectiveData objective;
@@ -58,10 +59,12 @@ public sealed class BombGame : MonoBehaviour {
     float nextMoveAt, nextPingAt, nextMetricsAt, rttMs, serverMicros;
     const float ReconnectWindowSeconds = 10;
     float reconnectStartedAt = -1;
+    bool reconnectExpired;
     string activeSyncMode = "?", configuredDemoMap = "";
     int previousSent, previousReceived, sentPerSecond, receivedPerSecond;
     long previousSentBytes, previousReceivedBytes, sentBytesPerSecond, receivedBytesPerSecond;
     bool charging;
+    PlayerData[] latestPlayers = Array.Empty<PlayerData>();
     bool showNetworkSettings;
     BombStory story;
     BombStoryCinematic cinematic;
@@ -177,6 +180,9 @@ public sealed class BombGame : MonoBehaviour {
             try { Handle(line); }
             catch (Exception e) { status = "Dữ liệu server không hợp lệ: " + e.Message; }
         }
+        if (reconnectStartedAt >= 0 && !reconnectExpired
+                && Time.unscaledTime - reconnectStartedAt >= ReconnectWindowSeconds)
+            ExpireReconnect();
         if (network.Connected && Time.unscaledTime >= nextPingAt) {
             nextPingAt = Time.unscaledTime + 2;
             network.Send(new BombMessage { type = "PING" });
@@ -304,18 +310,22 @@ public sealed class BombGame : MonoBehaviour {
         switch (msg.type) {
             case "WELCOME":
                 bool resumed = reconnectStartedAt >= 0;
+                network.MarkWelcomed();
                 myId = msg.playerId;
                 network.ResumeToken = msg.resumeToken;
                 network.ContinueSequenceAfter(msg.lastSeq);
                 if (!string.IsNullOrEmpty(msg.syncMode)) activeSyncMode = msg.syncMode;
                 configuredDemoMap = msg.demoMap ?? "";
                 reconnectStartedAt = -1;
+                reconnectExpired = false;
                 status = resumed ? "Đã kết nối lại với server." : "";
+                if (resumed) Toast("Đã kết nối lại — trận đấu tiếp tục.");
                 break;
             case "ROOM_STATE":
                 if (room == null) status = "";
                 room = JsonUtility.FromJson<RoomEnvelope>(line).room;
                 if (room != null) {
+                    TrackReconnectDeadlines(room.players);
                     phase = room.phase;
                     if (phase == "WAITING")
                         status = "Đã vào phòng " + room.code + ". Chờ mọi người sẵn sàng.";
@@ -391,6 +401,7 @@ public sealed class BombGame : MonoBehaviour {
                 ShowStoryEvent(msg);
                 break;
             case "PLAYER_ELIMINATED":
+                reconnectDeadlines.Remove(msg.playerId);
                 if (msg.playerId == myId) gameAudio.StopGameplayLoops();
                 else gameAudio.PlayDamage(false, PositionOf(msg.playerId));
                 ShowStoryEvent(msg);
@@ -435,19 +446,21 @@ public sealed class BombGame : MonoBehaviour {
                 break;
             case "ERROR":
                 if (msg.code == "RESUME_FAILED") {
-                    reconnectStartedAt = -1;
-                    network.ResumeToken = "";
-                    myId = ""; room = null; phase = "MENU"; winnerId = "";
-                    ClearNotices();
-                    ClearActors();
-                    gameAudio.StopGameplayLoops();
-                    gameAudio.SetMenuMusic();
-                    status = "Phiên chơi đã hết hạn. Hãy kết nối lại từ menu.";
+                    ExpireReconnect();
                 } else status = ErrorText(msg.code, msg.mode);
+                break;
+            case "PLAYER_DISCONNECTED":
+                reconnectDeadlines[msg.playerId] = Time.unscaledTime + Mathf.Max(0, msg.reconnectMs / 1000f);
+                Toast($"{NameOf(msg.playerId)} mất kết nối — giữ chỗ 10 giây.");
+                break;
+            case "PLAYER_RECONNECTED":
+                reconnectDeadlines.Remove(msg.playerId);
+                if (msg.playerId != myId) Toast($"{NameOf(msg.playerId)} đã quay lại trận.");
                 break;
             case "NETWORK_ERROR":
                 gameAudio.StopGameplayLoops();
                 if (room != null && reconnectStartedAt < 0) reconnectStartedAt = Time.unscaledTime;
+                charging = false;
                 status = network.LastError + " Đang thử kết nối lại...";
                 break;
         }
@@ -536,6 +549,8 @@ public sealed class BombGame : MonoBehaviour {
     void ApplySnapshot(ServerMessage snapshot) {
         ApplyMap(snapshot);
         if (snapshot.players == null) return;
+        latestPlayers = snapshot.players;
+        TrackReconnectDeadlines(snapshot.players);
         playerCount = snapshot.players.Length;
         aliveCount = 0;
         foreach (PlayerData p in snapshot.players) {
@@ -841,6 +856,8 @@ public sealed class BombGame : MonoBehaviour {
         coreViews.Clear();
         shardView.Clear();
         objective = null;
+        latestPlayers = Array.Empty<PlayerData>();
+        reconnectDeadlines.Clear();
     }
 
     void OnGUI() {
@@ -854,7 +871,7 @@ public sealed class BombGame : MonoBehaviour {
         GUI.enabled = true;
         if (reconnectStartedAt >= 0) {
             float remaining = Mathf.Max(0, ReconnectWindowSeconds - (Time.unscaledTime - reconnectStartedAt));
-            hud.DrawReconnect(remaining, network.Endpoint, network.RetryAttempt);
+            if (hud.DrawReconnect(remaining, network.Endpoint, network.RetryAttempt)) ReturnToMenuAfterReconnect();
         }
         switch (overlay.Draw(room != null, phase == "PLAYING")) {
             case BombOverlay.Action.LeaveRoom:
@@ -955,7 +972,8 @@ public sealed class BombGame : MonoBehaviour {
             }
             GUILayout.Space(6);
             if (room.players != null) foreach (LobbyPlayer p in room.players)
-                GUILayout.Label((p.id == myId ? "▶ " : "   ") + p.name + (p.ready ? "  ✓" : "") + (p.connected ? "" : "  (mất kết nối)"), bodyStyle);
+                GUILayout.Label((p.id == myId ? "▶ " : "   ") + p.name + (p.ready ? "  ✓" : "")
+                    + (p.connected ? "" : $"  (mất kết nối — còn {Mathf.CeilToInt(ReconnectRemaining(p.id, p.reconnectRemaining))}s)"), bodyStyle);
             if (!room.journeyComplete) {
                 bool myReady = false;
                 if (room.players != null) foreach (LobbyPlayer p in room.players) if (p.id == myId) myReady = p.ready;
@@ -997,6 +1015,8 @@ public sealed class BombGame : MonoBehaviour {
             sentBytesPerSecond = sentBytesPerSecond, receivedBytesPerSecond = receivedBytesPerSecond,
             showNetwork = BombSettings.ShowNetwork,
             endpoint = network.Endpoint, syncMode = activeSyncMode, demoMap = configuredDemoMap,
+            networkSilence = network.SecondsSinceLastReceive,
+            disconnectedPlayers = DisconnectedPlayerLabels(),
             mapId = activeMapId, arenaSize = activeArenaSize,
             obstacles = activeObstacles, bushes = activeBushes, dots = MinimapDots(),
             objective = objective,
@@ -1019,6 +1039,8 @@ public sealed class BombGame : MonoBehaviour {
                     a.state.name,
                     a.state.hp,
                     entry.Key == myId,
+                    a.state.connected,
+                    a.state.reconnectRemaining,
                     objective != null && objective.carrierId == entry.Key,
                     objective != null ? objective.fireLock : 0,
                     objective != null ? objective.fireLockMax : 2);
@@ -1150,7 +1172,9 @@ public sealed class BombGame : MonoBehaviour {
             Rect row = GUILayoutUtility.GetRect(10,38,GUILayout.ExpandWidth(true));
             FillRect(row,player.id == myId ? new Color(1f,.43f,.08f,.18f) : HudPanelSoft);
             GUI.Label(new Rect(row.x+12,row.y,row.width-120,row.height),(player.id == myId ? "▶  " : "    ") + player.name,bodyStyle);
-            string state = !player.connected ? "MẤT KẾT NỐI" : player.ready ? "SẴN SÀNG" : "ĐANG CHỜ";
+            string state = !player.connected
+                ? $"MẤT KẾT NỐI {Mathf.CeilToInt(ReconnectRemaining(player.id, player.reconnectRemaining))}s"
+                : player.ready ? "SẴN SÀNG" : "ĐANG CHỜ";
             Color stateColor = !player.connected ? new Color(1f,.4f,.35f) : player.ready ? EnergyGreen : new Color(.7f,.74f,.8f);
             GUI.Label(new Rect(row.x+row.width-150,row.y,138,row.height),state,new GUIStyle(smallStyle) { alignment = TextAnchor.MiddleRight, normal = { textColor = stateColor } });
         }
@@ -1309,6 +1333,66 @@ public sealed class BombGame : MonoBehaviour {
         PlayerPrefs.Save();
         status = "Đang vào server...";
         network.Connect(host, parsed, playerName);
+    }
+
+    void ExpireReconnect() {
+        if (reconnectExpired) return;
+        if (reconnectStartedAt < 0) reconnectStartedAt = Time.unscaledTime - ReconnectWindowSeconds;
+        reconnectExpired = true;
+        charging = false;
+        network.Dispose();
+        network.ResumeToken = "";
+        status = "Phiên chơi đã hết hạn sau 10 giây không kết nối được.";
+        gameAudio.StopGameplayLoops();
+    }
+
+    void ReturnToMenuAfterReconnect() {
+        reconnectStartedAt = -1;
+        reconnectExpired = false;
+        myId = "";
+        room = null;
+        phase = "MENU";
+        winnerId = "";
+        latestPlayers = Array.Empty<PlayerData>();
+        ClearNotices();
+        ClearActors();
+        gameAudio.SetMenuMusic();
+        status = "Phiên trước đã hết hạn. Hãy kết nối lại để vào server.";
+    }
+
+    string[] DisconnectedPlayerLabels() {
+        var labels = new List<string>();
+        foreach (PlayerData player in latestPlayers) {
+            if (player == null || !player.alive || player.connected) continue;
+            labels.Add($"{player.name}  •  còn {Mathf.CeilToInt(ReconnectRemaining(player.id, player.reconnectRemaining))}s");
+        }
+        return labels.ToArray();
+    }
+
+    float ReconnectRemaining(string playerId, float fallback) {
+        return reconnectDeadlines.TryGetValue(playerId, out float deadline)
+            ? Mathf.Max(0, deadline - Time.unscaledTime)
+            : Mathf.Max(0, fallback);
+    }
+
+    void TrackReconnectDeadlines(PlayerData[] players) {
+        if (players == null) return;
+        foreach (PlayerData player in players) {
+            if (player == null) continue;
+            if (player.connected) reconnectDeadlines.Remove(player.id);
+            else if (!reconnectDeadlines.ContainsKey(player.id))
+                reconnectDeadlines[player.id] = Time.unscaledTime + Mathf.Max(0, player.reconnectRemaining);
+        }
+    }
+
+    void TrackReconnectDeadlines(LobbyPlayer[] players) {
+        if (players == null) return;
+        foreach (LobbyPlayer player in players) {
+            if (player == null) continue;
+            if (player.connected) reconnectDeadlines.Remove(player.id);
+            else if (!reconnectDeadlines.ContainsKey(player.id))
+                reconnectDeadlines[player.id] = Time.unscaledTime + Mathf.Max(0, player.reconnectRemaining);
+        }
     }
 
     void DrawNetworkSettings() {

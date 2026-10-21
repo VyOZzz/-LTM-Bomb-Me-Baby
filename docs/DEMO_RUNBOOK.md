@@ -4,7 +4,7 @@ Cập nhật theo source và kiểm thử tự động ngày 21/10/2026. Kết q
 
 ## Chuẩn bị
 
-1. Chạy `mvn clean test "-Dsync.mode=baseline"` và `mvn test "-Dsync.mode=optimized"` trong `server/`; cả hai phải qua 68 test.
+1. Chạy `mvn clean test "-Dsync.mode=baseline"` và `mvn test "-Dsync.mode=optimized"` trong `server/`; cả hai phải qua 71 test.
 2. Chạy server bằng `mvn compile exec:java "-Dexec.args=7777" "-Dsync.mode=optimized"` (TCP `7777`).
 3. Đặt `server.txt` cạnh file game `.exe`; dòng đầu là `HOST:PORT`.
 4. Khởi động 2–4 bản game. Client thứ nhất tạo phòng; các client còn lại nhập mã phòng rồi vào phòng.
@@ -30,7 +30,7 @@ Muốn demo lặp lại một map Đấu nhanh, thêm `"-Ddemo.map=meadow"` vào
 
 ### Source hiện tại — 21/10/2026
 
-- Java: 68 test, 0 failure, 0 error, 0 skipped ở cả baseline và optimized.
+- Java: 71 test, 0 failure, 0 error, 0 skipped ở cả baseline và optimized.
 - Unity `6000.3.6f1`: batch compile thành công với mã thoát 0; 11 SFX và 4 track nhạc import thành công.
 - Chưa đánh dấu hoàn thành demo cuối cho đến khi chạy lại 2–4 Windows client trên cùng commit/tag phát hành.
 

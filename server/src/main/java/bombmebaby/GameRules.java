@@ -17,6 +17,9 @@ final class GameRules {
     static final long BOOST_MS = 900;
     static final long BOOST_COOLDOWN_MS = 5_000;
     static final long RECONNECT_MS = 10_000;
+    static final long CONNECTION_TIMEOUT_MS = 6_000;
+    static final long WRITE_STALL_MS = 3_000;
+    static final long MOVEMENT_STALE_MS = 500;
 
     // Server-authoritative explosion impulse. Values are velocities in world units/second;
     // exponential decay keeps an ordinary blast displacement around 1-2.5 world units.

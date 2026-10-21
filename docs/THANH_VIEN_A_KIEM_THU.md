@@ -10,14 +10,14 @@ Ngày kiểm tra gần nhất: 21/10/2026, Windows 11, JDK 21.0.10, Maven 3.9.16
 | `mvn test "-Dsync.mode=optimized"` trong quá trình sửa | Một lần lỗi `Cannot separate 10 spawns on map meadow` | Phát hiện lỗi ngẫu nhiên trong chọn spawn 10 người; đã bổ sung thử lại và hồi quy 60 cấu hình |
 | `mvn test "-Dsync.mode=optimized"` sau thêm Hành trình/privacy event | 45 test, 0 failure, 0 error, 0 skipped; BUILD SUCCESS | Kiểm tra optimized, protocol mode, ba chương và ẩn event theo viewer |
 | `mvn clean test "-Dsync.mode=baseline"` sau cùng | 45 test, 0 failure, 0 error, 0 skipped; BUILD SUCCESS | Biên dịch lại sạch và kiểm tra baseline cùng toàn bộ luật Hành trình |
-| `mvn clean test "-Dsync.mode=baseline"` ngày 21/10 | **68 test**, 0 failure, 0 error, 0 skipped; BUILD SUCCESS | Xác nhận sạch toàn bộ test hiện tại, gồm objective, cơ chế tranh/cướp mảnh và map demo |
-| `mvn test "-Dsync.mode=optimized"` ngày 21/10 | **68 test**, 0 failure, 0 error, 0 skipped; BUILD SUCCESS | Cùng bộ test chạy qua với optimized sau lần clean baseline |
+| `mvn test` ngày 21/10 sau sửa client treo/mạng chậm | **71 test**, 0 failure, 0 error, 0 skipped; BUILD SUCCESS | Xác nhận baseline cùng heartbeat, snapshot coalescing, input expiry, cleanup và toàn bộ gameplay hiện có |
+| `mvn test "-Dsync.mode=optimized"` ngày 21/10 | **71 test**, 0 failure, 0 error, 0 skipped; BUILD SUCCESS | Cùng bộ test chạy qua với optimized; smoke TCP toàn tiến trình cũng qua HELLO/phòng/trận/snapshot/PING |
 
-Các lệnh chạy từ thư mục `server/`. Báo cáo Maven nằm trong `server/target/surefire-reports/`; `mvn clean` xóa kết quả lần trước. Hai cấu hình chạy cùng bộ 68 test, không phải 136 test khác nhau.
+Các lệnh chạy từ thư mục `server/`. Báo cáo Maven nằm trong `server/target/surefire-reports/`; `mvn clean` xóa kết quả lần trước. Hai cấu hình chạy cùng bộ 71 test, không phải 142 test khác nhau.
 
-## 2. Nội dung 68 test
+## 2. Nội dung 71 test
 
-### ConnectionTest — 17 test, socket TCP thật
+### ConnectionTest — 19 test, socket TCP thật
 
 | Tên test | Điều được xác nhận |
 | --- | --- |
@@ -25,6 +25,8 @@ Các lệnh chạy từ thư mục `server/`. Báo cáo Maven nằm trong `serve
 | `unknownTokenFailsWithoutCreatingNewSession` | Token lạ không âm thầm tạo player mới |
 | `duplicateAndOlderRequestsDoNotChangeRoomOrMovement` | CREATE_ROOM/MOVE trùng hoặc cũ không tác động lại; seq tăng vẫn được xử lý |
 | `pingDoesNotAdvanceActionSequence` | PING phản hồi đúng và không chiếm seq của action |
+| `heartbeatWatchdogClosesASilentConnection` | Connection không gửi message đủ 6 giây bị đóng và session chuyển offline |
+| `outboundQueueCoalescesSnapshotsButKeepsEvents` | Event được giữ, nhiều snapshot chờ chỉ còn bản mới nhất để client chậm không chặn game loop |
 | `disconnectInLobbyRemovesPlayerAndEmptyRoom` | Socket đóng dọn kết nối, membership và lobby rỗng |
 | `resumeRestoresIdentitySequenceRoomAndFullMap` | Giữ id/phòng/lastSeq; WELCOME đi trước state; map phục hồi đủ; seq cũ bị từ chối; cleanup cũ không phá kết nối mới |
 | `simultaneousResumeAllowsExactlyOneTcpConnection` | Hai socket tranh token: một WELCOME, một RESUME_FAILED; đóng socket thua không ngắt người thắng |
@@ -41,11 +43,12 @@ Các lệnh chạy từ thư mục `server/`. Báo cáo Maven nằm trong `serve
 
 Fixture mở socket trên loopback/cổng tự cấp, chạy chính `BombServer.Connection.run()` bằng executor. Không khởi chạy `BombServer.run()` và scheduler production; các tick cần kiểm tra được test gọi chủ động. Vì vậy đây là integration test lớp kết nối, không thay thế smoke test toàn tiến trình hoặc demo Unity. Fixture ConnectionTest chủ động chọn optimized để kiểm tra recovery ngay cả khi Maven property là baseline.
 
-### ServerFixesTest — 14 test trạng thái phòng
+### ServerFixesTest — 15 test trạng thái phòng
 
 | Nhóm | Các trường hợp |
 | --- | --- |
 | Timeout (3) | Trước hạn còn sống; đúng hạn bị loại và chỉ rơi một Core; mọi người cùng hết hạn đều bị loại |
+| Input expiry (1) | Hướng MOVE cũ dừng sau 0,5 giây mà không đánh dấu người đứng yên là mất kết nối |
 | Core (4) | Người gần nhất dù đứng sau trong danh sách; bằng khoảng cách với hai tick chạy đồng thời; người chết/offline không nhặt; ngoài tầm không nhặt |
 | Snapshot (7) | Baseline giữ map/vật phẩm; optimized culling đúng biên 30; ẩn người trong bụi nhưng giữ self/cùng bụi; ẩn người xa; recovery có geometry nhưng vẫn giữ privacy; snapshot không dùng chung list mutable; so byte cùng trạng thái |
 
@@ -90,9 +93,9 @@ Kết quả quan sát:
 
 ## 4. Chưa xác minh
 
-- Unity source đã batch compile và đã đọc geometry optimized; vẫn cần kiểm tra lại reconnect/end-to-end bằng 2–4 Windows client trên build cuối.
+- Unity source compile thành công với project `Assembly-CSharp.csproj` sinh bởi Unity 6000.3.6f1; vẫn cần kiểm tra reconnect/end-to-end bằng 2–4 Windows client trên build cuối.
 - Smoke script đã được cập nhật để nhận geometry từ GAME_START ở cả baseline/optimized; cần ghi lại một lượt chạy mới trên commit/tag cuối.
-- Đã có benchmark loopback 2/4/8 client giả lập trong `experiments/`; chưa đo bằng Unity client trên LAN/Internet, client đọc chậm hoặc TCP treo không báo mất kết nối.
+- Đã có test tự động cho heartbeat, coalescing snapshot và input cũ; chưa đo hành vi buffer/write timeout bằng Unity client thật bị treo hoặc mạng LAN/Internet bị giới hạn băng thông/mất gói.
 - Mọi interleaving đa luồng hay mọi seed spawn có thể xảy ra. Test qua cung cấp bằng chứng hồi quy, không phải chứng minh không còn bất kỳ lỗi nào.
 
 Hướng dẫn học code: [THANH_VIEN_A_HUONG_DAN.md](THANH_VIEN_A_HUONG_DAN.md). Checklist tích hợp và đo: [THANH_VIEN_A_BAN_GIAO.md](THANH_VIEN_A_BAN_GIAO.md).
