@@ -18,6 +18,7 @@ sealed class BombHud {
         public int sentPerSecond, receivedPerSecond;
         public long sentBytesPerSecond, receivedBytesPerSecond;
         public bool showNetwork;
+        public string endpoint, syncMode, demoMap;
 
         // Minimap (both modes) and Journey objective.
         public string mapId;
@@ -125,16 +126,24 @@ sealed class BombHud {
             GUI.Label(R(W - 24 - 150, 20, 136, 34), "F3", labelRight);
             return;
         }
-        Rect panel = R(W - 24 - 270, 20, 270, 128);
+        Rect panel = R(W - 24 - 300, 20, 300, 176);
         Fill(panel, Panel, RoundBig);
+        string mapConfig = string.IsNullOrEmpty(v.demoMap) ? "ngẫu nhiên" : v.demoMap;
         string[] lines = {
             $"RTT {v.rttMs:0} ms   •   Server {v.serverMicros:0} µs",
+            $"Đích: {Short(v.endpoint, 31)}",
+            $"Sync: {v.syncMode}   •   Map demo: {mapConfig}",
             $"Message gửi/nhận: {v.sentPerSecond} / {v.receivedPerSecond} /s",
             $"Byte gửi/nhận: {v.sentBytesPerSecond} / {v.receivedBytesPerSecond} B/s",
             "F3 để thu gọn"
         };
         for (int i = 0; i < lines.Length; i++)
-            GUI.Label(R(W - 24 - 270 + 18, 32 + i * 24, 240, 22), lines[i], i == 3 ? small : label);
+            GUI.Label(R(W - 24 - 300 + 18, 32 + i * 24, 264, 22), lines[i], i == lines.Length - 1 ? small : label);
+    }
+
+    static string Short(string value, int max) {
+        if (string.IsNullOrEmpty(value) || value.Length <= max) return value ?? "";
+        return "…" + value.Substring(value.Length - max + 1);
     }
 
     void DrawObjective(View v, float W) {
@@ -331,6 +340,25 @@ sealed class BombHud {
     }
 
     /// Centered result card shown while the round is FINISHED.
+    public void DrawReconnect(float secondsRemaining, string endpoint, int attempt) {
+        u = Mathf.Clamp(Screen.height / 1080f, .75f, 1.6f);
+        EnsureStyles();
+        bool expired = secondsRemaining <= 0;
+        float width = S(560), height = S(104);
+        Rect card = new Rect(Screen.width / 2f - width / 2, S(154), width, height);
+        Fill(new Rect(card.x + S(6), card.y + S(8), width, height), new Color(0, 0, 0, .48f), RoundBig);
+        Fill(card, Panel, RoundBig);
+        Color accent = expired ? Danger : Charge;
+        Fill(new Rect(card.x, card.y, width, S(6)), accent, null);
+        banner.normal.textColor = accent;
+        GUI.Label(new Rect(card.x, card.y + S(10), width, S(48)),
+            expired ? "HẾT THỜI GIAN GIỮ PHIÊN" : "ĐANG KẾT NỐI LẠI", banner);
+        string detail = expired
+            ? "Server không phản hồi trong 10 giây. Bạn có thể quay lại menu."
+            : $"{Short(endpoint, 34)}  •  còn {secondsRemaining:0.0}s  •  lần thử {Mathf.Max(1, attempt)}";
+        GUI.Label(new Rect(card.x + S(20), card.y + S(60), width - S(40), S(34)), detail, bannerSub);
+    }
+
     public void DrawBanner(string title, string subtitle, Color accent) {
         EnsureStyles();
         float width = S(520), height = S(120);

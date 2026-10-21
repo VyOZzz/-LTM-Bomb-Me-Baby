@@ -56,6 +56,9 @@ public sealed class BombGame : MonoBehaviour {
     string joinCode = "", myId = "", status = "Nhập tên rồi kết nối tới server.", phase = "MENU", winnerId = "";
     RoomData room;
     float nextMoveAt, nextPingAt, nextMetricsAt, rttMs, serverMicros;
+    const float ReconnectWindowSeconds = 10;
+    float reconnectStartedAt = -1;
+    string activeSyncMode = "?", configuredDemoMap = "";
     int previousSent, previousReceived, sentPerSecond, receivedPerSecond;
     long previousSentBytes, previousReceivedBytes, sentBytesPerSecond, receivedBytesPerSecond;
     bool charging;
@@ -300,10 +303,14 @@ public sealed class BombGame : MonoBehaviour {
         if (msg == null || string.IsNullOrEmpty(msg.type)) return;
         switch (msg.type) {
             case "WELCOME":
+                bool resumed = reconnectStartedAt >= 0;
                 myId = msg.playerId;
                 network.ResumeToken = msg.resumeToken;
                 network.ContinueSequenceAfter(msg.lastSeq);
-                status = "";
+                if (!string.IsNullOrEmpty(msg.syncMode)) activeSyncMode = msg.syncMode;
+                configuredDemoMap = msg.demoMap ?? "";
+                reconnectStartedAt = -1;
+                status = resumed ? "Đã kết nối lại với server." : "";
                 break;
             case "ROOM_STATE":
                 if (room == null) status = "";
@@ -320,6 +327,7 @@ public sealed class BombGame : MonoBehaviour {
                 room = null; phase = "MENU"; winnerId = "";
                 status = "Đã rời phòng. Tạo phòng hoặc nhập mã phòng.";
                 gameAudio.StopGameplayLoops();
+                gameAudio.SetMenuMusic();
                 ClearNotices();
                 ClearActors();
                 break;
@@ -335,6 +343,7 @@ public sealed class BombGame : MonoBehaviour {
                     : "Trận đấu bắt đầu" + (string.IsNullOrEmpty(msg.mapName) ? "!" : ": " + msg.mapName);
                 ClearNotices();
                 ShowMapIntro(msg.mapId);
+                gameAudio.SetMapMusic(msg.mapId);
                 gameAudio.PlayMatchStart();
                 break;
             case "STATE_UPDATE":
@@ -425,11 +434,21 @@ public sealed class BombGame : MonoBehaviour {
                 serverMicros = msg.processingMicros;
                 break;
             case "ERROR":
-                status = ErrorText(msg.code, msg.mode);
+                if (msg.code == "RESUME_FAILED") {
+                    reconnectStartedAt = -1;
+                    network.ResumeToken = "";
+                    myId = ""; room = null; phase = "MENU"; winnerId = "";
+                    ClearNotices();
+                    ClearActors();
+                    gameAudio.StopGameplayLoops();
+                    gameAudio.SetMenuMusic();
+                    status = "Phiên chơi đã hết hạn. Hãy kết nối lại từ menu.";
+                } else status = ErrorText(msg.code, msg.mode);
                 break;
             case "NETWORK_ERROR":
                 gameAudio.StopGameplayLoops();
-                status = network.LastError + " Đang tự thử lại...";
+                if (room != null && reconnectStartedAt < 0) reconnectStartedAt = Time.unscaledTime;
+                status = network.LastError + " Đang thử kết nối lại...";
                 break;
         }
     }
@@ -833,6 +852,10 @@ public sealed class BombGame : MonoBehaviour {
         GUI.enabled = !overlay.IsOpen;
         DrawScreen();
         GUI.enabled = true;
+        if (reconnectStartedAt >= 0) {
+            float remaining = Mathf.Max(0, ReconnectWindowSeconds - (Time.unscaledTime - reconnectStartedAt));
+            hud.DrawReconnect(remaining, network.Endpoint, network.RetryAttempt);
+        }
         switch (overlay.Draw(room != null, phase == "PLAYING")) {
             case BombOverlay.Action.LeaveRoom:
                 network.Send(new BombMessage { type = "LEAVE_ROOM" });
@@ -973,6 +996,7 @@ public sealed class BombGame : MonoBehaviour {
             sentPerSecond = sentPerSecond, receivedPerSecond = receivedPerSecond,
             sentBytesPerSecond = sentBytesPerSecond, receivedBytesPerSecond = receivedBytesPerSecond,
             showNetwork = BombSettings.ShowNetwork,
+            endpoint = network.Endpoint, syncMode = activeSyncMode, demoMap = configuredDemoMap,
             mapId = activeMapId, arenaSize = activeArenaSize,
             obstacles = activeObstacles, bushes = activeBushes, dots = MinimapDots(),
             objective = objective,

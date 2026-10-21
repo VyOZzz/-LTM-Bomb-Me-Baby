@@ -152,3 +152,62 @@ Write-Wav "sfx_ui_click" 0.09 {
     $envelope = [Math]::Pow(1 - $x, 3)
     return $envelope * (0.48 * (Sine 760 $t) + 0.16 * (Noise))
 }
+
+# Short, seamless-enough music beds for the demo. Every loop fades to zero at the
+# boundary and uses note slots shorter than the beat, avoiding clicks when Unity loops it.
+$menuNotes = @(261.63, 329.63, 392.00, 523.25, 220.00, 329.63, 440.00, 493.88,
+               196.00, 293.66, 392.00, 493.88, 220.00, 329.63, 440.00, 659.25)
+$meadowNotes = @(261.63, 329.63, 392.00, 659.25, 349.23, 440.00, 523.25, 698.46,
+                 392.00, 493.88, 587.33, 783.99, 261.63, 392.00, 523.25, 783.99)
+$crossroadsNotes = @(293.66, 349.23, 440.00, 587.33, 261.63, 329.63, 392.00, 523.25,
+                     233.08, 293.66, 349.23, 466.16, 261.63, 329.63, 440.00, 523.25)
+$craterNotes = @(220.00, 261.63, 329.63, 440.00, 196.00, 246.94, 293.66, 392.00,
+                 174.61, 220.00, 261.63, 349.23, 196.00, 246.94, 329.63, 392.00)
+
+Write-Wav "music_menu" 8.0 {
+    param($t, $duration)
+    $beat = 0.5; $step = [Math]::Floor($t / $beat); $local = $t - $step * $beat
+    $note = $menuNotes[$step % $menuNotes.Count]
+    $attack = [Math]::Min(1.0, $local / 0.025)
+    $pluck = $attack * [Math]::Exp(-5.2 * $local)
+    $root = @(130.81, 110.00, 98.00, 110.00)[[Math]::Floor($t / 2) % 4]
+    $edge = [Math]::Min(1.0, [Math]::Min($t / 0.12, ($duration - $t) / 0.12))
+    return $edge * (0.20 * $pluck * ((Sine $note $t) + 0.18 * (Sine ($note * 2) $t)) +
+        0.07 * (Sine $root $t) + 0.035 * (Sine ($root * 1.5) $t))
+}
+
+Write-Wav "music_meadow" 8.0 {
+    param($t, $duration)
+    $beat = 0.5; $step = [Math]::Floor($t / $beat); $local = $t - $step * $beat
+    $note = $meadowNotes[$step % $meadowNotes.Count]
+    $pluck = [Math]::Min(1.0, $local / 0.018) * [Math]::Exp(-6.0 * $local)
+    $root = @(130.81, 174.61, 196.00, 130.81)[[Math]::Floor($t / 2) % 4]
+    $breeze = 0.5 + 0.5 * (Sine 0.25 $t)
+    $edge = [Math]::Min(1.0, [Math]::Min($t / 0.12, ($duration - $t) / 0.12))
+    return $edge * (0.22 * $pluck * ((Sine $note $t) + 0.14 * (Sine ($note * 2) $t)) +
+        0.065 * (Sine $root $t) + 0.025 * $breeze * (Sine 1046.5 $t))
+}
+
+Write-Wav "music_crossroads" 8.0 {
+    param($t, $duration)
+    $beat = 0.5; $step = [Math]::Floor($t / $beat); $local = $t - $step * $beat
+    $note = $crossroadsNotes[$step % $crossroadsNotes.Count]
+    $gate = if ($local -lt 0.30) { [Math]::Pow([Math]::Sin([Math]::PI * $local / 0.30), 1.4) } else { 0 }
+    $root = @(146.83, 130.81, 116.54, 130.81)[[Math]::Floor($t / 2) % 4]
+    $mechanical = [Math]::Pow([Math]::Max(0, (Sine 4 $t)), 10)
+    $edge = [Math]::Min(1.0, [Math]::Min($t / 0.12, ($duration - $t) / 0.12))
+    return $edge * (0.18 * $gate * ((Sine $note $t) + 0.22 * (Sine ($note * 2) $t)) +
+        0.08 * (Sine $root $t) + 0.045 * $mechanical * (Sine 880 $t))
+}
+
+Write-Wav "music_crater" 8.0 {
+    param($t, $duration)
+    $beat = 0.5; $step = [Math]::Floor($t / $beat); $local = $t - $step * $beat
+    $note = $craterNotes[$step % $craterNotes.Count]
+    $pulse = if ($local -lt 0.34) { [Math]::Sin([Math]::PI * $local / 0.34) } else { 0 }
+    $root = @(110.00, 98.00, 87.31, 98.00)[[Math]::Floor($t / 2) % 4]
+    $rumble = (Noise) * 0.018 * (0.5 + 0.5 * (Sine 2 $t))
+    $edge = [Math]::Min(1.0, [Math]::Min($t / 0.12, ($duration - $t) / 0.12))
+    return $edge * (0.19 * $pulse * ((Sine $note $t) + 0.20 * (Sine ($note * 0.5) $t)) +
+        0.10 * (Sine $root $t) + $rumble)
+}

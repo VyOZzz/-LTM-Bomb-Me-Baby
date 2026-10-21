@@ -8,7 +8,7 @@ Cập nhật 21/10/2026, đối chiếu với source đã commit trên nhánh hi
 - JOURNEY chạy `meadow → crossroads → crater`, giữ điểm/vòng thắng và phát `JOURNEY_COMPLETE`.
 - Novelty selective sync hoạt động ở server; Unity đã dựng/cache geometry từ GAME_START và hiểu tọa độ ẩn.
 - Reconnect, sequence trùng, tranh Core và Hành trình có test tự động.
-- 67/67 test Java qua ở baseline và optimized; xem [kết quả](THANH_VIEN_A_KIEM_THU.md).
+- 68/68 test Java qua ở baseline và optimized; xem [kết quả](THANH_VIEN_A_KIEM_THU.md).
 - Unity `6000.3.6f1` đã batch compile thành công; 11 SFX import được. Đã có 18 lượt benchmark loopback 2/4/8 client giả lập trong `experiments/`.
 - Chưa phát hành lại Windows build và chưa chơi end-to-end 2–4 client thật trên cùng commit cuối.
 
@@ -24,7 +24,7 @@ Cập nhật 21/10/2026, đối chiếu với source đã commit trên nhánh hi
 | `STATE_UPDATE` | Có mode/chapter/scores; optimized không lặp geometry |
 | `GAME_OVER` | Có mode/chapter/scores của vòng vừa kết thúc |
 | `JOURNEY_COMPLETE` | Event mới sau crater, có `winnerId`, `winnerIds`, `scores` |
-| `WELCOME` khi resume | Có `lastSeq`; Unity đã đưa counter lên giá trị phù hợp |
+| `WELCOME` | Có `syncMode`, `demoMap`; khi resume có thêm `lastSeq`. Unity hiện cấu hình ở F3 và đưa counter lên giá trị phù hợp |
 
 `scores` là mảng để Unity `JsonUtility` đọc được:
 

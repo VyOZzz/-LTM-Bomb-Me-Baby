@@ -43,6 +43,8 @@ using System;
     public string mapId;
     public string mapName;
     public string mode;
+    public string syncMode;
+    public string demoMap;
     public int chapterIndex;
     public bool journeyComplete;
     public string[] winnerIds;

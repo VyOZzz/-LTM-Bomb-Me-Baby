@@ -6,6 +6,18 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class GameRoomTest {
+    @Test void demoMapPropertyLocksQuickRoomsToRequestedMap() {
+        String previous = System.getProperty("demo.map");
+        try {
+            System.setProperty("demo.map", "crossroads");
+            assertEquals("crossroads", new GameRoom("DEMO01").map.id);
+            assertEquals("crossroads", new GameRoom("DEMO02").map.id);
+        } finally {
+            if (previous == null) System.clearProperty("demo.map");
+            else System.setProperty("demo.map", previous);
+        }
+    }
+
     @Test void oneReadyPlayerCanStartForSoloTesting() {
         GameRoom room = new GameRoom("SOLO01");
         PlayerState player = new PlayerState("Solo", null);

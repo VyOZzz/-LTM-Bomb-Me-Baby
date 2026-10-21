@@ -10,12 +10,12 @@ Ngày kiểm tra gần nhất: 21/10/2026, Windows 11, JDK 21.0.10, Maven 3.9.16
 | `mvn test "-Dsync.mode=optimized"` trong quá trình sửa | Một lần lỗi `Cannot separate 10 spawns on map meadow` | Phát hiện lỗi ngẫu nhiên trong chọn spawn 10 người; đã bổ sung thử lại và hồi quy 60 cấu hình |
 | `mvn test "-Dsync.mode=optimized"` sau thêm Hành trình/privacy event | 45 test, 0 failure, 0 error, 0 skipped; BUILD SUCCESS | Kiểm tra optimized, protocol mode, ba chương và ẩn event theo viewer |
 | `mvn clean test "-Dsync.mode=baseline"` sau cùng | 45 test, 0 failure, 0 error, 0 skipped; BUILD SUCCESS | Biên dịch lại sạch và kiểm tra baseline cùng toàn bộ luật Hành trình |
-| `mvn clean test "-Dsync.mode=baseline"` ngày 21/10 | **67 test**, 0 failure, 0 error, 0 skipped; BUILD SUCCESS | Xác nhận sạch toàn bộ test hiện tại, gồm objective và cơ chế tranh/cướp mảnh |
-| `mvn test "-Dsync.mode=optimized"` ngày 21/10 | **67 test**, 0 failure, 0 error, 0 skipped; BUILD SUCCESS | Cùng bộ test chạy qua với optimized sau lần clean baseline |
+| `mvn clean test "-Dsync.mode=baseline"` ngày 21/10 | **68 test**, 0 failure, 0 error, 0 skipped; BUILD SUCCESS | Xác nhận sạch toàn bộ test hiện tại, gồm objective, cơ chế tranh/cướp mảnh và map demo |
+| `mvn test "-Dsync.mode=optimized"` ngày 21/10 | **68 test**, 0 failure, 0 error, 0 skipped; BUILD SUCCESS | Cùng bộ test chạy qua với optimized sau lần clean baseline |
 
-Các lệnh chạy từ thư mục `server/`. Báo cáo Maven nằm trong `server/target/surefire-reports/`; `mvn clean` xóa kết quả lần trước. Hai cấu hình chạy cùng bộ 67 test, không phải 134 test khác nhau.
+Các lệnh chạy từ thư mục `server/`. Báo cáo Maven nằm trong `server/target/surefire-reports/`; `mvn clean` xóa kết quả lần trước. Hai cấu hình chạy cùng bộ 68 test, không phải 136 test khác nhau.
 
-## 2. Nội dung 67 test
+## 2. Nội dung 68 test
 
 ### ConnectionTest — 17 test, socket TCP thật
 
@@ -51,9 +51,9 @@ Fixture mở socket trên loopback/cổng tự cấp, chạy chính `BombServer.
 
 Cả BASELINE và OPTIMIZED được tạo tường minh trong test, nên không có chuyện tất cả test optimization vô tình chạy theo mặc định baseline.
 
-### GameRoomTest — 17 test gameplay
+### GameRoomTest — 18 test gameplay
 
-13 test nền về sẵn sàng, chế độ solo, damage, shield, boost, movement, bụi, map, spawn, cooldown bom, QUICK không có knockback Hành trình và kết thúc trận được giữ lại. Test đọc geometry yêu cầu snapshot đầy đủ tường minh để chạy được ở cả hai property.
+14 test nền về sẵn sàng, chế độ solo, damage, shield, boost, movement, bụi, map, spawn, cooldown bom, QUICK không có knockback Hành trình, kết thúc trận và `demo.map` khóa map QUICK được giữ lại. Test đọc geometry yêu cầu snapshot đầy đủ tường minh để chạy được ở cả hai property.
 
 Test mới `tenPlayersCanStartAcrossMapsAndSeeds` thử 3 map × 20 seed = 60 cấu hình, mỗi cấu hình có 10 người. Kiểm tra trận bắt đầu và mọi cặp spawn cách nhau tối thiểu 28 đơn vị. Đây là một test chạy nhiều dữ liệu, không tính thành 60 test độc lập.
 

@@ -74,7 +74,20 @@ final class GameMap {
             .orElseThrow(() -> new IllegalArgumentException("Unknown map: " + id));
     }
 
+    /** Optional demo override for QUICK rooms: -Ddemo.map=meadow or DEMO_MAP=meadow. */
+    static String configuredDemoMapId() {
+        String value = System.getProperty("demo.map", "").trim().toLowerCase();
+        if (value.isEmpty()) {
+            String environment = System.getenv("DEMO_MAP");
+            value = environment == null ? "" : environment.trim().toLowerCase();
+        }
+        if (!value.isEmpty()) byId(value); // fail early with a useful map id in the exception
+        return value;
+    }
+
     static GameMap random(Random random, String previousId) {
+        String forced = configuredDemoMapId();
+        if (!forced.isEmpty()) return byId(forced);
         List<GameMap> choices = new ArrayList<>(MAPS);
         if (previousId != null && choices.size() > 1)
             choices.removeIf(map -> map.id.equals(previousId));

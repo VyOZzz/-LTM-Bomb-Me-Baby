@@ -35,6 +35,8 @@ public final class BombServer {
 
     public static void main(String[] args) throws IOException {
         int port = args.length > 0 ? Integer.parseInt(args[0]) : 7777;
+        String demoMap = GameMap.configuredDemoMapId();
+        if (!demoMap.isEmpty()) System.out.println("[Demo] QUICK rooms locked to map = " + demoMap);
         new BombServer().run(port);
     }
 
@@ -138,7 +140,8 @@ public final class BombServer {
                 // Keep the room locked until WELCOME and recovery state are sent:
                 // a tick cannot send STATE_UPDATE ahead of WELCOME.
                 send(GameRoom.data("type","WELCOME","playerId",player.id,
-                    "resumeToken",player.resumeToken,"lastSeq",player.lastSeq));
+                    "resumeToken",player.resumeToken,"lastSeq",player.lastSeq,
+                    "syncMode",syncMode.name(),"demoMap",GameMap.configuredDemoMapId()));
                 player.connection = this;
                 player.connected = true;
                 GameRoom room = player.room;
@@ -165,7 +168,8 @@ public final class BombServer {
                 if (name.isEmpty() || name.length() > 20) { error("INVALID_NAME"); return; }
                 player = new PlayerState(name, this);
                 sessions.put(player.resumeToken, player);
-                send(GameRoom.data("type","WELCOME","playerId",player.id,"resumeToken",player.resumeToken));
+                send(GameRoom.data("type","WELCOME","playerId",player.id,"resumeToken",player.resumeToken,
+                    "syncMode",syncMode.name(),"demoMap",GameMap.configuredDemoMapId()));
                 return;
             }
             long seq = number(m,"seq",-1);

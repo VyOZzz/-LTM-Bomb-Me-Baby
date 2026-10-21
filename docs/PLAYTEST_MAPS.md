@@ -24,7 +24,7 @@ Ngày playtest: ____ · Người chơi: ____ · Số client: ____ · Commit/buil
 | Orb/Core phân bố đều? | | | |
 | Dễ hiểu cho người mới (1–5) | | | |
 | Vui (1–5) | | | |
-| HUD/VFX/SFX có giúp đọc tình huống? | | | |
+| HUD/VFX/nhạc/SFX có giúp đọc tình huống? | | | |
 | Có lệch trạng thái giữa các client? | | | |
 | Ghi chú khác | | | |
 

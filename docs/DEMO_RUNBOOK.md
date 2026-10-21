@@ -4,11 +4,13 @@ Cập nhật theo source và kiểm thử tự động ngày 21/10/2026. Kết q
 
 ## Chuẩn bị
 
-1. Chạy `mvn clean test "-Dsync.mode=baseline"` và `mvn test "-Dsync.mode=optimized"` trong `server/`; cả hai phải qua 67 test.
+1. Chạy `mvn clean test "-Dsync.mode=baseline"` và `mvn test "-Dsync.mode=optimized"` trong `server/`; cả hai phải qua 68 test.
 2. Chạy server bằng `mvn compile exec:java "-Dexec.args=7777" "-Dsync.mode=optimized"` (TCP `7777`).
 3. Đặt `server.txt` cạnh file game `.exe`; dòng đầu là `HOST:PORT`.
 4. Khởi động 2–4 bản game. Client thứ nhất tạo phòng; các client còn lại nhập mã phòng rồi vào phòng.
 5. Chỉ bấm **Sẵn sàng** sau khi đủ client vì phòng đang `PLAYING` sẽ từ chối người join mới bằng `ROOM_UNAVAILABLE`.
+
+Muốn demo lặp lại một map Đấu nhanh, thêm `"-Ddemo.map=meadow"` vào lệnh server. Nhấn **F3** trong game để xác nhận endpoint, `OPTIMIZED` và map demo. Bỏ tham số hoặc để `DEMO_MAP` rỗng để quay lại chọn map ngẫu nhiên.
 
 ## Kịch bản demo ngắn
 
@@ -22,13 +24,14 @@ Cập nhật theo source và kiểm thử tự động ngày 21/10/2026. Kết q
 - Tạo phòng **Hành trình Ba Mảnh**, kiểm tra `meadow → crossroads → crater`, điểm giữa chương và màn kết cuối.
 - Ngắt mạng một client dưới 10 giây rồi kết nối lại; kiểm tra giữ danh tính, phòng và geometry.
 - Xác nhận lời dẫn, VFX, SFX và popup kết quả không che thao tác chính.
+- Nghe thử nhạc menu và đủ ba track map; kiểm tra nhạc hạ khi nổ và thanh **Nhạc/Hiệu ứng** hoạt động.
 
 ## Trạng thái xác minh
 
 ### Source hiện tại — 21/10/2026
 
-- Java: 67 test, 0 failure, 0 error, 0 skipped ở cả baseline và optimized.
-- Unity `6000.3.6f1`: batch compile thành công với mã thoát 0; 11 AudioClip import thành công.
+- Java: 68 test, 0 failure, 0 error, 0 skipped ở cả baseline và optimized.
+- Unity `6000.3.6f1`: batch compile thành công với mã thoát 0; 11 SFX và 4 track nhạc import thành công.
 - Chưa đánh dấu hoàn thành demo cuối cho đến khi chạy lại 2–4 Windows client trên cùng commit/tag phát hành.
 
 ### Mốc client thật — 13/10/2026

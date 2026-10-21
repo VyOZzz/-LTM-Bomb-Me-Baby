@@ -13,10 +13,12 @@ Ngoại trừ `HELLO` và `PING`, mỗi request client phải có `seq` lớn h�
 Server trả token cho session mới:
 
 ```json
-{"type":"WELCOME","playerId":"...","resumeToken":"..."}
+{"type":"WELCOME","playerId":"...","resumeToken":"...","syncMode":"OPTIMIZED","demoMap":"meadow"}
 ```
 
-Khi TCP đứt, client mở socket mới trong vòng 10 giây và gửi HELLO với token. WELCOME khôi phục có thêm `lastSeq`; request tiếp theo phải lớn hơn giá trị này. Token lạ, hết hạn, đang được socket khác giữ nhận `RESUME_FAILED`.
+`syncMode` cho client/debug biết server đang chạy `BASELINE` hay `OPTIMIZED`. `demoMap` rỗng khi QUICK chọn map ngẫu nhiên; có giá trị khi server chạy với `-Ddemo.map=...` hoặc `DEMO_MAP`.
+
+Khi TCP đứt, client mở socket mới trong vòng 10 giây và gửi HELLO với token. WELCOME khôi phục có thêm `lastSeq`; request tiếp theo phải lớn hơn giá trị này. Token lạ, hết hạn, đang được socket khác giữ nhận `RESUME_FAILED`. Unity hiện banner đếm ngược cửa sổ 10 giây và số lần thử kết nối.
 
 ## Client → server
 

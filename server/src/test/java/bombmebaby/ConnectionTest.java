@@ -290,6 +290,8 @@ class ConnectionTest {
         Peer peer = connect();
         peer.send("type", "HELLO", "name", "A");
         JsonObject welcome = peer.until("WELCOME");
+        assertEquals("OPTIMIZED", welcome.get("syncMode").getAsString());
+        assertTrue(welcome.has("demoMap"));
         peer.player = server.sessions.get(welcome.get("resumeToken").getAsString());
         peer.until("ACK");
         return peer;

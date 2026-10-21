@@ -10,7 +10,7 @@ Bạn A phụ trách chương trình Java chạy trên máy chủ: nhận kết 
 
 T phụ trách Unity: đọc bàn phím, vẽ game, phát âm thanh, hiển thị HUD và xử lý bản tin server. B phụ trách map, script đo mạng và số liệu thực nghiệm. Khi đổi tên trường, bỏ trường hay đổi ý nghĩa dữ liệu JSON, cả ba phải thống nhất trước khi tích hợp.
 
-**Kết quả hiện tại:** server đã có Đấu nhanh và Hành trình Ba Mảnh, sửa vòng đời reconnect/disconnect, chặn sequence trùng, xử lý tranh Core và giữ hai chế độ đồng bộ để đo. Hành trình chạy ba map cố định, giữ điểm qua ba vòng và phát kết quả cuối. Unity đã có DTO, nút tạo hai loại phòng, bảng điểm cơ bản và xử lý `JOURNEY_COMPLETE`; giao diện vẫn cần T mở bằng Unity Editor để kiểm tra hình ảnh và hoàn thiện lời dẫn.
+**Kết quả hiện tại:** server đã có Đấu nhanh và Hành trình Ba Mảnh, sửa vòng đời reconnect/disconnect, chặn sequence trùng, xử lý tranh Core và giữ hai chế độ đồng bộ để đo. Hành trình chạy ba map cố định, giữ điểm qua ba vòng và phát kết quả cuối. Unity đã có DTO, hai loại phòng, bảng điểm, lời dẫn/VFX, nhạc/SFX, banner reconnect và debug server/sync/map. Bản Windows cuối vẫn cần playtest 2–4 client thật.
 
 ## 2. Những từ cần biết
 
@@ -289,7 +289,7 @@ Trong optimized, `PLAYER_EXPLODE` được tạo riêng cho từng viewer: ngư�
 | Spawn | Chọn vị trí bằng greedy farthest-point | Thử lại tối đa 32 điểm bắt đầu nếu bố trí bị kẹt; giữ khoảng cách tối thiểu 28 |
 | Hành trình | Chưa có | QUICK/JOURNEY, ba map cố định, điểm loại/thắng vòng, tie-break và `JOURNEY_COMPLETE` |
 | Unity protocol/UI | Chưa nhận mode/điểm; chưa dựng map từ GAME_START | DTO mới, nút tạo hai mode, bảng điểm, event cuối và cache geometry từ GAME_START |
-| Test | 27 test; vài test chỉ tự lặp điều kiện | 67 test, gồm 17 test TCP thật và các suite objective/tranh mảnh; kiểm tra sync mode và game mode |
+| Test | 27 test; vài test chỉ tự lặp điều kiện | 68 test, gồm 17 test TCP thật, cấu hình map demo và các suite objective/tranh mảnh; kiểm tra sync mode và game mode |
 | Hướng dẫn | Có mô tả chưa khớp code | Viết lại theo code, thêm cách học, lệnh chạy, bằng chứng và giới hạn |
 
 Lỗi spawn xuất hiện khi chạy test: `Cannot separate 10 spawns on map meadow`. Một lựa chọn đầu tiên không tốt có thể làm thuật toán tham lam không xếp đủ người dù map còn cách bố trí hợp lệ. Thử lại giúp xử lý trường hợp đó mà không hạ khoảng cách; test kiểm tra 20 seed × 3 map. Đây là kiểm tra hữu hạn, không phải chứng minh toán học cho mọi seed.
@@ -384,6 +384,6 @@ Trong IntelliJ, bạn có thể đặt breakpoint ở `Connection.handle`, `resu
 
 **processingMicros là gì?** Thời gian trong luồng xử lý request đến trước khi gửi ACK; có thể gồm thời gian chờ khóa và gửi phản hồi trước đó. Nó không phải RTT, cũng không phải số đo riêng cho serialize snapshot định kỳ.
 
-**Đã hoàn thành toàn bộ game chưa?** Server Hành trình, protocol, Unity UI/lời dẫn/VFX/SFX và 67 test tự động đã có. Unity batch compile đã qua và đã có benchmark loopback 2/4/8 client giả lập. Vẫn chưa có Windows build phát hành của commit cuối, playtest đủ ba map và kiểm chứng end-to-end 2–4 client thật trên LAN/Internet; chỉ báo cáo hoàn thành toàn bộ sau khi có các bằng chứng này.
+**Đã hoàn thành toàn bộ game chưa?** Server Hành trình, protocol, Unity UI/lời dẫn/VFX/nhạc/SFX và 68 test tự động đã có. Unity batch compile đã qua và đã có benchmark loopback 2/4/8 client giả lập. Vẫn chưa có Windows build phát hành của commit cuối, playtest đủ ba map và kiểm chứng end-to-end 2–4 client thật trên LAN/Internet; chỉ báo cáo hoàn thành toàn bộ sau khi có các bằng chứng này.
 
 Hãy tập trả lời bằng cách chỉ vào hàm và chạy test minh họa, thay vì học thuộc nguyên đoạn. Tài liệu có AI hỗ trợ biên soạn; người nộp cần tự kiểm chứng và trình bày đúng phần mình hiểu.

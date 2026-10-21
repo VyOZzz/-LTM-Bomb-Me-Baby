@@ -1,7 +1,7 @@
 using UnityEngine;
 
-/// Player preferences, persisted with PlayerPrefs. Music and Sfx are read by the
-/// audio code when clips are added; Master is applied to the AudioListener now.
+/// Player preferences persisted with PlayerPrefs. Music and Sfx are read live by
+/// BombAudio; Master is applied to the AudioListener.
 static class BombSettings {
     public static float Master = 1, Music = .8f, Sfx = 1;
     public static bool Fullscreen = true, ShowNetwork;

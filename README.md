@@ -42,7 +42,7 @@ Server mặc định nghe TCP port `7777`. Mở firewall cho port này nếu ng�
 ## Tài liệu và kiểm thử phần Java server (thành viên A)
 
 - [Học từ đầu và giải thích từng phần code](docs/THANH_VIEN_A_HUONG_DAN.md).
-- [Kết quả 67 test và phạm vi đã kiểm chứng](docs/THANH_VIEN_A_KIEM_THU.md).
+- [Kết quả 68 test và phạm vi đã kiểm chứng](docs/THANH_VIEN_A_KIEM_THU.md).
 - [Bàn giao cho T/B: tích hợp JSON và so sánh baseline/optimized](docs/THANH_VIEN_A_BAN_GIAO.md).
 
 Server mặc định dùng baseline. Từ thư mục `server/`, kiểm tra cả hai cấu hình:
@@ -53,6 +53,8 @@ mvn test "-Dsync.mode=optimized"
 ```
 
 Chạy server bằng `mvn compile exec:java "-Dexec.args=7777" "-Dsync.mode=baseline"`. Unity có nút tạo phòng Đấu nhanh và Hành trình Ba Mảnh. Chế độ `optimized` gửi geometry một lần ở GAME_START và lọc snapshot theo viewer; đây là đồng bộ chọn lọc, chưa phải delta từng trường giữa hai snapshot.
+
+Để khóa map cho buổi demo Đấu nhanh, thêm `"-Ddemo.map=meadow"` (hoặc `crossroads`, `crater`). Khi deploy có thể dùng biến môi trường `DEMO_MAP`. Hành trình vẫn giữ thứ tự ba chương. Server gửi `syncMode` và `demoMap` trong `WELCOME`; nhấn **F3** trong trận để xem endpoint, cấu hình đồng bộ và map demo đang dùng.
 
 > Bản Unity build chỉ là **client**, không chứa Java server. `127.0.0.1` luôn là máy đang chạy game: nếu gửi build cho người khác mà giữ IP này, game sẽ tìm server trên máy của họ và kết nối thất bại.
 
@@ -81,6 +83,8 @@ Test-NetConnection HOST -Port 7777
 Khi người chơi tạo hoặc vào phòng **Hành trình Ba Mảnh** lần đầu trong phiên, client phát phim mở đầu `Assets/StreamingAssets/story_intro.mp4` với phụ đề tiếng Việt; nhấn **Esc** hoặc **Space** để bỏ qua. Nếu máy không giải mã được MP4, client tự chuyển sang ba khung hình minh hoạ trong `Assets/Resources/Menu/`. Có thể thay video bằng bản dựng H.264 1920×1080 khác, giữ nguyên tên file để không phải sửa code.
 
 Điều khiển: **WASD/phím mũi tên** di chuyển theo hướng màn hình, **giữ Space** nạp và **thả Space** để nổ, **E** bật Shield, **Shift** Boost. Camera bám sát quả bóng của người chơi và chỉ hiển thị một vùng nhỏ của map. Đấu nhanh đổi sang một map khác ở vòng sau; Hành trình luôn chạy `meadow → crossroads → crater`, giữ điểm qua ba vòng.
+
+Game có nhạc riêng cho menu và ba map. Nhạc tự hạ khi có tiếng nổ/kết quả; tối đa 10 nguồn SFX 3D được phát đồng thời để tránh chồng âm trong trận đông người. Khi mất kết nối trong trận, client hiện số giây còn lại của cửa sổ reconnect 10 giây và số lần thử lại.
 
 ## Bật AI trong Unity Editor (tùy chọn)
 
@@ -131,8 +135,8 @@ Contribution kỹ thuật chính là **selective state synchronization**:
 
 Trạng thái kiểm tra ngày 21/10/2026:
 
-- 67/67 test Java qua ở cả `baseline` và `optimized`;
-- Unity `6000.3.6f1` batch compile thành công, 11 AudioClip được import;
+- 68/68 test Java qua ở cả `baseline` và `optimized`;
+- Unity `6000.3.6f1` batch compile thành công, 11 SFX và 4 track nhạc được import;
 - source Unity đã hiểu snapshot optimized, hai game mode, reconnect geometry và tọa độ event bị ẩn;
 - vẫn cần phát hành lại Windows build và kiểm tra end-to-end 2–4 client trên commit cuối.
 

@@ -35,7 +35,7 @@ Giọng điệu: vui, cạnh tranh, hơi bí ẩn; nhân vật bị **loại kh�
 - 2–4 người chơi thật cho demo; server hiện cho phép tối đa 10.
 - Một trận PvP tự do trên một map; người sống cuối cùng thắng.
 - Dùng luật và luồng phòng hiện tại: tạo/vào phòng → Ready → trận → kết quả.
-- Cần hoàn thiện build Unity, HUD, âm thanh/VFX, reconnect và kiểm thử end-to-end.
+- HUD, lời dẫn, nhạc/SFX, VFX và banner reconnect đã có; cần build Windows và kiểm thử end-to-end 2–4 client thật.
 
 ### 2. Hành trình Ba Mảnh — đã có logic server và UI cơ bản
 

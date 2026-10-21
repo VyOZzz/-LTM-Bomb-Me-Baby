@@ -19,6 +19,7 @@ public sealed class BombNetwork : IDisposable {
     long receivedBytes;
     int sentMessages;
     int receivedMessages;
+    int retryAttempt;
     string host, name;
     int port;
     int connectionGeneration;
@@ -31,6 +32,7 @@ public sealed class BombNetwork : IDisposable {
     public int ReceivedMessages => Volatile.Read(ref receivedMessages);
     public long SentBytes => Interlocked.Read(ref sentBytes);
     public long ReceivedBytes => Interlocked.Read(ref receivedBytes);
+    public int RetryAttempt => Volatile.Read(ref retryAttempt);
 
     public void Connect(string host, int port, string name) {
         Dispose();
@@ -38,6 +40,7 @@ public sealed class BombNetwork : IDisposable {
         this.port = port;
         this.name = name;
         lastError = "";
+        retryAttempt = 0;
         running = true;
         int generation = Interlocked.Increment(ref connectionGeneration);
         worker = new Thread(() => Run(generation)) { IsBackground = true, Name = "Bomb TCP client" };
@@ -46,6 +49,7 @@ public sealed class BombNetwork : IDisposable {
 
     void Run(int generation) {
         while (running && generation == Volatile.Read(ref connectionGeneration)) {
+            Interlocked.Increment(ref retryAttempt);
             try {
                 using (var client = new TcpClient()) {
                     client.NoDelay = true;
@@ -63,10 +67,12 @@ public sealed class BombNetwork : IDisposable {
                     using (var reader = new StreamReader(stream, Encoding.UTF8)) {
                         string line;
                         while (running && (line = reader.ReadLine()) != null) {
+                            Interlocked.Exchange(ref retryAttempt, 0);
                             inbox.Enqueue(line);
                             Interlocked.Increment(ref receivedMessages);
                             Interlocked.Add(ref receivedBytes, Encoding.UTF8.GetByteCount(line) + 1);
                         }
+                        if (running) throw new IOException("Server đã đóng kết nối.");
                     }
                 }
             } catch (Exception e) when (e is IOException || e is SocketException || e is AggregateException) {

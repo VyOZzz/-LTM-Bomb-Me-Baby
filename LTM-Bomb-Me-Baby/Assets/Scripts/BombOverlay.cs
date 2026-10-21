@@ -88,7 +88,7 @@ sealed class BombOverlay {
         BombSettings.Music = Slider(card, ref y, "Nhạc", BombSettings.Music, Core);
         BombSettings.Sfx = Slider(card, ref y, "Hiệu ứng", BombSettings.Sfx, Shield);
         AudioListener.volume = BombSettings.Master;
-        GUI.Label(Row(card, y - 6, 22), "Nhạc và hiệu ứng áp dụng khi game có file âm thanh.", note);
+        GUI.Label(Row(card, y - 6, 22), "Nhạc tự đổi theo menu/map; hiệu ứng lớn sẽ hạ nhạc trong chốc lát.", note);
         y += 34;
         GUI.Label(Row(card, y, 22), "HIỂN THỊ", label);
         y += 32;

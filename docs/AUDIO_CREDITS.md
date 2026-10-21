@@ -15,10 +15,10 @@ Nguồn gợi ý: [Kenney.nl](https://kenney.nl/assets) (CC0), [OpenGameArt.org]
 
 | Chương / map | Không khí | File trong project | Tên gốc | Tác giả | Link nguồn | Giấy phép | Chỉnh sửa |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 — `meadow` | Vui, nhẹ nhàng | | | | | | |
-| 2 — `crossroads` | Cơ khí, nhịp đều | | | | | | |
-| 3 — `crater` | Căng thẳng, dồn dập | | | | | | |
-| Lobby / menu | | | | | | | |
+| 1 — `meadow` | Vui, nhẹ nhàng | `Assets/Resources/Audio/music_meadow.wav` | Music Meadow | Nhóm Bomb Me Baby | `scripts/generate_sfx.ps1` | Tự tạo cho đồ án | Arpeggio sáng, pad nhẹ; loop 8 giây. |
+| 2 — `crossroads` | Cơ khí, nhịp đều | `Assets/Resources/Audio/music_crossroads.wav` | Music Crossroads | Nhóm Bomb Me Baby | `scripts/generate_sfx.ps1` | Tự tạo cho đồ án | Nhịp gate và pulse cơ khí; loop 8 giây. |
+| 3 — `crater` | Căng thẳng, dồn dập | `Assets/Resources/Audio/music_crater.wav` | Music Crater | Nhóm Bomb Me Baby | `scripts/generate_sfx.ps1` | Tự tạo cho đồ án | Bass thấp, pulse và rumble tổng hợp; loop 8 giây. |
+| Lobby / menu | Êm, dễ nhận diện | `Assets/Resources/Audio/music_menu.wav` | Music Menu | Nhóm Bomb Me Baby | `scripts/generate_sfx.ps1` | Tự tạo cho đồ án | Arpeggio chậm và pad; loop 8 giây. |
 
 ## Hiệu ứng âm thanh (SFX)
 
@@ -35,14 +35,14 @@ Nguồn gợi ý: [Kenney.nl](https://kenney.nl/assets) (CC0), [OpenGameArt.org]
 | Thắng / thua | `Assets/Resources/Audio/sfx_victory.wav`, `sfx_defeat.wav` | SFX Victory / Defeat | Nhóm Bomb Me Baby | `scripts/generate_sfx.ps1` | Tự tạo cho đồ án | Hai chuỗi nốt đi lên/đi xuống. |
 | Nút bấm UI | `Assets/Resources/Audio/sfx_ui_click.wav` | SFX UI Click | Nhóm Bomb Me Baby | `scripts/generate_sfx.ps1` | Tự tạo cho đồ án | Click tổng hợp 90 ms. |
 
-Toàn bộ SFX trên là PCM mono 44,1 kHz, 16-bit, được tạo từ công thức trong repository và không dùng sample âm thanh bên ngoài. Có thể tái tạo bằng `powershell -ExecutionPolicy Bypass -File scripts/generate_sfx.ps1` từ thư mục gốc.
+Toàn bộ nhạc và SFX trên là PCM mono 44,1 kHz, 16-bit, được tạo từ công thức trong repository và không dùng sample âm thanh bên ngoài. Có thể tái tạo bằng `powershell -ExecutionPolicy Bypass -File scripts/generate_sfx.ps1` từ thư mục gốc.
 
 ## Bàn giao cho Trưởng nhóm
 
 - [x] Đủ 11 SFX, có script tái tạo và thông tin nguồn/giấy phép.
 - [x] SFX đã đặt tên rõ ràng, import trong Unity và tích hợp bằng `Assets/Scripts/BombAudio.cs`.
 - [x] Thanh âm lượng **Hiệu ứng** điều khiển SFX trong game.
-- [ ] Đủ nhạc cho ba chương và menu, hoặc nhóm chốt bằng văn bản rằng bản nộp chỉ dùng SFX.
+- [x] Đủ nhạc cho ba chương và menu; nhạc tự đổi theo map và hạ âm lượng khi có hiệu ứng lớn.
 - [ ] Phần "Tài nguyên sử dụng" trong báo cáo đã chép lại bảng hoàn chỉnh.
 
-Trạng thái ngày 21/10/2026: Unity đã import đủ 11 WAV và batch compile thành công. Phần nhạc theo chương vẫn chưa thực hiện.
+Trạng thái ngày 21/10/2026: đã có 11 SFX và 4 vòng nhạc menu/map. Cần nghe thử trên bản Windows 2–4 client để chốt cân bằng âm lượng cuối.
