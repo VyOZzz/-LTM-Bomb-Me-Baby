@@ -156,13 +156,20 @@ final class GameRoom {
                 p.dz = length > 1 ? dz / length : dz;
             }
             case "CHARGE_START" -> {
-                if (now < p.chargeReadyAt) reject(p,"BOMB_COOLDOWN");
+                if (objective != null && objective.carriedBy(p)) reject(p,"CARRYING_SHARD");
+                else if (now < p.chargeReadyAt) reject(p,"BOMB_COOLDOWN");
                 else if (!p.charging) { p.charging = true; p.chargeSince = now; }
                 else reject(p,"ALREADY_CHARGING");
             }
             case "EXPLODE" -> {
-                if (p.charging) explode(p, now);
+                if (objective != null && objective.carriedBy(p)) {
+                    p.charging = false;
+                    reject(p,"CARRYING_SHARD");
+                } else if (p.charging) explode(p, now);
                 else reject(p,"NOT_CHARGING");
+            }
+            case "DROP_SHARD" -> {
+                if (objective == null || !objective.drop(p, now)) reject(p,"NOT_CARRYING_SHARD");
             }
             case "USE_SHIELD" -> {
                 if (now >= p.shieldReadyAt) {
@@ -269,6 +276,7 @@ final class GameRoom {
     private void explode(PlayerState source, long now) {
         source.charging = false;
         source.chargeReadyAt = now + GameRules.BOMB_COOLDOWN_MS;
+        double sizeBeforeExplosion = source.size;
         double charge = GameRules.clamp((now - source.chargeSince) / (double) GameRules.MAX_CHARGE_MS, 0, 1);
         double radius = GameRules.blastRadius(source.size, charge);
         double damageDone = 0;
@@ -307,6 +315,7 @@ final class GameRoom {
             }
         }
         source.hp = Math.max(0, source.hp - damageDone);
+        dropExplosionEnergy(source, sizeBeforeExplosion);
         source.size = source.baseSize;
         broadcastExplosion(source, radius);
         if (source.hp <= 0) {
@@ -317,6 +326,27 @@ final class GameRoom {
             eliminate(source, "reflection", now);
         }
         checkGameOver();
+    }
+
+    /** Turn the temporary Size spent by an explosion back into visible Energy fragments. */
+    private void dropExplosionEnergy(PlayerState source, double sizeBeforeExplosion) {
+        double spentSize = Math.max(0, sizeBeforeExplosion - source.baseSize);
+        int count = Math.min(GameRules.MAX_EXPLOSION_ENERGY_DROPS,
+            (int) Math.floor(spentSize / GameRules.ENERGY_SIZE_VALUE + 1e-6));
+        count = Math.min(count, GameRules.MAX_ORBS - orbs.size());
+        if (count <= 0) return;
+
+        double phase = random.nextDouble() * Math.PI * 2;
+        for (int i = 0; i < count; i++) {
+            double angle = phase + Math.PI * 2 * i / count;
+            double distance = 1.0 + 0.35 * (i % 3);
+            double x = GameRules.clamp(source.x + Math.cos(angle) * distance,
+                -map.halfSize + .25, map.halfSize - .25);
+            double z = GameRules.clamp(source.z + Math.sin(angle) * distance,
+                -map.halfSize + .25, map.halfSize - .25);
+            if (!free(x, z, .2)) { x = source.x; z = source.z; }
+            orbs.add(new Pickup(nextPickupId++, x, z));
+        }
     }
 
     private void awardElimination(PlayerState player) {

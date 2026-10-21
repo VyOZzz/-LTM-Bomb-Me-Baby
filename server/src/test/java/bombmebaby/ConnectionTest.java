@@ -319,14 +319,12 @@ class ConnectionTest {
         assertEquals(1, server.rooms.size());
     }
 
-    @Test void twoSearchingPlayersAreMatchedAfterFillWindowAndStartWithoutReady() throws Exception {
+    @Test void twoSearchingPlayersAreMatchedImmediatelyAndStartWithoutReady() throws Exception {
         Peer a = searching("QUICK");
         Peer b = searching("QUICK");
         assertEquals(2, a.until("MATCHMAKING").get("waiting").getAsInt());
         long now = System.currentTimeMillis();
         server.matchmake(now);
-        assertTrue(server.rooms.isEmpty(), "two players still wait for latecomers");
-        server.matchmake(now + GameRules.MATCH_FILL_MS);
         for (Peer peer : List.of(a, b)) {
             JsonObject found = peer.until("MATCH_FOUND");
             assertEquals("QUICK", found.get("mode").getAsString());
@@ -364,7 +362,6 @@ class ConnectionTest {
         assertNull(server.matchmaker.modeOf(b.player));
         long now = System.currentTimeMillis();
         server.matchmake(now);
-        server.matchmake(now + GameRules.MATCH_FILL_MS);
         assertTrue(server.rooms.isEmpty());
     }
 

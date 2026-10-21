@@ -60,6 +60,8 @@ public sealed class BombGame : MonoBehaviour {
     const float ReconnectWindowSeconds = 10;
     float reconnectStartedAt = -1;
     bool reconnectExpired;
+    bool journeyGuideVisible;
+    bool journeyCompleteReceived;
     string activeSyncMode = "?", configuredDemoMap = "";
     int previousSent, previousReceived, sentPerSecond, receivedPerSecond;
     long previousSentBytes, previousReceivedBytes, sentBytesPerSecond, receivedBytesPerSecond;
@@ -192,6 +194,8 @@ public sealed class BombGame : MonoBehaviour {
             BombSettings.ShowNetwork = !BombSettings.ShowNetwork;
             BombSettings.Save();
         }
+        if (Input.GetKeyDown(KeyCode.H) && phase == "PLAYING" && room != null && room.mode == "JOURNEY")
+            journeyGuideVisible = !journeyGuideVisible;
         if (Input.GetKeyDown(KeyCode.Escape) && (cinematic == null || !cinematic.IsPlaying)) {
             if (overlay.IsOpen) overlay.Back();
             else if (room == null && !string.IsNullOrEmpty(myId)) modeMenu.Back();
@@ -279,7 +283,11 @@ public sealed class BombGame : MonoBehaviour {
         }
         float bombCooldown = avatars.TryGetValue(myId, out Avatar localAvatar) && localAvatar.state != null
             ? localAvatar.state.chargeCooldown : 0;
-        if (Input.GetKeyDown(KeyCode.Space) && !charging && bombCooldown <= 0) {
+        bool carryingShard = objective != null && objective.state == "CARRIED" && objective.carrierId == myId;
+        if (carryingShard) charging = false;
+        if (Input.GetKeyDown(KeyCode.Q) && carryingShard)
+            network.Send(new BombMessage { type = "DROP_SHARD" });
+        if (Input.GetKeyDown(KeyCode.Space) && !carryingShard && !charging && bombCooldown <= 0) {
             charging = true;
             network.Send(new BombMessage { type = "CHARGE_START" });
         }
@@ -350,6 +358,8 @@ public sealed class BombGame : MonoBehaviour {
                 break;
             case "LEFT_ROOM":
                 room = null; phase = "MENU"; winnerId = "";
+                journeyGuideVisible = false;
+                journeyCompleteReceived = false;
                 status = "Đã rời phòng. Tìm trận, tạo phòng hoặc nhập mã phòng.";
                 gameAudio.StopGameplayLoops();
                 gameAudio.SetMenuMusic();
@@ -358,6 +368,8 @@ public sealed class BombGame : MonoBehaviour {
                 break;
             case "GAME_START":
                 phase = "PLAYING"; winnerId = ""; charging = false;
+                journeyCompleteReceived = false;
+                journeyGuideVisible = msg.mode == "JOURNEY" && msg.chapterIndex == 0;
                 matchStartedAt = Time.unscaledTime;
                 objective = null;
                 shardView.Clear();
@@ -439,6 +451,7 @@ public sealed class BombGame : MonoBehaviour {
                 break;
             case "JOURNEY_COMPLETE":
                 phase = "FINISHED";
+                journeyCompleteReceived = true;
                 winnerId = msg.winnerId;
                 gameAudio.StopGameplayLoops();
                 gameAudio.PlayResult(winnerId == myId);
@@ -652,6 +665,7 @@ public sealed class BombGame : MonoBehaviour {
         ObjectiveData next = snapshot.objective != null && snapshot.objective.Active ? snapshot.objective : null;
         if (next != null) AnnounceObjective(objective, next);
         objective = next;
+        if (next != null && next.state == "CARRIED" && next.carrierId == myId) charging = false;
         Avatar carrier = next != null ? AvatarOf(next.carrierId) : null;
         shardView.Apply(next, effectsRoot, carrier?.body.transform, carrier?.state != null ? carrier.state.size : 1,
             next != null ? ColorOf(next.ownerId) : BombUi.Text, next != null ? ColorOf(next.challengerId) : BombUi.Charge);
@@ -668,7 +682,7 @@ public sealed class BombGame : MonoBehaviour {
                 Toast("Người cầm mảnh bị hạ — Mảnh Tim Lửa rơi xuống!");
             else if (previousCarrier?.state != null && !previousCarrier.state.connected)
                 Toast("Người cầm mất kết nối — Mảnh Tim Lửa rơi xuống!");
-            else Toast("Khóa Lửa đã vỡ — Mảnh Tim Lửa bật khỏi người cầm!");
+            else Toast("Mảnh Tim Lửa đã rơi khỏi người cầm!");
         }
         else if (before.state != "PLACED" && now.state == "PLACED") Toast($"{NameOf(now.ownerId)} đã đặt mảnh lên bệ đá!");
         else if (before.state == "PLACED" && now.state == "GROUND")
@@ -684,6 +698,8 @@ public sealed class BombGame : MonoBehaviour {
                     + ". Quay lại chọn đúng chế độ rồi nhập lại mã.";
             case "ALREADY_IN_ROOM": return "Bạn đang ở trong một phòng khác.";
             case "ALREADY_SEARCHING": return "Bạn đang tìm trận. Hủy tìm trước khi tạo hoặc vào phòng.";
+            case "CARRYING_SHARD": return "Đang cầm Mảnh Tim Lửa nên không thể tấn công. Nhấn Q để thả mảnh.";
+            case "NOT_CARRYING_SHARD": return "Bạn không cầm Mảnh Tim Lửa để thả.";
             case "NOT_SEARCHING": return "Bạn không còn trong hàng chờ tìm trận.";
             default: return "Server từ chối: " + code;
         }
@@ -974,6 +990,7 @@ public sealed class BombGame : MonoBehaviour {
         }
         if (phase == "PLAYING") {
             DrawMatchHud();
+            if (journeyGuideVisible) DrawJourneyGuide();
             return;
         }
         if (phase == "FINISHED") {
@@ -1304,24 +1321,76 @@ public sealed class BombGame : MonoBehaviour {
     }
 
     void DrawResultPopup() {
-        const float width = 430;
-        const float height = 230;
+        float width = Mathf.Min(470, Screen.width - 32);
+        float height = Mathf.Min(270, Screen.height - 32);
         Rect popup = new Rect((Screen.width - width) * .5f, (Screen.height - height) * .5f, width, height);
         GUI.Box(popup, GUIContent.none);
         GUILayout.BeginArea(new Rect(popup.x + 24, popup.y + 22, width - 48, height - 44));
         bool won = !string.IsNullOrEmpty(winnerId) && winnerId == myId;
-        GUILayout.Label(won ? "CHIẾN THẮNG!" : "BẠN ĐÃ THUA", titleStyle);
+        bool completedJourney = room != null && room.mode == "JOURNEY"
+            && (room.journeyComplete || journeyCompleteReceived || room.chapterIndex >= 2);
+        bool nextChapter = room != null && room.mode == "JOURNEY" && room.chapterIndex < 2
+            && !room.journeyComplete && !journeyCompleteReceived;
+        GUILayout.Label(nextChapter ? "SANG CHƯƠNG MỚI"
+            : won ? "CHIẾN THẮNG!" : "BẠN ĐÃ THUA", titleStyle);
         GUILayout.Space(8);
-        GUILayout.Label(won ? "Bạn là người sống sót cuối cùng." : WinnerText(), bodyStyle);
+        if (nextChapter) {
+            string chapterResult = string.IsNullOrEmpty(winnerId)
+                ? "Chương này kết thúc mà chưa ai giữ được Mảnh Tim Lửa."
+                : winnerId == myId ? "Bạn đã giành Mảnh Tim Lửa của chương này!"
+                : NameOf(winnerId) + " đã giành Mảnh Tim Lửa của chương này.";
+            GUILayout.Label(chapterResult, bodyStyle);
+            GUILayout.Space(6);
+            GUILayout.Label($"Tiếp theo: Chương {room.chapterIndex + 2}/3. Điểm và số mảnh được giữ lại.", smallStyle);
+        } else {
+            GUILayout.Label(won ? "Bạn là người chiến thắng chung cuộc." : WinnerText(), bodyStyle);
+        }
         GUILayout.FlexibleSpace();
         bool ready = IsLocalPlayerReady();
-        if (GUILayout.Button(ready ? "Đang chờ người chơi khác..." : "Chơi lại", GUILayout.Height(38)) && !ready) {
-            BombAudio.UiClick();
-            network.Send(new BombMessage { type = "READY", ready = true });
+        if (completedJourney) {
+            bool wasEnabled = GUI.enabled;
+            GUI.enabled = false;
+            GUILayout.Button("HÀNH TRÌNH ĐÃ HOÀN TẤT", GUILayout.Height(44));
+            GUI.enabled = wasEnabled;
+        } else {
+            string primary = ready ? "Đang chờ người chơi khác..."
+                : nextChapter ? $"Sẵn sàng sang Chương {room.chapterIndex + 2}" : "Chơi lại";
+            if (GUILayout.Button(primary, GUILayout.Height(44)) && !ready) {
+                BombAudio.UiClick();
+                network.Send(new BombMessage { type = "READY", ready = true });
+            }
         }
         if (GUILayout.Button("Rời phòng", GUILayout.Height(32))) {
             BombAudio.UiClick();
             network.Send(new BombMessage { type = "LEAVE_ROOM" });
+        }
+        GUILayout.EndArea();
+    }
+
+    void DrawJourneyGuide() {
+        float scale = Mathf.Clamp(Screen.height / 900f, .75f, 1.25f);
+        float width = Mathf.Min(520 * scale, Screen.width - 32);
+        float height = Mathf.Min(410 * scale, Screen.height - 32);
+        float top = Screen.height >= 620 ? Mathf.Max(164, (Screen.height - height) * .5f) : 16;
+        Rect panel = new Rect(16, top, width, height);
+        BombUi.Fill(new Rect(panel.x + 7, panel.y + 8, panel.width, panel.height),
+            new Color(0, 0, 0, .48f), BombUi.RoundBig);
+        BombUi.Fill(panel, new Color(BombUi.Panel.r, BombUi.Panel.g, BombUi.Panel.b, .96f), BombUi.RoundBig);
+        BombUi.Fill(new Rect(panel.x, panel.y, 6, panel.height), BombUi.Core, null);
+
+        GUILayout.BeginArea(new Rect(panel.x + 24, panel.y + 18, panel.width - 48, panel.height - 36));
+        GUILayout.Label("CÁCH CHƠI CỐT TRUYỆN", titleStyle);
+        GUILayout.Space(8);
+        GUILayout.Label("1. Mảnh Tim Lửa xuất hiện sau 10 giây — tìm viên pha lê hồng trên minimap.", bodyStyle);
+        GUILayout.Label("2. Chạm để mang mảnh về bệ đá giữa bản đồ. Nổ trúng người giữ 2 lần bằng cú nạp đủ mạnh để làm rơi mảnh.", bodyStyle);
+        GUILayout.Label("3. Nếu mảnh đã ở trên bệ, đứng trong vòng 3 giây để phá ấn và cướp lại. Giữ mảnh đến hết giờ để thắng chương.", bodyStyle);
+        GUILayout.Label("4. Khi cầm mảnh, bạn không thể nổ bom; nhấn Q để thả mảnh. E dùng Khiên • Shift Tăng tốc.", bodyStyle);
+        GUILayout.Space(4);
+        GUILayout.Label("Thắng chương: +3 điểm • Loại đối thủ: +1 điểm • Sau 3 chương, người nhiều điểm nhất thắng.", smallStyle);
+        GUILayout.FlexibleSpace();
+        if (GUILayout.Button("ĐÃ HIỂU  •  H để mở lại", GUILayout.Height(44))) {
+            BombAudio.UiClick();
+            journeyGuideVisible = false;
         }
         GUILayout.EndArea();
     }

@@ -351,7 +351,7 @@ public final class BombServer {
                     if (room == null) { error("NOT_IN_ROOM"); return; }
                     room.ready(player, bool(m,"ready"));
                 }
-                case "MOVE", "CHARGE_START", "EXPLODE", "USE_SHIELD", "USE_BOOST" -> {
+                case "MOVE", "CHARGE_START", "EXPLODE", "DROP_SHARD", "USE_SHIELD", "USE_BOOST" -> {
                     if (room == null) { error("NOT_IN_ROOM"); return; }
                     double dx = decimal(m,"directionX",0), dz = decimal(m,"directionZ",0);
                     room.action(player,type,dx,dz,System.currentTimeMillis());

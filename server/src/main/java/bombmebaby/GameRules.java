@@ -3,10 +3,10 @@ package bombmebaby;
 final class GameRules {
     static final int MAX_PLAYERS = 10;
     static final int MIN_PLAYERS = 2;
-    // Matchmaking starts a match at once when this many wait, otherwise MATCH_FILL_MS
-    // after MIN_PLAYERS are queued, so a third or fourth player can still join.
+    // Matchmaking starts immediately once MIN_PLAYERS are waiting in the same mode.
     static final int MATCH_MAX_PLAYERS = 4;
-    static final long MATCH_FILL_MS = 4_000;
+    static final double ENERGY_SIZE_VALUE = 0.12;
+    static final int MAX_EXPLOSION_ENERGY_DROPS = 12;
     static final int INITIAL_ORBS = 110;
     static final int MAX_ORBS = 150;
     static final double MIN_SPAWN_DISTANCE = 28.0;

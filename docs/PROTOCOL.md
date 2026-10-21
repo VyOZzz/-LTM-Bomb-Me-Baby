@@ -30,11 +30,12 @@ Khi TCP đứt, client mở socket mới trong vòng 10 giây và gửi HELLO v�
 {"type":"MOVE","seq":4,"directionX":0.8,"directionZ":0.3}
 {"type":"CHARGE_START","seq":5}
 {"type":"EXPLODE","seq":6}
-{"type":"USE_SHIELD","seq":7}
-{"type":"USE_BOOST","seq":8}
-{"type":"LEAVE_ROOM","seq":9}
-{"type":"FIND_MATCH","seq":10,"mode":"QUICK"}
-{"type":"CANCEL_MATCH","seq":11}
+{"type":"DROP_SHARD","seq":7}
+{"type":"USE_SHIELD","seq":8}
+{"type":"USE_BOOST","seq":9}
+{"type":"LEAVE_ROOM","seq":10}
+{"type":"FIND_MATCH","seq":11,"mode":"QUICK"}
+{"type":"CANCEL_MATCH","seq":12}
 {"type":"PING","clientTime":1720000000000}
 ```
 
@@ -75,7 +76,7 @@ Sau ba vòng, server xếp theo số mảnh (`roundWins`), rồi `eliminations`,
 Mỗi chương có một mảnh và một bệ đá ở tâm map (`ShardObjective.java`):
 
 1. Mảnh xuất hiện sau 10 giây ở một chỗ trống ngẫu nhiên, cách bệ ít nhất 45% nửa cạnh map.
-2. Người chạm vào mảnh thì cầm mảnh, nhận 2 nấc Khóa Lửa và 2 giây bảo hộ. Người cầm luôn được mọi viewer nhìn thấy. Một hit chỉ phá một nấc nếu charge ≥ 35%, gây ≥ 10 damage thực tế, không bị Shield chặn và đã hết bảo hộ. Nấc khóa hồi đầy nếu 6 giây không nhận thêm hit hợp lệ.
+2. Người chạm vào mảnh thì cầm mảnh, nhận 2 nấc Khóa Lửa và 2 giây bảo hộ. Người cầm luôn được mọi viewer nhìn thấy, không thể nạp/nổ bom và có thể gửi `DROP_SHARD` (phím Q) để chủ động thả. Một hit chỉ phá một nấc nếu charge ≥ 35%, gây ≥ 10 damage thực tế, không bị Shield chặn và đã hết bảo hộ. Nấc khóa hồi đầy nếu 6 giây không nhận thêm hit hợp lệ.
 3. Vỡ đủ hai nấc làm mảnh văng 2,5 unit theo hướng rời tâm nổ. Mảnh khóa nhặt 0,5 giây; carrier cũ bị khóa 1,3 giây. Carrier disconnect sẽ tự thả sau tối đa 2 giây.
 4. Người cầm bước vào vòng bệ (bán kính 3) thì đặt mảnh và trở thành owner. Bệ được bảo hộ 5 giây. Sau đó mỗi đối thủ sống/kết nối trong vòng tự phá ấn với progress riêng trong 3 giây. Owner trong vòng chỉ giảm tốc còn 50%, không pause.
 5. Damage thực tế reset riêng progress của challenger trúng đòn và stagger 0,45 giây; Shield chặn cả reset lẫn stagger. Rời vòng, chết hoặc disconnect cũng xóa progress riêng.
@@ -166,7 +167,7 @@ Server là nguồn chính thức: client chỉ gửi hướng/hành động, kh�
 
 ## Luồng input → server → snapshot
 
-1. `BombGame.Update()` đọc WASD/Space/E/Shift và chỉ tạo **ý định** hành động.
+1. `BombGame.Update()` đọc WASD/Space/Q/E/Shift và chỉ tạo **ý định** hành động.
 2. `BombNetwork.Send()` gắn `seq` và `clientTime`, serialize JSON rồi đưa vào hàng đợi giới hạn; thread ghi riêng phát một dòng UTF-8 lên TCP để Unity main thread không bị chặn.
 3. Một `BombServer.Connection` đọc dòng JSON trên thread của client, kiểm tra session và sequence, sau đó gọi `GameRoom.action()`.
 4. Mọi thay đổi trong một phòng đi qua monitor `synchronized` của `GameRoom`; game loop 20 Hz cũng dùng cùng monitor khi gọi `update()`. Vì vậy input, tick và tranh nhặt Core không sửa đồng thời cùng một room.

@@ -65,11 +65,13 @@ sealed class BombHud {
         if (v.objective != null && v.objective.Active) DrawObjective(v, W);
         if (!string.IsNullOrEmpty(v.toast) && v.toastAlpha > 0) DrawToast(v.toast, v.toastAlpha, W);
         if (v.me != null && v.me.alive) {
-            DrawCharge(v.me, W, H);
+            bool carryingShard = v.objective != null && v.objective.state == "CARRIED"
+                && v.objective.carrierId == v.myId;
+            DrawCharge(v.me, W, H, carryingShard);
             DrawAbility(new Vector2(W - 178, H - 112), "KHIÊN", "E", Shield, v.me.shield, v.me.shieldCooldown, ShieldCooldown);
             DrawAbility(new Vector2(W - 74, H - 112), "TĂNG TỐC", "SHIFT", Boost, v.me.boost, v.me.boostCooldown, BoostCooldown);
         }
-        if (v.matchTime < 8) DrawControlsHint(H, Mathf.Clamp01((8 - v.matchTime) / 1.5f));
+        if (v.matchTime < 8) DrawControlsHint(H, Mathf.Clamp01((8 - v.matchTime) / 1.5f), v.journey);
     }
 
     void DrawPlayerCard(View v) {
@@ -180,7 +182,9 @@ sealed class BombHud {
                 if (o.pedestalOverheat > 0) text += $"  •  BỆ QUÁ NHIỆT {o.pedestalOverheat:0.0}s";
                 break;
             case "CARRIED":
-                text = $"{v.carrierName} đang cầm mảnh — Khóa Lửa {o.fireLock}/{Mathf.Max(2, o.fireLockMax)}";
+                text = o.carrierId == v.myId
+                    ? $"Bạn đang cầm mảnh — không thể tấn công • Q để thả • Khóa Lửa {o.fireLock}/{Mathf.Max(2, o.fireLockMax)}"
+                    : $"{v.carrierName} đang cầm mảnh — Khóa Lửa {o.fireLock}/{Mathf.Max(2, o.fireLockMax)}";
                 if (o.carrierProtection > 0) text += $"  •  BẢO HỘ {o.carrierProtection:0.0}s";
                 if (o.pedestalOverheat > 0) text += $"  •  BỆ QUÁ NHIỆT {o.pedestalOverheat:0.0}s";
                 break;
@@ -280,17 +284,19 @@ sealed class BombHud {
         }
     }
 
-    void DrawCharge(PlayerData me, float W, float H) {
+    void DrawCharge(PlayerData me, float W, float H, bool carryingShard) {
         float width = Mathf.Min(560, W - 460);
         float x = W / 2 - width / 2, y = H - 92;
         Fill(R(x - 16, y - 34, width + 32, 78), Panel, RoundBig);
-        bool charging = me.charging;
+        bool charging = me.charging && !carryingShard;
         label.normal.textColor = charging ? Charge : TextMuted;
-        GUI.Label(R(x, y - 30, width, 24), charging ? "NẠP NỔ" : "Giữ SPACE để nạp, thả để nổ", label);
+        GUI.Label(R(x, y - 30, width, 24), carryingShard ? "ĐANG GIỮ MẢNH • Q ĐỂ THẢ"
+            : charging ? "NẠP NỔ" : "Giữ SPACE để nạp, thả để nổ", label);
         label.normal.textColor = TextMuted;
         if (charging) GUI.Label(R(x, y - 30, width, 24), $"{me.charge * 100:0}%", labelRight);
-        Color fill = me.charge >= .99f ? Color.Lerp(Charge, new Color(1, .95f, .6f), Mathf.PingPong(Time.unscaledTime * 4, 1)) : Charge;
-        Bar(R(x, y, width, 22), charging ? me.charge : 0, fill);
+        Color fill = carryingShard ? Core
+            : me.charge >= .99f ? Color.Lerp(Charge, new Color(1, .95f, .6f), Mathf.PingPong(Time.unscaledTime * 4, 1)) : Charge;
+        Bar(R(x, y, width, 22), carryingShard ? 1 : charging ? me.charge : 0, fill);
     }
 
     void DrawAbility(Vector2 center, string title, string keyName, Color color, bool active, float cooldown, float total) {
@@ -315,8 +321,9 @@ sealed class BombHud {
         GUI.Label(new Rect(c.x - S(60), c.y + d / 2 + S(6), S(120), S(20)), title, centerText);
     }
 
-    void DrawControlsHint(float H, float alpha) {
-        string text = "WASD di chuyển   •   Giữ SPACE nạp, thả để nổ   •   E khiên   •   SHIFT tăng tốc";
+    void DrawControlsHint(float H, float alpha, bool journey) {
+        string text = "WASD di chuyển   •   Giữ SPACE nạp, thả để nổ   •   E khiên   •   SHIFT tăng tốc"
+            + (journey ? "   •   Q thả mảnh" : "");
         float width = small.CalcSize(new GUIContent(text)).x / u + 32;
         Color saved = GUI.color;
         GUI.color = new Color(1, 1, 1, alpha);

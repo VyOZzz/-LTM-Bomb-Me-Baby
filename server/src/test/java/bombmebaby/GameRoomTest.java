@@ -96,6 +96,22 @@ class GameRoomTest {
         assertEquals(100,a.hp);
     }
 
+    @Test void explosionDropsSpentSizeAsEnergyFragments() {
+        GameRoom room = startedRoom();
+        PlayerState player = room.players.get(0);
+        room.orbs.clear();
+        player.size = player.baseSize + GameRules.ENERGY_SIZE_VALUE * 4;
+        player.x = 0; player.z = 0;
+
+        room.action(player,"CHARGE_START",0,0,1_000);
+        room.action(player,"EXPLODE",0,0,2_000);
+
+        assertEquals(player.baseSize, player.size);
+        assertEquals(4, room.orbs.size());
+        assertTrue(room.orbs.stream().allMatch(orb ->
+            GameRules.distance(player.x, player.z, orb.x(), orb.z()) <= 2));
+    }
+
     @Test void quickModeKeepsLegacyMovementWithoutJourneyKnockback() {
         GameRoom room = startedRoom();
         PlayerState a = room.players.get(0), b = room.players.get(1);

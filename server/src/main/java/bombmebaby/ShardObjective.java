@@ -190,6 +190,9 @@ final class ShardObjective {
     private void pickUp(PlayerState taker, long now) {
         state = State.CARRIED;
         carrier = taker;
+        // Carrying the objective replaces bomb combat. Cancel a charge that may
+        // have started just before the pickup was resolved by the game tick.
+        taker.charging = false;
         owner = null;
         fireLock = FIRE_LOCK_MAX;
         fireLockLastHitAt = 0;
@@ -214,6 +217,17 @@ final class ShardObjective {
         pickupPriorityUntil = 0;
         formerCarrier = oldCarrier;
         formerCarrierBlockedUntil = now + FORMER_CARRIER_LOCKOUT_MS;
+    }
+
+    /** Drops the shard voluntarily. Returns false when the player is not its carrier. */
+    boolean drop(PlayerState player, long now) {
+        if (state != State.CARRIED || carrier != player) return false;
+        dropAt(player.x, player.z, now);
+        return true;
+    }
+
+    boolean carriedBy(PlayerState player) {
+        return state == State.CARRIED && carrier == player;
     }
 
     private void recoverFireLock(long now) {
