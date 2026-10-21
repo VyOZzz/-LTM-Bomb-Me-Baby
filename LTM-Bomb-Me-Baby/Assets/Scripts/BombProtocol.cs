@@ -54,6 +54,11 @@ using System;
     public BushData[] bushes;
     public string phase;
     public ObjectiveData objective;
+    // MATCHMAKING: status SEARCHING (with queue size) or CANCELLED.
+    public string status;
+    public int waiting;
+    public int minPlayers;
+    public int maxPlayers;
 }
 
 /// Journey shard objective in STATE_UPDATE. JsonUtility never leaves it null, so an empty
@@ -113,6 +118,7 @@ using System;
     public int chapterIndex;
     public bool journeyComplete;
     public ScoreData[] scores;
+    public int minPlayers;
     public int maxPlayers;
     public LobbyPlayer[] players;
 }

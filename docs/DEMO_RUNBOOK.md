@@ -24,7 +24,7 @@ Cập nhật và kiểm thử trên Windows ngày 13/10/2026.
 
 - `mvn test`: 12 test, 0 failure, 0 error.
 - `scripts/network_smoke.py`: PASS với 2 client giả lập, create/join/ready/snapshot/move/explode.
-- Build Windows khởi động được, đọc `server.txt`, kết nối localhost và bắt đầu trận solo.
+- Build Windows khởi động được, đọc `server.txt`, kết nối localhost và bắt đầu trận solo (trước 21/10; nay mỗi trận cần ít nhất 2 người).
 - Hai Windows client thật cùng join phòng, cùng ready và nhận phase `PLAYING`; RTT, message count và byte count cập nhật trên cả hai.
 
 Đây là kiểm thử chức năng, chưa phải số liệu baseline cho báo cáo. Bảng baseline phải được sinh từ script đo lặp lại, giữ nguyên map/kịch bản/cấu hình máy và lưu dữ liệu thô.
