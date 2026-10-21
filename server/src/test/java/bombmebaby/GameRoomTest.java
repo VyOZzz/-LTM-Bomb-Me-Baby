@@ -6,23 +6,17 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class GameRoomTest {
-    @Test void oneReadyPlayerCanStartForSoloTesting() {
+    @Test void aLonePlayerCannotStartEvenWhenReady() {
         GameRoom room = new GameRoom("SOLO01");
         PlayerState player = new PlayerState("Solo", null);
         room.join(player);
 
         room.ready(player,true);
 
-        assertEquals(GameRoom.Phase.PLAYING, room.phase);
-        assertTrue(player.alive);
-        assertEquals(100, player.hp);
-        assertEquals(GameRules.INITIAL_ORBS, room.orbs.size());
-
-        room.action(player,"CHARGE_START",0,0,1000);
-        room.action(player,"EXPLODE",0,0,2000);
-
-        assertEquals(GameRoom.Phase.PLAYING, room.phase);
-        assertFalse(player.charging);
+        assertEquals(GameRoom.Phase.WAITING, room.phase);
+        assertFalse(room.startMatched(1000));
+        assertEquals(GameRoom.Phase.WAITING, room.phase);
+        assertEquals(GameRules.MIN_PLAYERS, room.roomInfo().get("minPlayers"));
     }
 
     @Test void requiresTwoReadyPlayersAndResetsRound() {

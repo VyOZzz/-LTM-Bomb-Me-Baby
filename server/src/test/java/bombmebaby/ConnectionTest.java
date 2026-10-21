@@ -51,6 +51,7 @@ class ConnectionTest {
         assertEquals("DUPLICATE_SEQUENCE", peer.until("ERROR").get("code").getAsString());
         peer.until("ACK");
         assertEquals(1, server.rooms.size());
+        readyOpponent(peer);
         peer.request("type", "READY", "seq", 2, "ready", true);
         peer.request("type", "MOVE", "seq", 5, "directionX", 1);
         for (long seq : new long[] {5, 3}) {
@@ -155,6 +156,7 @@ class ConnectionTest {
     @Test void gameStartCarriesMapAndFollowingOptimizedSnapshotOmitsIt() throws Exception {
         Peer peer = hello();
         peer.request("type", "CREATE_ROOM", "seq", 1);
+        readyOpponent(peer);
         peer.send("type", "READY", "seq", 2, "ready", true);
         JsonObject start = peer.until("GAME_START");
         assertFalse(start.getAsJsonArray("obstacles").isEmpty());
@@ -173,8 +175,10 @@ class ConnectionTest {
         assertEquals(0, room.get("chapterIndex").getAsInt());
         assertEquals(1, room.getAsJsonArray("scores").size());
         assertEquals("meadow", room.get("mapId").getAsString());
+        assertEquals(GameRules.MIN_PLAYERS, room.get("minPlayers").getAsInt());
         peer.until("ACK");
 
+        readyOpponent(peer);
         peer.send("type", "READY", "seq", 2, "ready", true);
         JsonObject start = peer.until("GAME_START");
         assertEquals("JOURNEY", start.get("mode").getAsString());
@@ -286,6 +290,55 @@ class ConnectionTest {
         assertEquals(1, server.rooms.size());
     }
 
+    @Test void twoSearchingPlayersAreMatchedAfterFillWindowAndStartWithoutReady() throws Exception {
+        Peer a = searching("QUICK");
+        Peer b = searching("QUICK");
+        assertEquals(2, a.until("MATCHMAKING").get("waiting").getAsInt());
+        long now = System.currentTimeMillis();
+        server.matchmake(now);
+        assertTrue(server.rooms.isEmpty(), "two players still wait for latecomers");
+        server.matchmake(now + GameRules.MATCH_FILL_MS);
+        for (Peer peer : List.of(a, b)) {
+            JsonObject found = peer.until("MATCH_FOUND");
+            assertEquals("QUICK", found.get("mode").getAsString());
+            assertEquals("QUICK", peer.until("GAME_START").get("mode").getAsString());
+        }
+        assertSame(a.player.room, b.player.room);
+        synchronized (a.player.room) { assertEquals(GameRoom.Phase.PLAYING, a.player.room.phase); }
+        assertNull(server.matchmaker.modeOf(a.player));
+    }
+
+    @Test void fullQueueMatchesAtOnceAndModesNeverMix() throws Exception {
+        Peer journey = searching("JOURNEY");
+        List<Peer> quick = new ArrayList<>();
+        for (int i = 0; i < GameRules.MATCH_MAX_PLAYERS; i++) quick.add(searching("QUICK"));
+        server.matchmake(System.currentTimeMillis());
+        assertEquals(1, server.rooms.size());
+        GameRoom room = quick.get(0).player.room;
+        assertEquals(GameMode.QUICK, room.mode);
+        for (Peer peer : quick) assertSame(room, peer.player.room);
+        assertNull(journey.player.room);
+        assertEquals(GameMode.JOURNEY, server.matchmaker.modeOf(journey.player));
+    }
+
+    @Test void searchingBlocksRoomsAndCancelOrDisconnectLeavesQueue() throws Exception {
+        Peer a = searching("QUICK");
+        Peer b = searching("QUICK");
+        a.send("type", "CREATE_ROOM", "seq", 2);
+        assertEquals("ALREADY_SEARCHING", a.until("ERROR").get("code").getAsString());
+        a.until("ACK");
+        a.send("type", "CANCEL_MATCH", "seq", 3);
+        assertEquals("CANCELLED", a.until("MATCHMAKING").get("status").getAsString());
+        a.until("ACK");
+        assertEquals(1, b.until("MATCHMAKING").get("waiting").getAsInt());
+        b.disconnect();
+        assertNull(server.matchmaker.modeOf(b.player));
+        long now = System.currentTimeMillis();
+        server.matchmake(now);
+        server.matchmake(now + GameRules.MATCH_FILL_MS);
+        assertTrue(server.rooms.isEmpty());
+    }
+
     private Peer hello() throws Exception {
         Peer peer = connect();
         peer.send("type", "HELLO", "name", "A");
@@ -298,7 +351,24 @@ class ConnectionTest {
     private Peer playing() throws Exception {
         Peer peer = hello();
         peer.request("type", "CREATE_ROOM", "seq", 1);
+        readyOpponent(peer);
         peer.request("type", "READY", "seq", 2, "ready", true);
+        return peer;
+    }
+
+    /** Rooms need two players to start: a second, already ready player for the host's room. */
+    private Peer readyOpponent(Peer host) throws Exception {
+        Peer opponent = hello();
+        opponent.request("type", "JOIN_ROOM", "seq", 1, "code", host.player.room.code);
+        opponent.request("type", "READY", "seq", 2, "ready", true);
+        return opponent;
+    }
+
+    private Peer searching(String mode) throws Exception {
+        Peer peer = hello();
+        peer.send("type", "FIND_MATCH", "seq", 1, "mode", mode);
+        peer.until("MATCHMAKING");
+        peer.until("ACK");
         return peer;
     }
 
