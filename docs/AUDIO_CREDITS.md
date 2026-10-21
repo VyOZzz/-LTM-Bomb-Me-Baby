@@ -39,9 +39,10 @@ Toàn bộ SFX trên là PCM mono 44,1 kHz, 16-bit, được tạo từ công th
 
 ## Bàn giao cho Trưởng nhóm
 
-- [ ] Đủ 3 bản nhạc chương và các SFX ở bảng trên.
-- [ ] Mọi dòng đã có link nguồn và giấy phép.
-- [ ] File đã đặt tên rõ ràng (ví dụ `music_meadow.ogg`, `sfx_explode.wav`) và gửi cho Trưởng nhóm gắn vào Unity.
-- [ ] Phần "Tài nguyên sử dụng" trong báo cáo đã chép lại bảng này.
+- [x] Đủ 11 SFX, có script tái tạo và thông tin nguồn/giấy phép.
+- [x] SFX đã đặt tên rõ ràng, import trong Unity và tích hợp bằng `Assets/Scripts/BombAudio.cs`.
+- [x] Thanh âm lượng **Hiệu ứng** điều khiển SFX trong game.
+- [ ] Đủ nhạc cho ba chương và menu, hoặc nhóm chốt bằng văn bản rằng bản nộp chỉ dùng SFX.
+- [ ] Phần "Tài nguyên sử dụng" trong báo cáo đã chép lại bảng hoàn chỉnh.
 
-Trạng thái SFX: đã đủ, đã tích hợp bằng `Assets/Scripts/BombAudio.cs` và dùng thanh âm lượng **Hiệu ứng** trong cài đặt. Phần nhạc theo chương vẫn chưa thực hiện.
+Trạng thái ngày 21/10/2026: Unity đã import đủ 11 WAV và batch compile thành công. Phần nhạc theo chương vẫn chưa thực hiện.

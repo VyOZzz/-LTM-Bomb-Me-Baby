@@ -1,11 +1,11 @@
 # Runbook demo — Bomb Me Baby
 
-Cập nhật và kiểm thử trên Windows ngày 13/10/2026.
+Cập nhật theo source và kiểm thử tự động ngày 21/10/2026. Kết quả build/client thật ngày 13/10 được giữ làm mốc lịch sử; cần chạy lại toàn bộ runbook trên build cuối trước khi nộp.
 
 ## Chuẩn bị
 
-1. Chạy `mvn test` trong `server/`.
-2. Chạy server bằng `mvn exec:java` (TCP `7777`).
+1. Chạy `mvn clean test "-Dsync.mode=baseline"` và `mvn test "-Dsync.mode=optimized"` trong `server/`; cả hai phải qua 67 test.
+2. Chạy server bằng `mvn compile exec:java "-Dexec.args=7777" "-Dsync.mode=optimized"` (TCP `7777`).
 3. Đặt `server.txt` cạnh file game `.exe`; dòng đầu là `HOST:PORT`.
 4. Khởi động 2–4 bản game. Client thứ nhất tạo phòng; các client còn lại nhập mã phòng rồi vào phòng.
 5. Chỉ bấm **Sẵn sàng** sau khi đủ client vì phòng đang `PLAYING` sẽ từ chối người join mới bằng `ROOM_UNAVAILABLE`.
@@ -19,12 +19,23 @@ Cập nhật và kiểm thử trên Windows ngày 13/10/2026.
 - Dùng E và Shift; kiểm tra cooldown Shield/Boost.
 - Loại một player, nhặt Core và chơi tới popup kết quả.
 - Chọn chơi lại; kiểm tra tất cả cùng ready và vòng mới đổi map.
+- Tạo phòng **Hành trình Ba Mảnh**, kiểm tra `meadow → crossroads → crater`, điểm giữa chương và màn kết cuối.
+- Ngắt mạng một client dưới 10 giây rồi kết nối lại; kiểm tra giữ danh tính, phòng và geometry.
+- Xác nhận lời dẫn, VFX, SFX và popup kết quả không che thao tác chính.
 
-## Kết quả đã xác minh 13/10/2026
+## Trạng thái xác minh
 
-- `mvn test`: 12 test, 0 failure, 0 error.
+### Source hiện tại — 21/10/2026
+
+- Java: 67 test, 0 failure, 0 error, 0 skipped ở cả baseline và optimized.
+- Unity `6000.3.6f1`: batch compile thành công với mã thoát 0; 11 AudioClip import thành công.
+- Chưa đánh dấu hoàn thành demo cuối cho đến khi chạy lại 2–4 Windows client trên cùng commit/tag phát hành.
+
+### Mốc client thật — 13/10/2026
+
+- `mvn test`: 12 test, 0 failure, 0 error tại commit ngày 13/10.
 - `scripts/network_smoke.py`: PASS với 2 client giả lập, create/join/ready/snapshot/move/explode.
 - Build Windows khởi động được, đọc `server.txt`, kết nối localhost và bắt đầu trận solo.
 - Hai Windows client thật cùng join phòng, cùng ready và nhận phase `PLAYING`; RTT, message count và byte count cập nhật trên cả hai.
 
-Đây là kiểm thử chức năng, chưa phải số liệu baseline cho báo cáo. Bảng baseline phải được sinh từ script đo lặp lại, giữ nguyên map/kịch bản/cấu hình máy và lưu dữ liệu thô.
+Đây là kiểm thử chức năng, chưa thay thế số liệu thực nghiệm cho báo cáo. Benchmark phải được sinh từ script đo lặp lại, giữ nguyên map/kịch bản/cấu hình máy và lưu dữ liệu thô. Kết quả 13/10 không được dùng để khẳng định build 21/10 đã chơi trọn hai mode.

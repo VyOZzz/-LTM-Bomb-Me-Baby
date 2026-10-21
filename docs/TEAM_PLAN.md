@@ -1,6 +1,6 @@
 # Phân công nhóm — Bomb Me Baby
 
-Cập nhật: 20/10/2026, chia lại việc còn lại theo khối lượng đã làm. Bản 15/10 xem trong lịch sử Git của file này. Tài liệu đối chiếu: `final-project/Topics.md`, `Instruction.md`, `Submission.md` và `README.md`.
+Cập nhật: 21/10/2026, đối chiếu lại với code, test và các commit Unity/âm thanh mới. Bản 15/10 và 20/10 xem trong lịch sử Git của file này. Tài liệu đối chiếu: `final-project/Topics.md`, `Instruction.md`, `Submission.md` và `README.md`.
 
 | Người | Vai trò | Tài khoản Git |
 | --- | --- | --- |
@@ -8,24 +8,26 @@ Cập nhật: 20/10/2026, chia lại việc còn lại theo khối lượng đã
 | Tiên | Thành viên A, Java server | `Leona` (nhánh `ThuyTien`) |
 | Phương | Thành viên B, map, đo đạc, âm thanh, asset | `Phương` (nhánh `lanphuong`) |
 
-## Đã làm đến 20/10 (theo commit)
+## Đã làm đến 21/10 (theo commit và kiểm tra thực tế)
 
 | Người | Commit | Đã làm |
 | --- | --- | --- |
 | Vỹ | `aaed786`, `852d47d`, `29720e0` (12–13/10) | Toàn bộ prototype ban đầu: Java server (TCP JSON, game loop 20 Hz, snapshot 10 Hz, va chạm, nhặt đồ, sát thương), Unity client và scene `Main`, 3 map, hỗ trợ 10 người, test đầu tiên, README. |
 | | `0267323`, `f571d91`, `e7e7316` (13–14/10) | Lưu yêu cầu đồ án, kế hoạch phân công đầu tiên, concept arena/HUD, cốt truyện Ba Mảnh Tim Lửa. |
+| | `05721b1`, `9b15950`, `301dfec` (20–21/10) | Menu chọn mode, HUD, minimap, mảnh Tim Lửa, lời dẫn từ JSON, cooldown bom, màn mở đầu bằng video/ảnh dự phòng, hình ảnh menu, bảng điểm/kết quả và cập nhật luật Hành trình. |
 | Tiên | `dc255a3`, `752d67d` (15–17/10) | Novelty selective sync (`SyncMode` baseline/optimized); sửa reconnect, token sai/hết hạn, request trùng, disconnect, dọn phòng; test `ConnectionTest`, `ServerFixesTest`; 3 tài liệu bàn giao. |
-| | `4beb0c9` + 4 commit sửa (20/10) | Chế độ Đấu nhanh và Hành trình Ba Mảnh (`GameMode`, điểm, `JOURNEY_COMPLETE`); sửa lộ vị trí trong bụi cho event nổ/Core và snapshot khôi phục; cập nhật `PROTOCOL.md`; 55 dòng Unity để client đọc protocol mới (nút chọn mode, dòng chữ chương/điểm, `lastSeq`, `visible`). 45/45 test qua. |
+| | `4beb0c9` + 4 commit sửa (20/10) | Chế độ Đấu nhanh và Hành trình Ba Mảnh (`GameMode`, điểm, `JOURNEY_COMPLETE`); sửa lộ vị trí trong bụi cho event nổ/Core và snapshot khôi phục; cập nhật `PROTOCOL.md`; 55 dòng Unity để client đọc protocol mới (nút chọn mode, dòng chữ chương/điểm, `lastSeq`, `visible`). Tại mốc này 45/45 test qua; hiện đã tăng lên 67 test. |
+| | `d5aaa69`, `806c4d9` (21/10, hỗ trợ tích hợp) | Thêm 11 SFX tự tổng hợp, `BombAudio`, âm thanh UI/gameplay, script tái tạo và sửa cảnh báo tên biến. Phần đóng góp âm thanh cần được ghi đúng theo người thực hiện/thực sự phối hợp trong PR và báo cáo. |
 | Phương | `a84e1d5`, `0199310` (15/10) | Kịch bản Hành trình Ba Mảnh (`STORY_SCRIPT.md`), cập nhật phân công 15/10, `load_test.py` đo RTT/byte/message/`processingMicros` với N client. |
 | | `c556012` → `a54d111` (19/10) | `run_benchmark.ps1`, `summarize_experiments.py`, ghi `map_id`/`sync_mode`; 18 lượt đo baseline/optimized 2/4/8 client (`experiments/`, `EXPERIMENTS.md`); sửa `network_smoke.py` cho optimized; mẫu `AUDIO_CREDITS.md`, `PLAYTEST_MAPS.md`; merge nhánh `ThuyTien` vào `lanphuong`. |
 
-Chưa có trên Git: phần Unity giao ngày 15/10 (build Windows, HUD, VFX, âm thanh, lời dẫn, bảng điểm/màn kết hành trình có giao diện), playtest map và âm thanh. Mốc 20/10 "2–4 Unity client chơi trọn trận, HUD/âm thanh/VFX cơ bản" chưa đạt.
+Trạng thái kiểm chứng ngày 21/10: Unity đã có HUD, VFX cơ bản, lời dẫn, bảng điểm/kết quả và 11 SFX; Unity batch compile bằng `6000.3.6f1` thành công với mã thoát 0. Server có **67 test**, đều qua ở `baseline` và `optimized`. Benchmark đã có 18 lượt 2/4/8 client giả lập. Chưa có bản Windows phát hành của code hiện tại, chưa điền playtest ba map, chưa có nhạc theo chương, chưa đo lại bằng client Unity thật/LAN và hai commit âm thanh chưa nằm trên `origin/main`.
 
 ## Mốc còn lại
 
-- **22/10:** Unity build Windows chơi trọn Đấu nhanh và Hành trình với 2 client; playtest xong 3 map; có bộ âm thanh đã ghi nguồn.
+- **22/10:** review/merge hai commit âm thanh vào `main`; tạo Unity build Windows; chơi trọn Đấu nhanh và Hành trình với 2 client; điền playtest 3 map.
 - **24/10:** bộ asset đồ họa (model, texture, icon, font) đã chọn, ghi nguồn và gửi Vỹ.
-- **25/10:** HUD, VFX, âm thanh, lời dẫn, bảng điểm và màn kết hành trình trong Unity; Unity dùng được `optimized`; đo lại trên bản này.
+- **25/10:** kiểm chứng HUD, VFX, âm thanh, lời dẫn, bảng điểm và màn kết trên build; chạy `optimized` end-to-end; deploy server thử nghiệm và đo lại trên bản cuối.
 - **28/10:** đủ các phần báo cáo; README build/run/test chạy đúng trên máy sạch; `main` chứa bản cuối.
 - **30/10:** báo cáo `.docx` hoàn chỉnh, kiểm tra Compilatio, luyện bảo vệ.
 - **31/10, 23:59:** hạn nộp chính thức theo `final-project/Submission.md`.
@@ -36,9 +38,9 @@ Nguyên tắc: Vỹ làm toàn bộ Unity. Tiên đã làm xong phần lớn ser
 
 | Người | Việc | Bàn giao kiểm chứng được |
 | --- | --- | --- |
-| **Vỹ** (Unity, tích hợp) | Build Windows; HUD (HP, Size, thanh nạp, cooldown Shield/Boost); VFX nổ/Shield; gắn nhạc và SFX do Phương gửi. Màn mở đầu, lời dẫn theo `mapId`, gợi ý và thông báo sự kiện theo `STORY_SCRIPT.md` (lời thoại trong file JSON). Thay phần chữ tạm của Tiên bằng bảng điểm giữa chương và màn kết hành trình có giao diện. Kiểm tra 6 mục Unity trong `THANH_VIEN_A_BAN_GIAO.md`, gồm chạy được `optimized`. Review và merge `ThuyTien`, `lanphuong` vào `main`. | Bản build 2–4 client chơi từ lobby đến kết quả ở cả hai mode; ảnh chụp game chạy thật cho báo cáo; `main` là bản nộp. |
-| **Tiên** (server) | Sửa lỗi server phát sinh khi Vỹ tích hợp Unity. Cập nhật `THANH_VIEN_A_BAN_GIAO.md` (đã có benchmark và smoke test). Nếu kịp: chính sách dọn phòng đã kết thúc khi mọi người offline. | Test vẫn qua sau mỗi sửa; tài liệu bàn giao khớp code. |
-| **Phương** (map, đo, âm thanh, asset, đóng gói) | Playtest 3 map, chỉnh `GameMap.java` nếu cần. Chọn nhạc theo chương và SFX, ghi `AUDIO_CREDITS.md`, gửi file cho Vỹ. Tìm và chuẩn bị asset đồ họa cho game: model/texture cho đá, bụi cây, sàn và tường theo từng map; skybox hoặc nền; icon HUD (HP, Shield, Boost, Core); font tiếng Việt; hiệu ứng hạt cho nổ/Shield nếu có. Đưa vào `LTM-Bomb-Me-Baby/Assets/` theo thư mục Vỹ quy định, ghi nguồn và giấy phép như âm thanh. Đo lại baseline/optimized trên bản cuối, thêm đo qua LAN hai máy nếu được. Ghép báo cáo `.docx` từ phần của cả nhóm, chạy Compilatio, chuẩn bị thư mục `Source/` và `Report/`. | `PLAYTEST_MAPS.md` đã điền; bộ âm thanh và asset có nguồn, mở được trong Unity 6000.3.6f1; `experiments/` và `EXPERIMENTS.md` theo bản cuối; báo cáo và kết quả Compilatio. |
+| **Vỹ** (Unity, tích hợp) | Review và merge các thay đổi vào `main`; tạo build Windows từ commit cuối; kiểm tra 6 mục Unity trong `THANH_VIEN_A_BAN_GIAO.md`, gồm `optimized`, reconnect, hai mode, bảng điểm và màn kết. Chụp ảnh game chạy thật và sửa lỗi tích hợp phát sinh. | Bản build 2–4 client chơi từ lobby đến kết quả ở cả hai mode; ảnh chụp game chạy thật; `main` và tag phát hành chứa bản đã kiểm chứng. |
+| **Tiên** (server) | Sửa lỗi server phát sinh khi kiểm thử Unity; giữ 67 test qua ở cả hai sync mode. Chuẩn bị cách chạy server deploy được (port cấu hình, JAR/Docker hoặc nền tảng tương đương), cập nhật bàn giao và hỗ trợ smoke test public/LAN. Nếu kịp: chính sách dọn phòng đã kết thúc khi mọi người offline. | Test sạch sau mỗi sửa; client kết nối được tới server tách riêng; tài liệu bàn giao khớp code và lệnh triển khai. |
+| **Phương** (map, đo, âm thanh, asset, đóng gói) | Playtest 3 map và điền kết quả thật; hoàn thiện nhạc theo chương hoặc chốt phạm vi chỉ dùng SFX; chuẩn bị/ghi nguồn asset. Đo lại baseline/optimized trên commit cuối, ưu tiên thêm LAN hai máy. Ghép báo cáo `.docx`, chạy Compilatio, chuẩn bị `Source/` và `Report/`. | `PLAYTEST_MAPS.md` đã điền; tài nguyên có nguồn; `EXPERIMENTS.md` khớp bản cuối; báo cáo đúng tên và có kết quả Compilatio. |
 
 Phần viết báo cáo, mỗi người viết phần mình làm:
 
@@ -48,7 +50,7 @@ Phần viết báo cáo, mỗi người viết phần mình làm:
 | Giao thức JSON, server, thread/khóa room, reconnect, novelty selective sync, kiểm thử tự động | Tiên |
 | Thiết kế map, thực nghiệm và đánh giá, tài nguyên sử dụng (âm thanh, asset đồ họa, AI), ghép và định dạng báo cáo | Phương |
 
-Phụ thuộc: Unity cần bộ âm thanh và asset của Phương trước 24/10; Vỹ thống nhất với Phương phong cách đồ họa và thư mục đặt asset trước khi Phương tải về; phép đo lại cần Unity chạy được `optimized` (Vỹ) và server ổn định (Tiên). Mọi thay đổi protocol tiếp theo do Tiên đề xuất và Vỹ duyệt trước khi ghép nhánh.
+Phụ thuộc: SFX đã có và cần được merge vào `main`; nhạc/asset còn lại phải chốt trước 24/10. Phép đo lại chỉ chạy sau khi Vỹ tạo build từ commit cuối và Tiên chốt server/config deploy. Mọi thay đổi protocol tiếp theo do Tiên đề xuất và Vỹ duyệt trước khi ghép nhánh.
 
 Cả ba cùng đọc kiến trúc, giao thức và code quan trọng trước buổi bảo vệ; ai cũng phải giải thích được luồng input → server → snapshot.
 

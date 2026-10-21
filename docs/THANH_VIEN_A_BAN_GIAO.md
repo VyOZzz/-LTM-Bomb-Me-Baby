@@ -1,6 +1,6 @@
 # Bàn giao phần A cho T và B
 
-Cập nhật 20/10/2026. Code đầu vào ban đầu `dc255a3`; các thay đổi mới nằm trong working tree và chưa được tài liệu này khẳng định là đã commit/push.
+Cập nhật 21/10/2026, đối chiếu với source đã commit trên nhánh hiện tại và lượt kiểm tra sạch cùng ngày.
 
 ## Trạng thái
 
@@ -8,8 +8,9 @@ Cập nhật 20/10/2026. Code đầu vào ban đầu `dc255a3`; các thay đổi
 - JOURNEY chạy `meadow → crossroads → crater`, giữ điểm/vòng thắng và phát `JOURNEY_COMPLETE`.
 - Novelty selective sync hoạt động ở server; Unity đã dựng/cache geometry từ GAME_START và hiểu tọa độ ẩn.
 - Reconnect, sequence trùng, tranh Core và Hành trình có test tự động.
-- 45/45 test Java qua ở baseline và optimized; xem [kết quả](THANH_VIEN_A_KIEM_THU.md).
-- Chưa chạy Unity Editor/build và chưa đo tải 2/4/8 client trong môi trường này.
+- 67/67 test Java qua ở baseline và optimized; xem [kết quả](THANH_VIEN_A_KIEM_THU.md).
+- Unity `6000.3.6f1` đã batch compile thành công; 11 SFX import được. Đã có 18 lượt benchmark loopback 2/4/8 client giả lập trong `experiments/`.
+- Chưa phát hành lại Windows build và chưa chơi end-to-end 2–4 client thật trên cùng commit cuối.
 
 ## Protocol cần cả nhóm dùng
 
@@ -67,7 +68,7 @@ Các chỉ số nên lưu:
 | processingMicros | Thời gian xử lý request trước ACK, không phải RTT hoặc thời gian snapshot định kỳ |
 | ERROR/reconnect | Lưu cả lần thất bại, không lọc mẫu xấu |
 
-Phép đo fixture tự động hiện cho `baseline=1736`, `optimized=754` byte JSON trong một trạng thái cố định. Đây chỉ chứng minh optimized nhỏ hơn ở fixture đó, chưa phải kết quả băng thông trận thật.
+Phép đo fixture tự động hiện cho `baseline=1799`, `optimized=821` byte JSON trong một trạng thái cố định. Benchmark trận giả lập cho thấy giảm khoảng 66–79% byte nhận/client/s tùy số client; xem `EXPERIMENTS.md` để biết điều kiện và giới hạn.
 
 ## Giới hạn cần ghi đúng
 
@@ -75,6 +76,6 @@ Phép đo fixture tự động hiện cho `baseline=1736`, `optimized=754` byte 
 - Reconnect optimized gửi lại geometry nhưng vẫn che player vô hình/cull pickup. Event nổ che tọa độ theo viewer và Core spawn xa không được gửi; vẫn không tuyên bố chống gian lận toàn diện vì chưa có xác thực/TLS và event không tọa độ vẫn để lộ một phần diễn biến.
 - Socket được ghi đồng bộ khi giữ khóa; client đọc chậm có thể ảnh hưởng phòng/game loop.
 - Người vào phòng bị chặn sau khi JOURNEY bắt đầu. Người mất mạng giữa chương có 10 giây reconnect; hết hạn rời roster và phòng cần những người còn lại READY.
-- Unity source đã cập nhật nhưng chưa được compile/render bằng Unity Editor trong phiên này.
-- `scripts/network_smoke.py` đã đọc geometry từ GAME_START để dùng được với cả baseline và optimized; máy hiện tại chưa có lệnh Python chạy được nên chưa thực thi script này.
-- Benchmark 2/4/8 client, CSV thô và kết luận phần trăm vẫn là việc B phải thực hiện.
+- Unity source đã compile nhưng chưa có bằng chứng playtest cuối bằng 2–4 Windows client thật ở cả QUICK/JOURNEY.
+- `scripts/network_smoke.py` đã đọc geometry từ GAME_START để dùng được với cả baseline và optimized; cần lưu lại kết quả chạy trên commit/tag phát hành.
+- Benchmark 2/4/8 client và CSV thô đã có; B cần đo lại trên bản cuối, ưu tiên cố định map/seed và bổ sung LAN hai máy.

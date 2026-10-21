@@ -1,6 +1,6 @@
 # Kết quả kiểm thử phần A
 
-Ngày kiểm tra gần nhất: 20/10/2026, Windows 11, JDK 21.0.10, Maven 3.9.16. POM giữ `maven.compiler.release=17`, Gson 2.11.0 và JUnit 5.11.4. Code đầu vào ban đầu: `dc255a3`; kết quả cuối áp dụng cho các thay đổi working tree cùng tài liệu này.
+Ngày kiểm tra gần nhất: 21/10/2026, Windows 11, JDK 21.0.10, Maven 3.9.16. POM giữ `maven.compiler.release=17`, Gson 2.11.0 và JUnit 5.11.4. Đã chạy lại từ `mvn clean test` để không tính nhầm báo cáo Surefire cũ còn trong `target/`.
 
 ## 1. Các lần chạy thực tế
 
@@ -10,12 +10,14 @@ Ngày kiểm tra gần nhất: 20/10/2026, Windows 11, JDK 21.0.10, Maven 3.9.16
 | `mvn test "-Dsync.mode=optimized"` trong quá trình sửa | Một lần lỗi `Cannot separate 10 spawns on map meadow` | Phát hiện lỗi ngẫu nhiên trong chọn spawn 10 người; đã bổ sung thử lại và hồi quy 60 cấu hình |
 | `mvn test "-Dsync.mode=optimized"` sau thêm Hành trình/privacy event | 45 test, 0 failure, 0 error, 0 skipped; BUILD SUCCESS | Kiểm tra optimized, protocol mode, ba chương và ẩn event theo viewer |
 | `mvn clean test "-Dsync.mode=baseline"` sau cùng | 45 test, 0 failure, 0 error, 0 skipped; BUILD SUCCESS | Biên dịch lại sạch và kiểm tra baseline cùng toàn bộ luật Hành trình |
+| `mvn clean test "-Dsync.mode=baseline"` ngày 21/10 | **67 test**, 0 failure, 0 error, 0 skipped; BUILD SUCCESS | Xác nhận sạch toàn bộ test hiện tại, gồm objective và cơ chế tranh/cướp mảnh |
+| `mvn test "-Dsync.mode=optimized"` ngày 21/10 | **67 test**, 0 failure, 0 error, 0 skipped; BUILD SUCCESS | Cùng bộ test chạy qua với optimized sau lần clean baseline |
 
-Các lệnh chạy từ thư mục `server/`. Báo cáo Maven nằm trong `server/target/surefire-reports/`; `mvn clean` xóa kết quả lần trước. Hai cấu hình chạy cùng bộ 45 test, không phải 90 test khác nhau.
+Các lệnh chạy từ thư mục `server/`. Báo cáo Maven nằm trong `server/target/surefire-reports/`; `mvn clean` xóa kết quả lần trước. Hai cấu hình chạy cùng bộ 67 test, không phải 134 test khác nhau.
 
-## 2. Nội dung 45 test
+## 2. Nội dung 67 test
 
-### ConnectionTest — 16 test, socket TCP thật
+### ConnectionTest — 17 test, socket TCP thật
 
 | Tên test | Điều được xác nhận |
 | --- | --- |
@@ -33,6 +35,7 @@ Các lệnh chạy từ thư mục `server/`. Báo cáo Maven nằm trong `serve
 | `leaveRoomClearsMembershipAndAllowsCreatingAnotherRoom` | Rời phòng rồi tạo phòng mới không giữ membership cũ |
 | `createJourneyRoomPublishesModeChapterAndScores` | CREATE_ROOM mode JOURNEY tạo meadow và gửi mode/chapter/scores qua TCP |
 | `invalidRoomModeIsRejectedWithoutCreatingRoom` | Mode lạ nhận INVALID_MODE và không sinh phòng rác |
+| `joinWithModeOnlyEntersRoomsOfThatMode` | JOIN_ROOM có mode chỉ vào đúng loại phòng, tránh ghép nhầm QUICK/JOURNEY |
 | `journeyCompleteEventIsBroadcastAfterThreeTcpRounds` | Chơi ba vòng qua production Connection và nhận JOURNEY_COMPLETE đúng winner/scores |
 | `optimizedExplosionEventHidesBushPositionFromOtherViewer` | Event nổ qua TCP che x/z với viewer không nhìn thấy người trong bụi |
 
@@ -48,13 +51,13 @@ Fixture mở socket trên loopback/cổng tự cấp, chạy chính `BombServer.
 
 Cả BASELINE và OPTIMIZED được tạo tường minh trong test, nên không có chuyện tất cả test optimization vô tình chạy theo mặc định baseline.
 
-### GameRoomTest — 15 test gameplay
+### GameRoomTest — 17 test gameplay
 
-11 test nền về sẵn sàng, chế độ solo, damage, shield, boost, movement, bụi, map, spawn và kết thúc trận được giữ lại. Test đọc geometry yêu cầu snapshot đầy đủ tường minh để chạy được ở cả hai property.
+13 test nền về sẵn sàng, chế độ solo, damage, shield, boost, movement, bụi, map, spawn, cooldown bom, QUICK không có knockback Hành trình và kết thúc trận được giữ lại. Test đọc geometry yêu cầu snapshot đầy đủ tường minh để chạy được ở cả hai property.
 
 Test mới `tenPlayersCanStartAcrossMapsAndSeeds` thử 3 map × 20 seed = 60 cấu hình, mỗi cấu hình có 10 người. Kiểm tra trận bắt đầu và mọi cặp spawn cách nhau tối thiểu 28 đơn vị. Đây là một test chạy nhiều dữ liệu, không tính thành 60 test độc lập.
 
-Hai test Hành trình kiểm tra:
+Bốn test Hành trình/gameplay objective kiểm tra:
 
 - thứ tự chính xác `meadow → crossroads → crater`;
 - mỗi lần loại +1, mỗi vòng thắng +3 và tăng `roundWins`;
@@ -63,6 +66,15 @@ Hai test Hành trình kiểm tra:
 - không tạo chương thứ tư;
 - sát thương phản khiên loại đối thủ cộng đúng điểm cho chủ khiên;
 - QUICK vẫn có `chapterIndex=-1`, scores rỗng và tương thích request cũ.
+- người bị loại rơi Core có tranh chấp và người sống cuối cùng thắng đúng.
+
+### ShardObjectiveTest — 7 test objective
+
+Kiểm tra sinh/nhặt/đặt mảnh, phá khóa theo từng người, rời vòng reset tiến độ, carrier bị loại làm rơi mảnh, bệ quyết định người thắng khi hết giờ, carrier/objective hiển thị đúng trong snapshot và QUICK không sinh objective.
+
+### ShardStealMechanicsTest — 12 test tranh/cướp mảnh
+
+Kiểm tra ngưỡng charge/damage, Shield, hai hit hợp lệ, lockout người giữ cũ, bảo vệ bệ, nhiều người phá khóa độc lập, stagger, chết/disconnect, seal hoàn tất, quyền ưu tiên nhặt, quá nhiệt bệ, carrier disconnect và knockback không vượt biên map.
 
 ## 3. Phép kiểm tra kích thước JSON
 
@@ -71,16 +83,16 @@ Test `optimizedSnapshotUsesFewerUtf8BytesForIdenticalState` dùng một room c�
 Kết quả quan sát:
 
 ```text
-[Snapshot fixture] baseline=1736 optimized=754 UTF-8 bytes (JSON only)
+[Snapshot fixture] baseline=1799 optimized=821 UTF-8 bytes (JSON only)
 ```
 
-Đây là byte **JSON**, chưa cộng dấu xuống dòng hay TCP/IP overhead. Nó chứng minh trường hợp kiểm thử này có payload nhỏ hơn. Không suy diễn thành số liệu byte/giây, latency hoặc phần trăm tiết kiệm cho mọi trận; chưa có benchmark 2/4/8 client. UUID có độ dài cố định; map/seed và dữ liệu fixture được giữ cố định cho phép kiểm tra này.
+Đây là byte **JSON**, chưa cộng dấu xuống dòng hay TCP/IP overhead. Nó chỉ chứng minh fixture này có payload nhỏ hơn; không dùng riêng hai con số này để suy diễn byte/giây, latency hoặc phần trăm tiết kiệm cho mọi trận. Benchmark 2/4/8 client được đo riêng và lưu trong `experiments/`. UUID có độ dài cố định; map/seed và dữ liệu fixture được giữ cố định cho phép kiểm tra này.
 
 ## 4. Chưa xác minh
 
-- Unity client tương thích optimized, reconnect khi tạo lại đối tượng network và dựng map sau reconnect.
-- Smoke script đã được cập nhật để nhận geometry từ GAME_START ở cả baseline/optimized. `python` trên máy hiện trỏ tới Windows Store alias nên chưa chạy được script trong đợt này.
-- Tải 2/4/8 client, RTT, băng thông trên mạng thật, client chậm và TCP treo không báo mất kết nối.
+- Unity source đã batch compile và đã đọc geometry optimized; vẫn cần kiểm tra lại reconnect/end-to-end bằng 2–4 Windows client trên build cuối.
+- Smoke script đã được cập nhật để nhận geometry từ GAME_START ở cả baseline/optimized; cần ghi lại một lượt chạy mới trên commit/tag cuối.
+- Đã có benchmark loopback 2/4/8 client giả lập trong `experiments/`; chưa đo bằng Unity client trên LAN/Internet, client đọc chậm hoặc TCP treo không báo mất kết nối.
 - Mọi interleaving đa luồng hay mọi seed spawn có thể xảy ra. Test qua cung cấp bằng chứng hồi quy, không phải chứng minh không còn bất kỳ lỗi nào.
 
 Hướng dẫn học code: [THANH_VIEN_A_HUONG_DAN.md](THANH_VIEN_A_HUONG_DAN.md). Checklist tích hợp và đo: [THANH_VIEN_A_BAN_GIAO.md](THANH_VIEN_A_BAN_GIAO.md).

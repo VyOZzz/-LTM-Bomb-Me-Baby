@@ -1,6 +1,6 @@
 # Đề xuất cốt truyện và chế độ chơi — Bomb Me Baby
 
-Trạng thái: cập nhật 20/10/2026. **Hành trình Ba Mảnh đã được triển khai ở Java server, JSON protocol và UI Unity cơ bản**. Lời dẫn, hình/tiếng từng chương và kiểm thử Unity end-to-end vẫn cần hoàn thiện trong Editor. Đội 2v2 vẫn chỉ là đề xuất.
+Trạng thái: cập nhật 21/10/2026. **Hành trình Ba Mảnh đã được triển khai ở Java server, JSON protocol và Unity**, gồm objective, ba chương, điểm, lời dẫn, phim/ảnh mở đầu, HUD/VFX và SFX. Nhạc riêng theo chương và kiểm thử end-to-end 2–4 Windows client trên build cuối vẫn chưa hoàn tất. Đội 2v2 vẫn chỉ là đề xuất.
 
 ## Ý tưởng chính
 

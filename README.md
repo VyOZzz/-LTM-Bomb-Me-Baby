@@ -5,9 +5,27 @@ Prototype game PvP arena 2.5D cho tối đa 10 người, xây theo GDD được 
 ## Cấu trúc
 
 - `server/`: Java 17, TCP JSON theo từng dòng, game loop 20 Hz, snapshot 10 Hz, thread pool cho client.
-- `LTM-Bomb-Me-Baby/`: project Unity 6.3 LTS (`6000.3.6f1`) với Unity AI Assistant. Arena, camera, ánh sáng, vật cản và spawn point được lưu thành GameObject thật trong scene; player, pickup và VFX được sinh theo trạng thái mạng.
+- `LTM-Bomb-Me-Baby/`: project Unity 6.3 LTS (`6000.3.6f1`). Arena, camera, ánh sáng, vật cản và spawn point được lưu thành GameObject thật trong scene; player, pickup và VFX được sinh theo trạng thái mạng. Unity AI Assistant là công cụ Editor tùy chọn, không cần để chạy hoặc build game.
 - `scripts/network_smoke.py`: kiểm tra kết nối thật với 2 client giả lập.
 - `docs/GDD Bomb Me Baby.docx`: bản GDD gốc để nhóm đối chiếu trong quá trình phát triển.
+
+## Kiến trúc và luồng mạng
+
+```text
+Unity clients (2–4 khi demo, tối đa 10)
+        │  TCP lâu dài, JSON theo từng dòng
+        │  HELLO / room action / MOVE / EXPLODE / PING
+        ▼
+Java authoritative server
+  ├─ thread pool nhận và kiểm tra request
+  ├─ khóa riêng theo room khi đổi trạng thái
+  ├─ game loop 20 Hz
+  └─ snapshot 10 Hz + event gameplay
+        │
+        └─ STATE_UPDATE / ACK / PONG / GAME_OVER / JOURNEY_COMPLETE
+```
+
+Client chỉ gửi ý định điều khiển. Server kiểm tra sequence, tính movement, va chạm, khả năng nhìn thấy, sát thương, objective và người thắng. `baseline` gửi snapshot đầy đủ; `optimized` gửi geometry lúc bắt đầu/reconnect rồi lọc trạng thái động theo từng viewer.
 
 ## Chạy server
 
@@ -24,7 +42,7 @@ Server mặc định nghe TCP port `7777`. Mở firewall cho port này nếu ng�
 ## Tài liệu và kiểm thử phần Java server (thành viên A)
 
 - [Học từ đầu và giải thích từng phần code](docs/THANH_VIEN_A_HUONG_DAN.md).
-- [Kết quả 45 test và phạm vi đã kiểm chứng](docs/THANH_VIEN_A_KIEM_THU.md).
+- [Kết quả 67 test và phạm vi đã kiểm chứng](docs/THANH_VIEN_A_KIEM_THU.md).
 - [Bàn giao cho T/B: tích hợp JSON và so sánh baseline/optimized](docs/THANH_VIEN_A_BAN_GIAO.md).
 
 Server mặc định dùng baseline. Từ thư mục `server/`, kiểm tra cả hai cấu hình:
@@ -64,16 +82,16 @@ Khi người chơi tạo hoặc vào phòng **Hành trình Ba Mảnh** lần đ�
 
 Điều khiển: **WASD/phím mũi tên** di chuyển theo hướng màn hình, **giữ Space** nạp và **thả Space** để nổ, **E** bật Shield, **Shift** Boost. Camera bám sát quả bóng của người chơi và chỉ hiển thị một vùng nhỏ của map. Đấu nhanh đổi sang một map khác ở vòng sau; Hành trình luôn chạy `meadow → crossroads → crater`, giữ điểm qua ba vòng.
 
-## Bật AI trong Unity Editor
+## Bật AI trong Unity Editor (tùy chọn)
 
-Project đã khai báo package `com.unity.ai.assistant` tương thích với Unity 6.3. Sau lần import đầu tiên:
+Project đang khai báo package preview `com.unity.ai.assistant`. Package này chỉ phục vụ hỗ trợ trong Editor và không thuộc luồng chạy game. Nếu cần dùng:
 
 1. Đăng nhập Unity ID trong Unity Hub và liên kết project với một Unity Cloud project.
 2. Nếu nút **AI** chưa hiện, nhấp chuột phải vùng trống trên toolbar rồi chọn **Services > AI**.
 3. Mở **AI**, chấp nhận điều khoản và để Unity hoàn tất cài đặt/kích hoạt package.
 4. Chọn **Open Assistant** để hỏi, sinh hoặc review code C# ngay trong Editor.
 
-Unity AI Assistant cần kết nối mạng và quyền sử dụng/trial hoặc credits trên tài khoản Unity. File package chỉ chuẩn bị project; không thể thay người dùng đăng nhập hay chấp nhận điều khoản dịch vụ.
+Unity AI Assistant cần kết nối mạng và quyền sử dụng/trial hoặc credits trên tài khoản Unity. Người kiểm tra source không cần kích hoạt AI để mở scene, chạy game hoặc build player.
 
 ## Luật prototype
 
@@ -99,10 +117,37 @@ Khi server đang chạy:
 python3 scripts/network_smoke.py
 ```
 
-Unity client hiển thị RTT, số message gửi/nhận và dùng nội suy vị trí giữa các snapshot. `ACK.processingMicros` là thời gian server xử lý một message; các chỉ số hiện chưa được ghi ra file để so sánh benchmark tự động.
+Unity client hiển thị RTT, số message gửi/nhận và dùng nội suy vị trí giữa các snapshot. `ACK.processingMicros` là thời gian server xử lý một message. `scripts/load_test.py` và `scripts/run_benchmark.ps1` ghi dữ liệu CSV để so sánh tự động; kết quả và giới hạn phép đo nằm trong [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md).
+
+## Điểm cải tiến và kết quả thực nghiệm
+
+Contribution kỹ thuật chính là **selective state synchronization**:
+
+- geometry tĩnh được gửi một lần ở `GAME_START` hoặc khi reconnect, thay vì lặp lại trong mọi snapshot;
+- player trong bụi/ở xa và pickup ngoài phạm vi được lọc theo từng viewer;
+- event nổ không gửi tọa độ nguồn cho viewer không được phép nhìn thấy.
+
+18 lượt đo loopback với 2/4/8 client giả lập cho thấy `optimized` giảm trung bình khoảng **66–79% byte nhận trên mỗi client** so với `baseline`. Số message/giây gần như không đổi và kết quả hiện chưa chứng minh giảm RTT. Dữ liệu thô nằm trong `experiments/raw/`; cách chạy lại, bảng tổng hợp và hạn chế được ghi trong [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md).
+
+Trạng thái kiểm tra ngày 21/10/2026:
+
+- 67/67 test Java qua ở cả `baseline` và `optimized`;
+- Unity `6000.3.6f1` batch compile thành công, 11 AudioClip được import;
+- source Unity đã hiểu snapshot optimized, hai game mode, reconnect geometry và tọa độ event bị ẩn;
+- vẫn cần phát hành lại Windows build và kiểm tra end-to-end 2–4 client trên commit cuối.
 
 ## Giới hạn hiện tại
 
-- Cần mở project bằng Unity để Unity tạo scene và kiểm tra build hình ảnh. Phần Unity không thể được chạy trong môi trường không có Unity Editor.
-- Chưa có lưu lịch sử trận, bot, skin, matchmaking hay TLS. Baseline gửi snapshot đầy đủ ở 10 Hz; optimized bỏ geometry ở snapshot thường và lọc vật phẩm theo khoảng cách. Unity optimized và số liệu benchmark thực tế còn cần tích hợp/kiểm chứng, xem tài liệu bàn giao phần A.
+- Source Unity đã compile bằng Editor nhưng repository chưa chứa bản Windows phát hành của commit hiện tại; cần build và kiểm tra trên máy sạch trước khi nộp.
+- Chưa có lưu lịch sử trận, bot, skin, matchmaking hay TLS. Server public hiện là TCP thuần dành cho demo và chưa có gói deploy chuẩn hóa.
+- Benchmark hiện dùng loopback, map ngẫu nhiên và client giả lập; cần đo lại trên commit cuối, cố định map/seed nếu có thể và bổ sung LAN hai máy.
 - Không có cơ chế chống gian lận toàn diện; server đã giới hạn movement và bỏ qua sequence trùng/cũ.
+
+## Tài liệu và nguồn tham khảo
+
+- [Giao thức TCP JSON](docs/PROTOCOL.md)
+- [Thiết lập và kết quả thực nghiệm](docs/EXPERIMENTS.md)
+- [Kết quả kiểm thử server](docs/THANH_VIEN_A_KIEM_THU.md)
+- [Kịch bản Hành trình Ba Mảnh](docs/STORY_SCRIPT.md)
+- [Nguồn và giấy phép âm thanh](docs/AUDIO_CREDITS.md)
+- [Unity Manual](https://docs.unity3d.com/Manual/index.html), [Java networking API](https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/net/package-summary.html), [Gson](https://github.com/google/gson) và [JUnit 5](https://junit.org/junit5/)

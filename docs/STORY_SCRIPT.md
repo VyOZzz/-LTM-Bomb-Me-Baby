@@ -1,6 +1,6 @@
 # Kịch bản màn chơi — Hành trình Ba Mảnh
 
-Trạng thái: **kịch bản thiết kế**, viết ngày 15/10/2026. Đây là kịch bản chi tiết cho chế độ **Hành trình Ba Mảnh** đã đề xuất trong `docs/GAME_STORY_MODES.md`. Chế độ này **chưa được triển khai**. Phần mô tả bản đồ dưới đây lấy theo layout có thật trong `server/src/main/java/bombmebaby/GameMap.java`. Các con số luật chơi lấy theo `GameRules.java`.
+Trạng thái: viết ngày 15/10/2026, cập nhật triển khai ngày 21/10/2026. Chế độ **Hành trình Ba Mảnh** đã có ở server và Unity: ba chương cố định, objective mảnh Tim Lửa, điểm/vòng thắng, lời dẫn từ `Assets/StreamingAssets/story.json`, phim mở đầu hoặc ba ảnh dự phòng, bảng điểm và màn kết. Tài liệu này vẫn là nguồn thiết kế nội dung; khi nội dung khác code/JSON hiện tại thì `GameRules.java`, `ShardObjective.java`, `GameRoom.java` và `story.json` là nguồn thực thi cần đối chiếu trước khi báo cáo.
 
 ## 1. Giọng kể và người dẫn chuyện
 

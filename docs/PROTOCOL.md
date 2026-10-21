@@ -1,6 +1,6 @@
 # TCP JSON protocol
 
-Cập nhật 20/10/2026. Mỗi message là một JSON object trên một dòng UTF-8. TCP được giữ xuyên suốt phiên chơi. Client phải gửi `HELLO` đầu tiên.
+Cập nhật 21/10/2026. Mỗi message là một JSON object trên một dòng UTF-8. TCP được giữ xuyên suốt phiên chơi. Client phải gửi `HELLO` đầu tiên.
 
 ## Sequence và reconnect
 
