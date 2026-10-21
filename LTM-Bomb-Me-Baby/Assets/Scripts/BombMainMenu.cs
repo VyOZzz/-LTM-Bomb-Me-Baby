@@ -50,14 +50,14 @@ sealed class BombMainMenu {
 
         GUI.Label(new Rect(x, y, w, 24 * s), "TÊN NGƯỜI CHƠI", label);
         y += 27 * s;
-        playerName = GUI.TextField(new Rect(x, y, w, 52 * s), playerName ?? "", 20, field);
+        playerName = TextField(new Rect(x, y, w, 52 * s), playerName ?? "", 20, field);
         y += 66 * s;
 
         if (advanced) {
             GUI.Label(new Rect(x, y, w, 24 * s), "ĐỊA CHỈ SERVER", label);
             y += 27 * s;
-            host = GUI.TextField(new Rect(x, y, w * .7f - 6, 48 * s), host ?? "", field);
-            port = GUI.TextField(new Rect(x + w * .7f + 6, y, w * .3f - 6, 48 * s), port ?? "", 5, field);
+            host = TextField(new Rect(x, y, w * .7f - 6, 48 * s), host ?? "", -1, field);
+            port = TextField(new Rect(x + w * .7f + 6, y, w * .3f - 6, 48 * s), port ?? "", 5, field);
             y += 58 * s;
             GUI.Label(new Rect(x, y, w, 38 * s),
                 "127.0.0.1 chỉ dùng khi server chạy trên chính máy này.", helper);

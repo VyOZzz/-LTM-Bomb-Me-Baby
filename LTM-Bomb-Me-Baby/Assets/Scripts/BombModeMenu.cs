@@ -171,7 +171,7 @@ sealed class BombModeMenu {
         Matrix4x4 savedMatrix = GUI.matrix;
         GUI.matrix = Matrix4x4.identity;
         GUI.SetNextControlName("join-code");
-        string typed = GUI.TextField(ToScreen(input), code, CodeLength + 2, field);
+        string typed = TextField(ToScreen(input), code, CodeLength + 2, field);
         GUI.matrix = savedMatrix;
         GUI.backgroundColor = savedBackground;
         joinCode = NormalizeCode(typed);

@@ -49,6 +49,20 @@ static class BombUi {
         GUI.color = saved;
     }
 
+    /// Text field whose blinking caret uses the field's own ink colour. IMGUI draws the caret
+    /// with one skin-wide colour that is nearly white, so it vanished on our light inputs.
+    public static string TextField(Rect rect, string text, int maxLength, GUIStyle style) {
+        GUISettings settings = GUI.skin.settings;
+        Color savedCursor = settings.cursorColor;
+        float savedFlash = settings.cursorFlashSpeed;
+        settings.cursorColor = style.focused.textColor;
+        settings.cursorFlashSpeed = 1.6f;
+        string result = GUI.TextField(rect, text, maxLength, style);
+        settings.cursorColor = savedCursor;
+        settings.cursorFlashSpeed = savedFlash;
+        return result;
+    }
+
     /// Rounded progress bar with a darker track; value is clamped to 0..1.
     public static void Bar(Rect rect, float value, Color color) {
         Fill(rect, new Color(0, 0, 0, .45f), RoundSmall);
