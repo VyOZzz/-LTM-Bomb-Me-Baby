@@ -1,29 +1,34 @@
 using UnityEngine;
-using System.Collections.Generic;
 
-/// Central music and SFX player. Clips live under Resources/Audio so both the authored scene
-/// and the runtime bootstrap path work without Inspector references.
+/// Downloaded recordings, mixed for a top-down arena. See docs/AUDIO_CREDITS.md.
 public sealed class BombAudio : MonoBehaviour {
     public static BombAudio Instance { get; private set; }
 
-    AudioSource oneShot;
-    AudioSource chargeLoop;
-    AudioSource shieldBody;
-    AudioSource boostBody;
-    AudioSource music;
-    AudioClip chargeClip, explosionClip, explosionLowClip, energyClip, coreClip, shieldClip, boostClip;
-    AudioClip shieldBodyClip, boostBodyClip;
+    enum Cue { Explosion, Energy, Core, Shield, Boost, Damage, Land, Drop, ShieldHit, Ui, Count }
+    sealed class Voice {
+        public AudioSource source;
+        public float gain;
+        public bool local;
+        public Vector3 position;
+        public float range;
+    }
+
+    readonly Voice[] voices = new Voice[20];
+    readonly float[] nextCue = new float[(int)Cue.Count * 2];
+    readonly AudioSource[] music = new AudioSource[2];
+    readonly float[] musicWeight = new float[2];
+    AudioSource chargeLoop, shieldBody, boostBody, result;
+    AudioClip chargeClip, explosionLowClip, energyClip, coreClip, shieldClip, boostClip;
+    AudioClip shieldBodyClip, boostBodyClip, shieldHitClip, dropClip;
     AudioClip damageClip, victoryClip, defeatClip, uiClickClip;
+    AudioClip[] explosions, landings;
     AudioClip menuMusic, meadowMusic, crossroadsMusic, craterMusic, desiredMusic;
-    static readonly List<AudioSource> SpatialSources = new List<AudioSource>();
-    const int MaxSpatialVoices = 10;
-    bool charging;
-    float chargeAmount;
-    float musicDuckUntil;
-    float shieldBodyStartedAt = -1;
-    float boostBodyStartedAt = -1;
-    const float ShieldBodyDuration = 1.5f;
-    const float BoostBodyDuration = .9f;
+    Vector3 listeningPosition, listeningRight = Vector3.right;
+    bool hasListeningPosition, charging;
+    float chargeAmount, chargeGain, musicDuckUntil, musicDuck = 1;
+    float shieldStarted = -1, boostStarted = -1;
+    int activeMusic, explosionVariant, landingVariant;
+    const float ShieldDuration = 1.5f, BoostDuration = .9f;
 
     void Awake() {
         if (Instance != null && Instance != this) {
@@ -31,39 +36,31 @@ public sealed class BombAudio : MonoBehaviour {
             return;
         }
         Instance = this;
+        for (int i = 0; i < voices.Length; i++)
+            voices[i] = new Voice { source = CreateSource(false, 128) };
+        chargeLoop = CreateSource(true, 100);
+        shieldBody = CreateSource(true, 100);
+        boostBody = CreateSource(true, 100);
+        result = CreateSource(false, 64);
+        for (int i = 0; i < music.Length; i++) music[i] = CreateSource(true, 180);
 
-        oneShot = gameObject.AddComponent<AudioSource>();
-        oneShot.playOnAwake = false;
-        oneShot.spatialBlend = 0;
-
-        chargeLoop = gameObject.AddComponent<AudioSource>();
-        chargeLoop.playOnAwake = false;
-        chargeLoop.loop = true;
-        chargeLoop.spatialBlend = 0;
-
-        shieldBody = CreateAbilityBodySource();
-        boostBody = CreateAbilityBodySource();
-
-        music = gameObject.AddComponent<AudioSource>();
-        music.playOnAwake = false;
-        music.loop = true;
-        music.spatialBlend = 0;
-        music.priority = 180;
-        music.volume = 0;
-
-        chargeClip = Load("sfx_charge_loop");
-        explosionClip = Load("kenney_explosion_crunch");
-        explosionLowClip = Load("kenney_explosion_low");
-        energyClip = Load("kenney_energy_pickup");
-        coreClip = Load("kenney_core_pickup");
-        shieldClip = Load("kenney_shield");
-        boostClip = Load("kenney_boost");
-        shieldBodyClip = Load("kenney_shield_body");
-        boostBodyClip = Load("kenney_boost_body");
-        damageClip = Load("kenney_damage");
-        victoryClip = Load("sfx_victory");
-        defeatClip = Load("sfx_defeat");
-        uiClickClip = Load("kenney_ui_click");
+        chargeClip = Load("mix_charge");
+        explosions = new[] { Load("mix_explosion_1"), Load("mix_explosion_2"), Load("mix_explosion_3") };
+        explosionLowClip = Load("mix_explosion_low");
+        energyClip = Load("mix_energy");
+        coreClip = Load("mix_core");
+        shieldClip = Load("mix_shield");
+        shieldBodyClip = Load("mix_shield_body");
+        shieldHitClip = Load("mix_shield_hit");
+        boostClip = Load("mix_boost");
+        boostBodyClip = Load("mix_boost_body");
+        damageClip = Load("mix_damage");
+        landings = new[] { Load("mix_land_1"), Load("mix_land_2") };
+        dropClip = Load("mix_drop");
+        victoryClip = Load("mix_victory");
+        defeatClip = Load("mix_defeat");
+        uiClickClip = Load("mix_ui");
+        // User-selected lobby recording and its playback level stay unchanged.
         menuMusic = Load("music_menu");
         meadowMusic = Load("music_meadow");
         crossroadsMusic = Load("music_crossroads");
@@ -72,36 +69,15 @@ public sealed class BombAudio : MonoBehaviour {
         SetMenuMusic();
     }
 
-    void Update() {
-        chargeLoop.volume = BombSettings.Sfx * Mathf.Lerp(.12f, .32f, chargeAmount);
-        chargeLoop.pitch = Mathf.Lerp(.82f, 1.42f, chargeAmount);
-        if (charging && chargeClip != null) {
-            if (!chargeLoop.isPlaying) chargeLoop.Play();
-        } else if (chargeLoop.isPlaying) chargeLoop.Stop();
-
-        UpdateShieldBody();
-        UpdateBoostBody();
-
-        bool ducking = charging || Time.unscaledTime < musicDuckUntil;
-        float normalMusicLevel = desiredMusic == menuMusic ? .18f : .10f;
-        float musicTarget = BombSettings.Music * (ducking ? .035f : normalMusicLevel);
-        if (music.clip != desiredMusic) {
-            music.volume = Mathf.MoveTowards(music.volume, 0, Time.unscaledDeltaTime * .75f);
-            if (music.volume <= .01f) {
-                music.Stop();
-                music.clip = desiredMusic;
-                if (desiredMusic != null) music.Play();
-            }
-        } else {
-            // Gameplay cues win immediately; music returns slowly so repeated action
-            // sounds do not fight a constantly pumping background track.
-            float fadeSpeed = music.volume > musicTarget ? 2.8f : .28f;
-            music.volume = Mathf.MoveTowards(music.volume, musicTarget, Time.unscaledDeltaTime * fadeSpeed);
-        }
-    }
-
-    void OnDestroy() {
-        if (Instance == this) Instance = null;
+    AudioSource CreateSource(bool loop, int priority) {
+        AudioSource source = gameObject.AddComponent<AudioSource>();
+        source.playOnAwake = false;
+        source.loop = loop;
+        source.spatialBlend = 0;
+        source.dopplerLevel = 0;
+        source.priority = priority;
+        source.volume = 0;
+        return source;
     }
 
     static AudioClip Load(string name) {
@@ -110,54 +86,147 @@ public sealed class BombAudio : MonoBehaviour {
         return clip;
     }
 
-    AudioSource CreateAbilityBodySource() {
-        AudioSource source = gameObject.AddComponent<AudioSource>();
-        source.playOnAwake = false;
-        source.loop = true;
-        source.spatialBlend = 0;
-        source.priority = 112;
-        return source;
+    void Update() {
+        float dt = Time.unscaledDeltaTime;
+        float chargeTarget = charging ? Mathf.Lerp(.16f, .32f, chargeAmount) : 0;
+        chargeGain = Mathf.MoveTowards(chargeGain, chargeTarget, dt * (charging ? 1.5f : 2.8f));
+        chargeLoop.volume = BombSettings.Sfx * chargeGain;
+        chargeLoop.pitch = Mathf.Lerp(.85f, 1.3f, chargeAmount);
+        if (charging && chargeClip != null && !chargeLoop.isPlaying) chargeLoop.Play();
+        if (!charging && chargeGain <= .001f) chargeLoop.Stop();
+        UpdateAbility(shieldBody, ref shieldStarted, ShieldDuration, .10f, .28f, .22f, false);
+        UpdateAbility(boostBody, ref boostStarted, BoostDuration, .04f, .24f, .30f, true);
+        result.volume = BombSettings.Sfx * .65f;
+        UpdateVoices();
+        UpdateMusic(dt);
     }
 
-    void UpdateShieldBody() {
-        if (shieldBodyStartedAt < 0) return;
-        float elapsed = Time.unscaledTime - shieldBodyStartedAt;
-        if (elapsed >= ShieldBodyDuration) {
-            shieldBody.Stop();
-            shieldBodyStartedAt = -1;
+    void UpdateVoices() {
+        float totalGain = 0;
+        foreach (Voice voice in voices) {
+            float unused;
+            if (voice.source.isPlaying)
+                totalGain += voice.gain * Audibility(voice.local, voice.position, voice.range, out unused);
+        }
+        // Reserve headroom for loops and music even when several explosions overlap.
+        float headroom = Mathf.Min(1, .9f / Mathf.Max(.001f, totalGain));
+        foreach (Voice voice in voices) {
+            if (!voice.source.isPlaying) continue;
+            float pan, attenuation = Audibility(voice.local, voice.position, voice.range, out pan);
+            voice.source.volume = voice.gain * attenuation * headroom * BombSettings.Sfx;
+            voice.source.panStereo = pan;
+        }
+    }
+
+    void UpdateMusic(float dt) {
+        // Use two sources so the next track enters while the previous one fades out.
+        if (music[activeMusic].clip != desiredMusic) {
+            int incoming = 1 - activeMusic;
+            AudioSource source = music[incoming];
+            if (source.clip != desiredMusic) {
+                source.Stop();
+                source.clip = desiredMusic;
+                musicWeight[incoming] = 0;
+                source.volume = 0;
+            }
+            if (desiredMusic != null) {
+                // Streaming data may not be ready on the first frame after loading.
+                if (desiredMusic.loadState == AudioDataLoadState.Unloaded) desiredMusic.LoadAudioData();
+                if (desiredMusic.loadState != AudioDataLoadState.Loaded) return;
+                if (!source.isPlaying) source.Play();
+            }
+            activeMusic = incoming;
+        }
+        bool duck = BombSettings.Sfx > .001f && (charging || Time.unscaledTime < musicDuckUntil || result.isPlaying);
+        musicDuck = Mathf.MoveTowards(musicDuck, duck ? .24f : 1, dt * (duck ? 8 : .7f));
+        for (int i = 0; i < music.Length; i++) {
+            musicWeight[i] = Mathf.MoveTowards(musicWeight[i], i == activeMusic ? 1 : 0, dt / 1.2f);
+            float level = music[i].clip == menuMusic ? .18f : .26f;
+            music[i].volume = BombSettings.Music * level * musicWeight[i] * musicDuck;
+            if (i != activeMusic && musicWeight[i] == 0) music[i].Stop();
+        }
+    }
+
+    void UpdateAbility(AudioSource source, ref float started, float duration,
+            float attackTime, float releaseTime, float level, bool accelerate) {
+        if (started < 0) return;
+        float elapsed = Time.unscaledTime - started;
+        if (elapsed >= duration) {
+            source.Stop();
+            started = -1;
             return;
         }
-
-        float attack = Mathf.SmoothStep(0, 1, Mathf.Clamp01(elapsed / .1f));
-        float release = Mathf.SmoothStep(0, 1, Mathf.Clamp01((ShieldBodyDuration - elapsed) / .28f));
-        shieldBody.volume = BombSettings.Sfx * .34f * Mathf.Min(attack, release);
-        shieldBody.pitch = .94f + Mathf.Sin(elapsed * 9f) * .035f;
+        float attack = Mathf.SmoothStep(0, 1, elapsed / attackTime);
+        float release = Mathf.SmoothStep(0, 1, (duration - elapsed) / releaseTime);
+        source.volume = BombSettings.Sfx * level * Mathf.Min(attack, release);
+        source.pitch = accelerate ? Mathf.Lerp(.88f, 1.15f, elapsed / duration)
+            : .95f + Mathf.Sin(elapsed * 7) * .02f;
     }
 
-    void UpdateBoostBody() {
-        if (boostBodyStartedAt < 0) return;
-        float elapsed = Time.unscaledTime - boostBodyStartedAt;
-        if (elapsed >= BoostBodyDuration) {
-            boostBody.Stop();
-            boostBodyStartedAt = -1;
-            return;
-        }
-
-        float attack = Mathf.SmoothStep(0, 1, Mathf.Clamp01(elapsed / .05f));
-        float release = Mathf.SmoothStep(0, 1, Mathf.Clamp01((BoostBodyDuration - elapsed) / .22f));
-        float progress = Mathf.SmoothStep(0, 1, elapsed / BoostBodyDuration);
-        boostBody.volume = BombSettings.Sfx * .46f * Mathf.Min(attack, release);
-        boostBody.pitch = Mathf.Lerp(.82f, 1.28f, progress);
-    }
-
-    void StartAbilityBody(AudioSource source, AudioClip clip, ref float startedAt) {
+    void StartAbility(AudioSource source, AudioClip clip, ref float started) {
         if (clip == null || BombSettings.Sfx <= 0) return;
         source.Stop();
         source.clip = clip;
-        source.time = 0;
         source.volume = 0;
-        startedAt = Time.unscaledTime;
+        source.pitch = .9f;
+        started = Time.unscaledTime;
         source.Play();
+    }
+
+    public void SetListeningPoint(Vector3 position, Vector3 screenRight) {
+        listeningPosition = position;
+        screenRight.y = 0;
+        listeningRight = screenRight.sqrMagnitude > .01f ? screenRight.normalized : Vector3.right;
+        hasListeningPosition = true;
+    }
+
+    float Audibility(bool local, Vector3 position, float range, out float pan) {
+        pan = 0;
+        if (local) return 1;
+        if (!hasListeningPosition) return 0;
+        Vector3 offset = position - listeningPosition;
+        offset.y = 0;
+        float distance = offset.magnitude;
+        pan = Mathf.Clamp(Vector3.Dot(offset, listeningRight) / 18f, -.65f, .65f);
+        // Camera height must not make nearby pickups and abilities inaudible.
+        return .65f * (1 - Mathf.SmoothStep(0, 1, Mathf.InverseLerp(2, range, distance)));
+    }
+
+    bool AllowCue(Cue cue, bool local, float interval) {
+        if (BombSettings.Sfx <= 0) return false;
+        int index = (int)cue + (local ? 0 : (int)Cue.Count);
+        if (Time.unscaledTime < nextCue[index]) return false;
+        nextCue[index] = Time.unscaledTime + interval;
+        return true;
+    }
+
+    void Play(AudioClip clip, bool local, Vector3 position, float gain, float range = 25, float pitch = 1) {
+        if (clip == null || BombSettings.Sfx <= 0) return;
+        float pan, attenuation = Audibility(local, position, range, out pan);
+        if (attenuation < .005f) return;
+        // Reserve 12 voices for local feedback; remote activity cannot flood the mix.
+        int start = local ? 0 : 12, end = local ? 12 : voices.Length;
+        int playing = 0;
+        Voice free = null;
+        for (int i = start; i < end; i++) {
+            if (voices[i].source.isPlaying) playing++;
+            else if (free == null) free = voices[i];
+        }
+        if (free == null) return;
+        free.gain = gain / Mathf.Sqrt(1 + playing * .25f);
+        free.local = local;
+        free.position = position;
+        free.range = range;
+        free.source.clip = clip;
+        free.source.pitch = pitch;
+        free.source.panStereo = pan;
+        free.source.volume = free.gain * attenuation * BombSettings.Sfx;
+        free.source.Play();
+        UpdateVoices();
+    }
+
+    void DuckMusic(float seconds) {
+        if (BombSettings.Sfx > 0) musicDuckUntil = Mathf.Max(musicDuckUntil, Time.unscaledTime + seconds);
     }
 
     public void SetCharging(bool active, float amount = 0) {
@@ -166,16 +235,28 @@ public sealed class BombAudio : MonoBehaviour {
     }
 
     public void StopGameplayLoops() {
-        SetCharging(false);
-        shieldBodyStartedAt = -1;
-        boostBodyStartedAt = -1;
+        charging = false;
+        chargeAmount = chargeGain = 0;
+        chargeLoop.Stop();
+        shieldStarted = boostStarted = -1;
         shieldBody.Stop();
         boostBody.Stop();
     }
 
-    public void SetMenuMusic() => desiredMusic = menuMusic;
+    public void SetMenuMusic() {
+        StopGameplayLoops();
+        foreach (Voice voice in voices) voice.source.Stop();
+        result.Stop();
+        hasListeningPosition = false;
+        musicDuckUntil = 0;
+        desiredMusic = menuMusic;
+    }
 
     public void SetMapMusic(string mapId) {
+        StopGameplayLoops();
+        result.Stop();
+        musicDuckUntil = 0;
+        System.Array.Clear(nextCue, 0, nextCue.Length);
         switch (mapId) {
             case "meadow": desiredMusic = meadowMusic; break;
             case "crossroads": desiredMusic = crossroadsMusic; break;
@@ -185,87 +266,84 @@ public sealed class BombAudio : MonoBehaviour {
     }
 
     public void PlayEnergyPickup(bool local, Vector3 position) {
-        DuckMusic(.10f);
-        PlayForPlayer(energyClip, local, position, .86f);
+        if (AllowCue(Cue.Energy, local, .065f))
+            Play(energyClip, local, position, .48f, 20, Random.Range(.97f, 1.06f));
     }
 
     public void PlayCorePickup(bool local, Vector3 position) {
-        DuckMusic(.24f);
-        PlayForPlayer(coreClip, local, position, 1f);
+        if (!AllowCue(Cue.Core, local, .12f)) return;
+        if (local) DuckMusic(.25f);
+        Play(coreClip, local, position, .60f);
     }
 
     public void PlayShield(bool local, Vector3 position) {
-        DuckMusic(ShieldBodyDuration);
-        PlayForPlayer(shieldClip, local, position, .95f);
-        if (local) StartAbilityBody(shieldBody, shieldBodyClip, ref shieldBodyStartedAt);
-    }
-
-    public void PlayBoost(bool local, Vector3 position) {
-        DuckMusic(BoostBodyDuration);
-        PlayForPlayer(boostClip, local, position, .92f);
-        if (local) StartAbilityBody(boostBody, boostBodyClip, ref boostBodyStartedAt);
-    }
-
-    public void PlayDamage(bool local, Vector3 position) {
-        DuckMusic(.38f);
-        PlayForPlayer(damageClip, local, position, local ? 1f : .72f);
-    }
-    public void PlayResult(bool won) {
-        DuckMusic(1.4f);
-        Play2D(won ? victoryClip : defeatClip, .9f);
-    }
-
-    public void PlayExplosion(Vector3 position, float radius, bool local) {
-        // Layer a crunchy transient over a low-frequency body. The local player's blast
-        // is 2D because the overhead camera's AudioListener sits about 31 units away.
-        DuckMusic(.65f);
-        float power = Mathf.InverseLerp(2, 12, radius);
-        float crunchVolume = Mathf.Lerp(.76f, 1f, power);
-        float lowVolume = Mathf.Lerp(.48f, .76f, power);
+        if (!AllowCue(Cue.Shield, local, .15f)) return;
+        Play(shieldClip, local, position, .48f);
         if (local) {
-            Play2D(explosionClip, crunchVolume);
-            Play2D(explosionLowClip, lowVolume);
-        } else {
-            float range = Mathf.Lerp(42, 62, power);
-            PlayAt(explosionClip, position, crunchVolume * .72f, range);
-            PlayAt(explosionLowClip, position, lowVolume * .62f, range);
+            DuckMusic(.3f);
+            StartAbility(shieldBody, shieldBodyClip, ref shieldStarted);
         }
     }
 
+    public void PlayBoost(bool local, Vector3 position) {
+        if (!AllowCue(Cue.Boost, local, .15f)) return;
+        Play(boostClip, local, position, .65f, 25, Random.Range(.96f, 1.04f));
+        if (local) {
+            DuckMusic(.3f);
+            StartAbility(boostBody, boostBodyClip, ref boostStarted);
+        }
+    }
+
+    public void PlayShieldHit(bool local, Vector3 position) {
+        if (AllowCue(Cue.ShieldHit, local, .10f))
+            Play(shieldHitClip, local, position, .44f, 25, .9f);
+    }
+
+    public void PlayLanding(bool local, Vector3 position, float speed) {
+        if (AllowCue(Cue.Land, local, .12f))
+            Play(landings[landingVariant++ % landings.Length], local, position,
+                Mathf.Lerp(.18f, .40f, Mathf.InverseLerp(1, 7, speed)), 20, Random.Range(.94f, 1.04f));
+    }
+
+    public void PlayDrop(bool local, Vector3 position) {
+        if (AllowCue(Cue.Drop, local, .15f)) Play(dropClip, local, position, .42f, 24);
+    }
+
+    public void PlayDamage(bool local, Vector3 position) {
+        if (!AllowCue(Cue.Damage, local, .10f)) return;
+        if (local) DuckMusic(.35f);
+        Play(damageClip, local, position, .58f);
+    }
+
+    public void PlayResult(bool won) {
+        StopGameplayLoops();
+        foreach (Voice voice in voices) voice.source.Stop();
+        result.Stop();
+        result.clip = won ? victoryClip : defeatClip;
+        result.volume = BombSettings.Sfx * .65f;
+        if (result.clip != null && BombSettings.Sfx > 0) {
+            DuckMusic(result.clip.length + .4f);
+            result.Play();
+        }
+    }
+
+    public void PlayExplosion(Vector3 position, float radius, bool local) {
+        if (!AllowCue(Cue.Explosion, local, local ? .08f : .12f)) return;
+        float pan;
+        if (Audibility(local, position, 38, out pan) < .005f) return;
+        DuckMusic(.55f);
+        float power = Mathf.InverseLerp(2, 12, radius);
+        Play(explosions[explosionVariant++ % explosions.Length], local, position,
+            Mathf.Lerp(.50f, .72f, power), 38, Random.Range(.94f, 1.03f));
+        Play(explosionLowClip, local, position, Mathf.Lerp(.18f, .30f, power), 38);
+    }
+
     public static void UiClick() {
-        if (Instance != null) Instance.Play2D(Instance.uiClickClip, .55f);
+        if (Instance != null && Instance.AllowCue(Cue.Ui, true, .045f))
+            Instance.Play(Instance.uiClickClip, true, Vector3.zero, .30f);
     }
 
-    void PlayForPlayer(AudioClip clip, bool local, Vector3 position, float volume) {
-        if (local) Play2D(clip, volume);
-        else PlayAt(clip, position, volume * .52f, 22);
-    }
-
-    void DuckMusic(float seconds) => musicDuckUntil = Mathf.Max(musicDuckUntil, Time.unscaledTime + seconds);
-
-    void Play2D(AudioClip clip, float volume) {
-        if (clip == null || BombSettings.Sfx <= 0) return;
-        oneShot.PlayOneShot(clip, volume * BombSettings.Sfx);
-    }
-
-    static void PlayAt(AudioClip clip, Vector3 position, float volume, float maxDistance) {
-        if (clip == null || BombSettings.Sfx <= 0) return;
-        SpatialSources.RemoveAll(source => source == null || !source.isPlaying);
-        if (SpatialSources.Count >= MaxSpatialVoices) return;
-        GameObject emitter = new GameObject("SFX - " + clip.name);
-        emitter.transform.position = position;
-        AudioSource source = emitter.AddComponent<AudioSource>();
-        source.clip = clip;
-        source.playOnAwake = false;
-        source.spatialBlend = 1;
-        source.rolloffMode = AudioRolloffMode.Linear;
-        source.minDistance = 2.5f;
-        source.maxDistance = maxDistance;
-        source.dopplerLevel = 0;
-        source.priority = clip.name.Contains("explosion") ? 96 : 128;
-        source.volume = volume * BombSettings.Sfx;
-        source.Play();
-        SpatialSources.Add(source);
-        Destroy(emitter, clip.length + .1f);
+    void OnDestroy() {
+        if (Instance == this) Instance = null;
     }
 }

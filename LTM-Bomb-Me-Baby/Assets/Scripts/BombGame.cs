@@ -207,12 +207,19 @@ public sealed class BombGame : MonoBehaviour {
         }
         if (phase == "PLAYING" && !overlay.IsOpen && (cinematic == null || !cinematic.IsPlaying)
                 && network.Connected && !string.IsNullOrEmpty(myId)) HandleInput();
+        Avatar listeningAvatar = AvatarOf(myId);
+        if (listeningAvatar?.body != null)
+            gameAudio.SetListeningPoint(listeningAvatar.body.transform.position,
+                gameCamera != null ? gameCamera.transform.right : Vector3.right);
         foreach (Avatar avatar in avatars.Values) {
             if (avatar.body == null) continue;
             if (avatar.visualY > 0 || avatar.verticalVelocity > 0) {
                 avatar.verticalVelocity -= 12f * Time.deltaTime;
                 avatar.visualY += avatar.verticalVelocity * Time.deltaTime;
                 if (avatar.visualY <= 0) {
+                    if (phase == "PLAYING" && avatar.body.activeInHierarchy && avatar.state != null)
+                        gameAudio.PlayLanding(avatar.state.id == myId, avatar.body.transform.position,
+                            Mathf.Abs(avatar.verticalVelocity));
                     avatar.visualY = 0;
                     avatar.verticalVelocity = 0;
                     avatar.squash = .16f;
@@ -350,9 +357,10 @@ public sealed class BombGame : MonoBehaviour {
                 if (room != null) {
                     TrackReconnectDeadlines(room.players);
                     phase = room.phase;
-                    if (phase == "WAITING")
+                    if (phase == "WAITING") {
+                        gameAudio.SetMenuMusic();
                         status = "Đã vào phòng " + room.code + ". Chờ đủ người và mọi người sẵn sàng.";
-                    else if (phase == "PLAYING" && status.Contains("Đang tự thử lại"))
+                    } else if (phase == "PLAYING" && status.Contains("Đang tự thử lại"))
                         status = "Đã kết nối lại vào trận.";
                 }
                 break;
@@ -398,6 +406,8 @@ public sealed class BombGame : MonoBehaviour {
                 if (avatars.TryGetValue(msg.playerId, out Avatar knocked)) {
                     float bounce = Mathf.Lerp(3.2f, 6.2f, Mathf.InverseLerp(0, 16, msg.strength));
                     if (msg.shielded) bounce *= .45f;
+                    if (msg.shielded && knocked.body.activeInHierarchy)
+                        gameAudio.PlayShieldHit(msg.playerId == myId, knocked.body.transform.position);
                     knocked.verticalVelocity = Mathf.Max(knocked.verticalVelocity, bounce);
                     knocked.squash = 0;
                 }
@@ -409,6 +419,9 @@ public sealed class BombGame : MonoBehaviour {
             case "CORE_PICKED":
                 gameAudio.PlayCorePickup(msg.playerId == myId, PositionOf(msg.playerId));
                 ShowStoryEvent(msg);
+                break;
+            case "CORE_SPAWNED":
+                gameAudio.PlayDrop(false, new Vector3(msg.x, 0, msg.z));
                 break;
             case "PLAYER_DAMAGED":
                 gameAudio.PlayDamage(msg.playerId == myId, PositionOf(msg.playerId));
@@ -673,6 +686,14 @@ public sealed class BombGame : MonoBehaviour {
     /// Big centered message when the shard changes hands, derived by diffing snapshots.
     void AnnounceObjective(ObjectiveData before, ObjectiveData now) {
         if (before == null) return;
+        // Objective changes arrive as snapshots. Only transitions trigger audio;
+        // joining/reconnecting to an existing objective must stay silent.
+        if (now.state == "CARRIED" && before.carrierId != now.carrierId)
+            gameAudio.PlayCorePickup(now.carrierId == myId, new Vector3(now.x, 0, now.z));
+        else if ((before.state != "GROUND" && now.state == "GROUND")
+                || (before.state != "PLACED" && now.state == "PLACED"))
+            gameAudio.PlayDrop(before.carrierId == myId || now.ownerId == myId,
+                new Vector3(now.x, 0, now.z));
         if (before.state == "WAITING" && now.state == "GROUND") Toast("Mảnh Tim Lửa đã xuất hiện! Xem minimap.");
         else if (now.state == "CARRIED" && before.carrierId != now.carrierId) Toast($"{NameOf(now.carrierId)} đã nhặt được mảnh!");
         else if (before.state == "CARRIED" && now.state == "GROUND") {

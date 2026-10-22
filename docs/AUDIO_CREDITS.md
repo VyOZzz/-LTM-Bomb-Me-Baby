@@ -1,47 +1,65 @@
-# Nguồn và bản quyền âm thanh — Bomb Me Baby
+# Nguồn và xử lý âm thanh — Bomb Me Baby
 
-Người phụ trách: Thành viên B. Mỗi file âm thanh đưa vào `LTM-Bomb-Me-Baby/Assets/` phải có một dòng ở đây trước khi ghép nhánh.
+Cập nhật 22/10/2026. Nhạc/SFX đang dùng là bản ghi tải từ các tác giả dưới đây; không dùng âm tổng hợp trong gameplay. Codex hỗ trợ tìm nguồn, xử lý file và tích hợp code. Tất cả đường dẫn audio trong bảng tính từ `LTM-Bomb-Me-Baby/Assets/Resources/Audio/`.
 
-## Quy tắc chọn file
+## Nhạc theo màn
 
-- Chỉ dùng file có giấy phép cho phép dùng trong đồ án và chỉnh sửa: ưu tiên CC0 (không cần ghi công), sau đó CC-BY (phải ghi tên tác giả). Không dùng CC-NC nếu chưa chắc đồ án có bị tính là thương mại hay không; không dùng nhạc tải từ YouTube hay game khác.
-- Lưu lại link trang gốc của từng file, không chỉ link tải trực tiếp.
-- Nếu cắt, đổi tốc độ, trộn hay đổi định dạng, ghi vào cột "Chỉnh sửa".
-- File do AI tạo phải ghi rõ công cụ tạo, theo `final-project/Instruction.md`.
+| Map | Bài nhạc / tác giả / nguồn | File gốc → file sử dụng | Không khí | Giấy phép |
+| --- | --- | --- | --- | --- |
+| `meadow` | [A New Day — SpiderDave](https://opengameart.org/content/a-new-day) | `49_0.ogg` → `music_meadow.ogg` (88,6 giây) | Phiêu lưu vui, sáng, phù hợp màn mở đầu đồng cỏ | CC0 |
+| `crossroads` | [Assembly Not Required — AndyGun11](https://opengameart.org/content/assembly-not-required-dark-synthwave-electronic-body-music) | `assembly_not_required.ogg` → `music_crossroads.ogg` (38,4 giây) | Synthwave/EBM, nhịp cơ khí cho màn giao tranh giữa hành trình | CC-BY 4.0 |
+| `crater` | [JRPG Epic Rock Battle Theme #1 — HydroGene](https://opengameart.org/content/jrpg-epic-rock-battle-theme-1) | `jrpg_battle_loop.mp3` → `music_crater.ogg` (113,7 giây) | Rock chiến đấu dồn dập cho màn cuối | CC0 |
+| Sảnh/menu | File do người dùng cung cấp | `ssstik.io_1792657165746_1.mp3` → `music_menu.mp3` | Giữ nguyên bài nhạc và mức phát sảnh | Tác giả/giấy phép chưa xác định |
 
-Nguồn gợi ý: [Kenney.nl](https://kenney.nl/assets) (CC0), [OpenGameArt.org](https://opengameart.org) (lọc theo giấy phép), [Pixabay Music/Sound Effects](https://pixabay.com/music/) (Pixabay Content License).
+Ba track màn chơi được cân theo mục tiêu **−18 LUFS / true peak tối đa −3 dBTP** bằng đo hai lượt, chuyển OGG 44,1 kHz. Làm mềm biên 8 ms để giảm click tại chỗ lặp. Unity phát streaming; chuyển giữa hai nguồn nhạc trong 1,2 giây. File sảnh không qua xử lý.
 
-## Nhạc theo chương
+SHA-256 nhạc sảnh trước/sau: `6C6808475E0BF3B2CCA02925EB0048DA3A8CA1E4C7FEBFAC2F6C180D081EA92D`.
 
-| Chương / map | Không khí | File trong project | Tên gốc | Tác giả | Link nguồn | Giấy phép | Chỉnh sửa |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 — `meadow` | Vui, nhẹ nhàng | `Assets/Resources/Audio/music_meadow.wav` | Music Meadow | Nhóm Bomb Me Baby | `scripts/generate_sfx.ps1` | Tự tạo cho đồ án | Arpeggio sáng, pad nhẹ; loop 8 giây. |
-| 2 — `crossroads` | Cơ khí, nhịp đều | `Assets/Resources/Audio/music_crossroads.wav` | Music Crossroads | Nhóm Bomb Me Baby | `scripts/generate_sfx.ps1` | Tự tạo cho đồ án | Nhịp gate và pulse cơ khí; loop 8 giây. |
-| 3 — `crater` | Căng thẳng, dồn dập | `Assets/Resources/Audio/music_crater.wav` | Music Crater | Nhóm Bomb Me Baby | `scripts/generate_sfx.ps1` | Tự tạo cho đồ án | Bass thấp, pulse và rumble tổng hợp; loop 8 giây. |
-| Lobby / menu | Nhạc do người dùng chọn | `Assets/Resources/Audio/music_menu.mp3` | `ssstik.io_1792657165746_1.mp3` | Chưa xác định | Tệp do người dùng cung cấp | Quyền sử dụng do người dùng cung cấp | Đổi tên để giữ nguyên đường dẫn `Resources/Audio/music_menu`; phát streaming và lặp trong sảnh. Bản nhạc tự tạo cũ được lưu tại `Assets/AudioArchive/music_menu_generated.wav`. |
+## Hiệu ứng
 
-## Hiệu ứng âm thanh (SFX)
+| Sự kiện | File sử dụng | Bản ghi gốc | Nguồn / tác giả / giấy phép |
+| --- | --- | --- | --- |
+| Nạp bom | `mix_charge.ogg` | `spaceEngineSmall_000.ogg` | [Sci-fi Sounds — Kenney, CC0](https://kenney.nl/assets/sci-fi-sounds) |
+| Bom nổ: ba biến thể | `mix_explosion_1/2/3.ogg` | `explosionCrunch_004/002/001.ogg` | Sci-fi Sounds — Kenney, CC0 |
+| Thân âm trầm khi nổ | `mix_explosion_low.ogg` | `lowFrequency_explosion_000.ogg` | Sci-fi Sounds — Kenney, CC0 |
+| Nhặt năng lượng | `mix_energy.ogg` | `confirmation_003.ogg` | [Interface Sounds — Kenney, CC0](https://kenney.nl/assets/interface-sounds) |
+| Nhặt Core / Tim Lửa | `mix_core.ogg` | `maximize_006.ogg` | Interface Sounds — Kenney, CC0 |
+| Bật khiên | `mix_shield.ogg` | `forceField_003.ogg` | Sci-fi Sounds — Kenney, CC0 |
+| Lớp điện duy trì khiên | `mix_shield_body.ogg` | `engineCircular_002.ogg` | Sci-fi Sounds — Kenney, CC0 |
+| Khiên đỡ đòn | `mix_shield_hit.ogg` | `impactGlass_medium_002.ogg` | [Impact Sounds — Kenney, CC0](https://kenney.nl/assets/impact-sounds) |
+| Lướt/tăng tốc | `mix_boost.ogg` | `knifeSlice.ogg` | [RPG Audio — Kenney, CC0](https://kenney.nl/assets/rpg-audio) |
+| Lớp khí đẩy khi tăng tốc | `mix_boost_body.ogg` | `thrusterFire_002.ogg` | Sci-fi Sounds — Kenney, CC0 |
+| Bị đánh / phản sát thương | `mix_damage.ogg` | `impactPunch_heavy_000.ogg` | Impact Sounds — Kenney, CC0 |
+| Tiếp đất sau khi bị hất | `mix_land_1/2.ogg` | `impactSoft_heavy_000/001.ogg` | Impact Sounds — Kenney, CC0 |
+| Core xuất hiện; Tim Lửa xuất hiện / rơi / đặt lên bệ | `mix_drop.ogg` | `handleCoins2.ogg` | RPG Audio — Kenney, CC0 |
+| Chiến thắng | `mix_victory.ogg` | `VICTORY_0.ogg` (3,9 giây) | [Fanfares — Spring/Spring Enterprises, CC-BY 4.0](https://opengameart.org/content/fanfares) |
+| Thua cuộc | `mix_defeat.ogg` | `LOSE_0.ogg` (3,2 giây) | Fanfares — Spring/Spring Enterprises, CC-BY 4.0 |
+| Nút UI | `mix_ui.ogg` | `click_003.ogg` | Interface Sounds — Kenney, CC0 |
 
-| Sự kiện trong game | File trong project | Tên gốc | Tác giả | Link nguồn | Giấy phép | Chỉnh sửa |
-| --- | --- | --- | --- | --- | --- | --- |
-| Nạp nổ (charge) | `Assets/Resources/Audio/sfx_charge_loop.wav` | SFX Charge Loop | Nhóm Bomb Me Baby | `scripts/generate_sfx.ps1` | Tự tạo cho đồ án | Tổng hợp sóng sin tuần hoàn; Unity đổi pitch/volume theo mức nạp. |
-| Nổ (`PLAYER_EXPLODE`) | `Assets/Resources/Audio/kenney_explosion_crunch.ogg`, `kenney_explosion_low.ogg` | `explosionCrunch_004`, `lowFrequency_explosion_000` | Kenney | [Sci-fi Sounds](https://kenney.nl/assets/sci-fi-sounds) | CC0 | Phát hai lớp crunch + low body; nổ của bản thân phát 2D, nổ từ xa phát 3D theo bán kính. |
-| Nhặt orb | `Assets/Resources/Audio/kenney_energy_pickup.ogg` | `confirmation_003` | Kenney | [Interface Sounds](https://kenney.nl/assets/interface-sounds) | CC0 | Đổi tên; duck nhạc ngắn để tiếng nhặt rõ. |
-| Nhặt Core | `Assets/Resources/Audio/kenney_core_pickup.ogg` | `maximize_006` | Kenney | [Interface Sounds](https://kenney.nl/assets/interface-sounds) | CC0 | Đổi tên; tăng mức phát và duck nhạc. |
-| Bật Shield | `Assets/Resources/Audio/kenney_shield.ogg`, `kenney_shield_body.ogg` | `forceField_003`, `engineCircular_002` | Kenney | [Sci-fi Sounds](https://kenney.nl/assets/sci-fi-sounds) | CC0 | Ghép tiếng bật với hum điện; attack 0,1 giây, rung pitch nhẹ và fade-out 0,28 giây. Âm từ xa vẫn phát 3D. |
-| Boost | `Assets/Resources/Audio/kenney_boost.ogg`, `kenney_boost_body.ogg` | `laserLarge_002`, `thrusterFire_002` | Kenney | [Sci-fi Sounds](https://kenney.nl/assets/sci-fi-sounds) | CC0 | Ghép transient với thruster tăng pitch 0,82–1,28; attack 0,05 giây và fade-out 0,22 giây. Âm từ xa vẫn phát 3D. |
-| Bị trúng nổ / mất HP | `Assets/Resources/Audio/kenney_damage.ogg` | `impactPunch_heavy_000` | Kenney | [Impact Sounds](https://kenney.nl/assets/impact-sounds) | CC0 | Đổi tên; tăng ưu tiên cho người bị trúng và duck nhạc. |
-| Thắng / thua | `Assets/Resources/Audio/sfx_victory.wav`, `sfx_defeat.wav` | SFX Victory / Defeat | Nhóm Bomb Me Baby | `scripts/generate_sfx.ps1` | Tự tạo cho đồ án | Hai chuỗi nốt đi lên/đi xuống. |
-| Nút bấm UI | `Assets/Resources/Audio/kenney_ui_click.ogg` | `click_003` | Kenney | [Interface Sounds](https://kenney.nl/assets/interface-sounds) | CC0 | Đổi tên, phát 2D. |
+SFX được lọc bớt âm cao chói/hạ âm siêu trầm, cân RMS mục tiêu −23 dBFS và peak mục tiêu tối đa −6 dBFS trước encode; mức thực sau encode nằm trong [AUDIO_LEVELS.csv](AUDIO_LEVELS.csv). Đầu/cuối file có fade ngắn; khiên/boost có đường cong vào và tắt riêng. Pitch tiếng nổ/nhặt/lướt/tiếp đất biến thiên nhẹ giữa lần phát. Nhạc kết quả dùng cân loudness như nhạc màn chơi.
 
-Nhạc, charge loop, tín hiệu bắt đầu trận và thắng/thua vẫn là PCM mono 44,1 kHz, 16-bit do nhóm tạo bằng `scripts/generate_sfx.ps1`. Các SFX Kenney là OGG từ các gói gốc CC0; bản giấy phép lưu tại `docs/licenses/KENNEY_CC0.txt`. Các WAV tự tạo cũ vẫn được giữ trong repository làm tài nguyên dự phòng nhưng không còn được `BombAudio` nạp cho những sự kiện đã thay ở bảng trên.
+Bộ trộn dùng tối đa 12 voice gần/người chơi và 8 voice xa, giới hạn tổng gain SFX để chừa khoảng cho nhạc và loop, chặn sự kiện trùng quá sát nhau. Tiếng xa giảm theo khoảng cách trên mặt đất, pan theo chiều ngang màn hình. Âm nhặt năng lượng không làm nhạc lên/xuống liên tục; nổ bom, sát thương và kết quả mới ưu tiên hạ nhạc. SFX slider cập nhật cả âm đang phát. Không có âm báo bắt đầu trận.
 
-## Bàn giao cho Trưởng nhóm
+Ghi công khi đưa vào báo cáo/build: **Assembly Not Required by AndyGun11**; **Fanfares by Spring/Spring Enterprises**; **A New Day by SpiderDave**; **JRPG Epic Rock Battle Theme #1 by HydroGene**; **Sound effects by Kenney (kenney.nl)**. [CC-BY 4.0](https://creativecommons.org/licenses/by/4.0/) / [CC0](https://creativecommons.org/publicdomain/zero/1.0/). Các bản sử dụng đã được cân âm, lọc và đổi định dạng như mô tả trên. Giấy phép Kenney có tại `docs/licenses/KENNEY_CC0.txt`.
 
-- [x] Đủ 11 SFX, có script tái tạo và thông tin nguồn/giấy phép.
-- [x] SFX đã đặt tên rõ ràng, import trong Unity và tích hợp bằng `Assets/Scripts/BombAudio.cs`.
-- [x] Thanh âm lượng **Hiệu ứng** điều khiển SFX trong game.
-- [x] Đủ nhạc cho ba chương và menu; nhạc tự đổi theo map và hạ âm lượng khi có hiệu ứng lớn.
-- [ ] Phần "Tài nguyên sử dụng" trong báo cáo đã chép lại bảng hoàn chỉnh.
+## Tái tạo bản audio đã xử lý
 
-Trạng thái ngày 21/10/2026: đã có 11 SFX và 4 vòng nhạc menu/map. Cần nghe thử trên bản Windows 2–4 client để chốt cân bằng âm lượng cuối.
+Script `scripts/prepare_game_audio.ps1` dùng FFmpeg và ffprobe. Chuẩn bị một thư mục nguồn:
+
+- `meadow.ogg`: https://opengameart.org/sites/default/files/49_0.ogg
+- `crossroads.ogg`: https://opengameart.org/sites/default/files/assembly_not_required.ogg
+- `crater.mp3`: https://opengameart.org/sites/default/files/jrpg_battle_loop.mp3
+- `victory.ogg`: https://opengameart.org/sites/default/files/VICTORY_0.ogg
+- `defeat.ogg`: https://opengameart.org/sites/default/files/LOSE_0.ogg
+- `scifi/`, `impact/`, `rpg/`, `interface/`: giải nén các gói từ trang Kenney tương ứng ở bảng trên, giữ thư mục `Audio/`.
+- Đặt các bản gốc trong thư mục nguồn riêng ngoài `Assets/`; repository chỉ giữ bản audio đã xử lý dùng trong game.
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare_game_audio.ps1 -SourceRoot C:\audio-sources -Ffmpeg C:\ffmpeg\bin\ffmpeg.exe -Ffprobe C:\ffmpeg\bin\ffprobe.exe
+```
+
+Đã xóa 15 WAV tự tổng hợp cũ trong `Assets/AudioArchive/`, 10 OGG `kenney_*` trước xử lý và script tổng hợp cũ. Thư mục `Resources/Audio/` còn đúng 23 clip đang dùng: 19 `mix_*`, ba `music_*.ogg` và `music_menu.mp3`. Các file `.meta` của clip đang dùng được giữ nguyên.
+
+## Kiểm chứng nghe trong trận
+
+Đã lưu số đo từng clip; cần nghe trên thiết bị thật với 2–4 client để chốt cảm giác nghe. Kiểm tra: chuyển ba chương không giật nhạc; nổ đồng thời không át nhạc kết quả; nhặt nhiều orb không dồn tiếng quá to; khiên và lướt kết thúc êm; tiếp đất và rơi Tim Lửa chỉ phát khi có sự kiện; về sảnh trở lại đúng MP3 người dùng chọn. Không thêm chế độ chơi offline.
