@@ -9,7 +9,7 @@ sealed class BombModeMenu {
     public enum Choice { None, Create, Join, FindMatch, CancelMatch, Settings, Quit }
 
     sealed class Card {
-        public string mode, key, tag, title, description;
+        public string mode, key, tag, title, description, tooltip;
         public string[,] rows;
         public Color accent;
         public float lift;
@@ -24,17 +24,18 @@ sealed class BombModeMenu {
             mode = "QUICK", key = "1", tag = "1 TRẬN  •  2–10 NGƯỜI", title = "ĐẤU NHANH",
             description = "Vào trận ngay. Ăn năng lượng cho bóng to ra, nạp nổ và là quả bom cuối cùng còn lăn.",
             rows = new[,] { { "Bản đồ", "Ngẫu nhiên mỗi trận" }, { "Thắng khi", "Chỉ còn mình bạn" } },
-            accent = Charge
+            tooltip = "Phím 1  •  Một trận sinh tồn, hợp để làm quen", accent = Charge
         },
         new Card {
             mode = "JOURNEY", key = "2", tag = "3 CHƯƠNG  •  TRANH MẢNH", title = "HÀNH TRÌNH BA MẢNH",
             description = "Mỗi chương một mảnh Tim Lửa. Cướp mảnh, đặt lên bệ đá giữa map và giữ bệ đến hết 3 phút.",
             rows = new[,] { { "Lộ trình", "Đồng cỏ • Ngã tư • Núi lửa" }, { "Thắng", "Mang về nhiều mảnh nhất" } },
-            accent = Core
+            tooltip = "Phím 2  •  Ba chương liên tiếp, có lời dẫn truyện", accent = Core
         }
     };
 
-    bool roomStep;
+    bool roomStep, wasRoomStep;
+    float roomStepShownAt;
     int selected;
     // Matchmaking state as last reported by the server (MATCHMAKING messages).
     bool searching;
@@ -44,7 +45,7 @@ sealed class BombModeMenu {
     // Layout is in virtual units scaled by GUI.matrix; text is drawn unscaled with
     // font sizes multiplied by s, because IMGUI stretches glyph bitmaps and blurs them.
     float s = 1, stylesScale;
-    GUIStyle field, kicker, heading, chip, tagStyle, cardTitle, bodyText, rowLabel, rowValue, cta, keycap, footer, mapLabel;
+    GUIStyle field, kicker, heading, chip, chipCenter, tagStyle, cardTitle, bodyText, rowLabel, rowValue, cta, keycap, placeholder, footer, mapLabel;
 
     /// Protocol mode of the card the player picked: QUICK or JOURNEY.
     public string SelectedMode => cards[selected].mode;
@@ -78,6 +79,8 @@ sealed class BombModeMenu {
         float width = Screen.width / s, height = Screen.height / s;
         Choice choice = Choice.None;
 
+        if (roomStep && !wasRoomStep) roomStepShownAt = Time.unscaledTime;
+        wasRoomStep = roomStep;
         DrawBackdrop(width, height);
         Label(new Rect(56, 40, 600, 24), "BOMB ME BABY", kicker);
         Label(new Rect(54, 62, 900, 56), roomStep ? cards[selected].title : "Chọn chế độ chơi", heading);
@@ -88,7 +91,8 @@ sealed class BombModeMenu {
         if (!string.IsNullOrEmpty(status))
             Label(new Rect(0, height - 76, width, 24), status, footer);
         Label(new Rect(0, height - 40, width, 24),
-            searching ? "Bấm Hủy tìm để đổi chế độ" : roomStep ? "Esc để chọn chế độ khác" : "1 / 2 hoặc ← → rồi Enter để chọn", footer);
+            searching ? "Bấm Hủy tìm để đổi chế độ" : roomStep ? "Enter để tìm trận  •  Esc để chọn chế độ khác"
+                : "1 / 2 hoặc ← → rồi Enter để chọn", footer);
 
         GUI.matrix = baseMatrix;
         return choice;
@@ -99,8 +103,8 @@ sealed class BombModeMenu {
         float chipWidth = Mathf.Max(170, chip.CalcSize(new GUIContent(playerName)).x / s + 52);
         Rect quitRect = new Rect(width - 56 - 96, 52, 96, 38);
         Rect settingsRect = new Rect(quitRect.x - 12 - 112, 52, 112, 38);
-        if (HeaderButton(quitRect, "Thoát", Danger)) choice = Choice.Quit;
-        if (HeaderButton(settingsRect, "Cài đặt", Text)) choice = Choice.Settings;
+        if (HeaderButton(quitRect, "Thoát", Danger, "Đóng game")) choice = Choice.Quit;
+        if (HeaderButton(settingsRect, "Cài đặt", Text, "Âm thanh và hiển thị")) choice = Choice.Settings;
         Rect chipRect = new Rect(settingsRect.x - 20 - chipWidth, 52, chipWidth, 38);
         Fill(chipRect, Panel, RoundSmall);
         Fill(new Rect(chipRect.x + 16, chipRect.y + 14, 10, 10), Health, Circle);
@@ -145,7 +149,7 @@ sealed class BombModeMenu {
         Card card = cards[selected];
         Choice choice = Choice.None;
         Rect back = new Rect(56, 124, 210, 36);
-        if (!searching && HeaderButton(back, "← Chọn chế độ khác", TextMuted)) roomStep = false;
+        if (!searching && HeaderButton(back, "← Chọn chế độ khác", TextMuted, "Esc")) roomStep = false;
 
         bool stacked = width < 820;
         float gap = 28;
@@ -166,7 +170,13 @@ sealed class BombModeMenu {
         bool enter = GUI.enabled && e.type == EventType.KeyDown
             && (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter);
         if (enter && fieldFocused) {
-            if (codeReady) choice = Choice.Join;
+            if (codeReady) { BombAudio.UiClick(); choice = Choice.Join; }
+            e.Use();
+        } else if (enter && !searching && Time.unscaledTime - roomStepShownAt > .35f) {
+            // Enter anywhere else is the panel's primary action; the delay keeps the Enter
+            // that opened this step (or its key repeat) from also starting a search.
+            BombAudio.UiClick();
+            choice = Choice.FindMatch;
             e.Use();
         }
 
@@ -175,22 +185,31 @@ sealed class BombModeMenu {
         tagStyle.normal.textColor = card.accent;
         Rect button = new Rect(create.x + 28, create.yMax - 74, create.width - 56, 50);
         if (searching) {
-            int seconds = Mathf.FloorToInt(Time.unscaledTime - searchStartedAt);
+            float elapsed = Time.unscaledTime - searchStartedAt;
+            int seconds = Mathf.FloorToInt(elapsed);
             string dots = new string('.', 1 + Mathf.FloorToInt(Time.unscaledTime * 2) % 3);
+            // Pulsing beacon: the queue is alive even when the player count does not change.
+            float pulse = .5f + .5f * Mathf.Sin(Time.unscaledTime * 5);
+            Vector2 beacon = new Vector2(create.xMax - 44, create.y + 36);
+            Fill(Centered(beacon, 18 + 14 * pulse), WithAlpha(card.accent, .35f * (1 - pulse)), Circle);
+            Fill(Centered(beacon, 12), card.accent, Circle);
             Label(new Rect(create.x + 28, create.y + 26, create.width - 56, 18), $"ĐANG TÌM  •  {seconds / 60}:{seconds % 60:00}", tagStyle);
             Label(new Rect(create.x + 28, create.y + 48, create.width - 56, 40), "ĐANG TÌM TRẬN" + dots, cardTitle);
             Label(new Rect(create.x + 28, create.y + 96, create.width - 56, 80), waiting >= minPlayers
                 ? $"Đã có {waiting} người. Trận sẽ bắt đầu sau vài giây, chờ thêm người vào cùng."
                 : $"{waiting}/{minPlayers} người đang chờ chế độ này. Cần ít nhất {minPlayers} người để bắt đầu.", bodyText);
-            if (BigButton(button, "HỦY TÌM", PanelRaised, Danger)) choice = Choice.CancelMatch;
+            Bar(new Rect(button.x, button.y - 20, button.width, 8), waiting / (float)Mathf.Max(1, minPlayers), card.accent);
+            if (BigButton(button, "HỦY TÌM", PanelRaised, Danger, true, "Rời hàng chờ")) choice = Choice.CancelMatch;
         } else {
             Label(new Rect(create.x + 28, create.y + 26, create.width - 56, 18), "GHÉP NGẪU NHIÊN", tagStyle);
             Label(new Rect(create.x + 28, create.y + 48, create.width - 56, 40), "TÌM TRẬN", cardTitle);
             Label(new Rect(create.x + 28, create.y + 96, create.width - 56, 80),
                 "Ghép với người chơi khác cũng đang tìm chế độ này. Đủ người là vào trận ngay.", bodyText);
-            if (HeaderButton(new Rect(create.xMax - 28 - 150, create.y + 20, 150, 34), "Tạo phòng riêng", TextMuted))
+            if (HeaderButton(new Rect(create.xMax - 28 - 150, create.y + 20, 150, 34), "Tạo phòng riêng", TextMuted,
+                    "Mở phòng kín rồi gửi mã cho bạn bè"))
                 choice = Choice.Create;
-            if (BigButton(button, "TÌM TRẬN", card.accent, Night)) choice = Choice.FindMatch;
+            if (BigButton(button, "TÌM TRẬN", card.accent, Night, true, "Ghép ngẫu nhiên với người đang chờ (Enter)"))
+                choice = Choice.FindMatch;
         }
 
         // Join panel
@@ -200,20 +219,25 @@ sealed class BombModeMenu {
         Label(new Rect(join.x + 28, join.y + 48, join.width - 56, 40), "VÀO PHÒNG BẠN BÈ", cardTitle);
         Rect input = new Rect(join.x + 28, join.y + 104, join.width - 56, 64);
         Color savedBackground = GUI.backgroundColor;
-        GUI.backgroundColor = fieldFocused ? Color.Lerp(Night, card.accent, .25f) : Night;
+        // The Kenney box stays light (dark ink), warming toward the accent while focused.
+        Color fieldTint = InputBackground != null ? Color.white : Night;
+        GUI.backgroundColor = fieldFocused ? Color.Lerp(fieldTint, card.accent, InputBackground != null ? .18f : .25f) : fieldTint;
         Matrix4x4 savedMatrix = GUI.matrix;
         GUI.matrix = Matrix4x4.identity;
+        Rect inputScreen = ToScreen(input);
+        TrackHover(GUIUtility.GetControlID(FocusType.Passive), inputScreen.Contains(Event.current.mousePosition) && GUI.enabled,
+            inputScreen, "Mã 6 ký tự chủ phòng thấy ở góc phòng chờ");
         GUI.SetNextControlName("join-code");
-        string typed = TextField(ToScreen(input), code, CodeLength + 2, field);
+        string typed = TextField(inputScreen, code, CodeLength + 2, field);
         GUI.matrix = savedMatrix;
         GUI.backgroundColor = savedBackground;
         joinCode = NormalizeCode(typed);
-        if (joinCode.Length == 0 && !fieldFocused) Label(input, "Nhập mã, ví dụ 3FA9C1", keycap);
+        if (joinCode.Length == 0 && !fieldFocused) Label(input, "Nhập mã, ví dụ 3FA9C1", placeholder);
         Label(new Rect(join.x + 28, input.yMax + 8, join.width - 56, 20),
             $"{joinCode.Length}/{CodeLength}  •  chỉ gồm số 0–9 và chữ A–F", rowLabel);
         codeReady = joinCode.Length == CodeLength && !searching;
-        if (BigButton(new Rect(join.x + 28, join.yMax - 74, join.width - 56, 50), "VÀO PHÒNG",
-                codeReady ? Text : PanelRaised, codeReady ? Night : TextFaint) && codeReady)
+        if (BigButton(new Rect(join.x + 28, join.yMax - 74, join.width - 56, 50), "VÀO PHÒNG", Text, Night,
+                codeReady, "Vào phòng với mã đã nhập (Enter)"))
             choice = Choice.Join;
         return choice;
     }
@@ -244,30 +268,18 @@ sealed class BombModeMenu {
         Fill(new Rect(rect.x + 28, rect.y, rect.width - 56, 5), accent, null);
     }
 
-    bool BigButton(Rect button, string text, Color face, Color textColor) {
-        bool pressed = GUI.enabled && button.Contains(Event.current.mousePosition) && Input.GetMouseButton(0);
-        float push = pressed ? 4 : 0;
-        Fill(new Rect(button.x, button.y + 5, button.width, button.height), Color.Lerp(face, Color.black, .45f), RoundSmall);
-        Fill(new Rect(button.x, button.y + push, button.width, button.height), face, RoundSmall);
-        cta.normal.textColor = textColor;
-        Label(new Rect(button.x, button.y + push, button.width, button.height), text, cta);
-        cta.normal.textColor = Night;
-        bool clicked = GUI.Button(button, GUIContent.none, GUIStyle.none);
-        if (clicked) BombAudio.UiClick();
-        return clicked;
-    }
+    bool BigButton(Rect button, string text, Color face, Color textColor, bool enabled = true, string tooltip = null) =>
+        ScaledButton(button, text, face, textColor, cta, enabled, tooltip);
 
-    bool HeaderButton(Rect rect, string text, Color textColor) {
-        bool hover = rect.Contains(Event.current.mousePosition);
-        Fill(new Rect(rect.x, rect.y + 4, rect.width, rect.height), new Color(0, 0, 0, .4f), RoundSmall);
-        Fill(rect, hover ? PanelRaised : Panel, RoundSmall);
-        chip.normal.textColor = textColor;
-        chip.alignment = TextAnchor.MiddleCenter;
-        Label(rect, text, chip);
-        chip.alignment = TextAnchor.MiddleLeft;
-        chip.normal.textColor = Text;
-        bool clicked = GUI.Button(rect, GUIContent.none, GUIStyle.none);
-        if (clicked) BombAudio.UiClick();
+    bool HeaderButton(Rect rect, string text, Color textColor, string tooltip = null) =>
+        ScaledButton(rect, text, PanelRaised, textColor, chipCenter, true, tooltip);
+
+    /// BombUi.Button laid out in virtual units but drawn unscaled, so its label stays crisp.
+    bool ScaledButton(Rect rect, string text, Color face, Color ink, GUIStyle style, bool enabled, string tooltip) {
+        Matrix4x4 saved = GUI.matrix;
+        GUI.matrix = Matrix4x4.identity;
+        bool clicked = Button(ToScreen(rect), text, face, ink, style, enabled, tooltip);
+        GUI.matrix = saved;
         return clicked;
     }
 
@@ -311,12 +323,27 @@ sealed class BombModeMenu {
             y += 26;
         }
 
+        // The whole card is the hit area; the button only shows where to click.
+        int id = GUIUtility.GetControlID(FocusType.Passive);
+        bool hover = GUI.enabled && panel.Contains(Event.current.mousePosition);
+        Matrix4x4 savedMatrix = GUI.matrix;
+        GUI.matrix = Matrix4x4.identity;
+        TrackHover(id, hover, ToScreen(panel), card.tooltip);
+        GUI.matrix = savedMatrix;
         Rect button = new Rect(x, panel.yMax - 66, w, 48);
-        bool pressed = button.Contains(Event.current.mousePosition) && Input.GetMouseButton(0);
-        float push = pressed ? 4 : 0;
-        Fill(new Rect(button.x, button.y + 5, button.width, button.height), Color.Lerp(card.accent, Color.black, .45f), RoundSmall);
-        Fill(new Rect(button.x, button.y + push, button.width, button.height), card.accent, RoundSmall);
-        Label(new Rect(button.x, button.y + push, button.width, button.height), "CHỌN", cta);
+        bool pressed = hover && Input.GetMouseButton(0);
+        string choose = lift > .5f ? "CHỌN  ▸" : "CHỌN";
+        // Drawn in screen space like Label so the text keeps its pixel-sized font.
+        GUI.matrix = Matrix4x4.identity;
+        bool skinned = ButtonFace(ToScreen(button), choose, card.accent, Night, cta, true, lift > .5f, pressed);
+        GUI.matrix = savedMatrix;
+        if (!skinned) {
+            float push = pressed ? 4 : -2 * lift;
+            Fill(new Rect(button.x, button.y + 5, button.width, button.height), Color.Lerp(card.accent, Color.black, .45f), RoundSmall);
+            Fill(new Rect(button.x, button.y + push, button.width, button.height),
+                Color.Lerp(card.accent, Color.white, .1f * lift), RoundSmall);
+            Label(new Rect(button.x, button.y + push, button.width, button.height), choose, cta);
+        }
 
         bool clicked = GUI.Button(panel, GUIContent.none, GUIStyle.none);
         if (clicked) BombAudio.UiClick();
@@ -396,6 +423,7 @@ sealed class BombModeMenu {
         kicker = TextStyle(Px(14), FontStyle.Bold, Charge);
         heading = TextStyle(Px(40), FontStyle.Bold, Text);
         chip = TextStyle(Px(16), FontStyle.Bold, Text, TextAnchor.MiddleLeft);
+        chipCenter = TextStyle(Px(16), FontStyle.Bold, Text, TextAnchor.MiddleCenter);
         tagStyle = TextStyle(Px(13), FontStyle.Bold, Text);
         cardTitle = TextStyle(Px(28), FontStyle.Bold, Text);
         cardTitle.wordWrap = true;
@@ -412,8 +440,11 @@ sealed class BombModeMenu {
             fontSize = Px(34), fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter,
             border = new RectOffset(10, 10, 10, 10), padding = new RectOffset(Px(12), Px(12), Px(8), Px(8))
         };
-        field.normal.background = field.hover.background = field.focused.background = RoundSmall.normal.background;
-        // This input is rendered on Unity's light text-field surface.
+        // Kenney input box (white with a grey rim) when the UI art is present.
+        field.normal.background = field.hover.background = field.focused.background =
+            InputBackground != null ? InputBackground : RoundSmall.normal.background;
+        placeholder = TextStyle(Px(15), FontStyle.Bold, WithAlpha(InputBackground != null ? Night : Text, .45f), TextAnchor.MiddleCenter);
+        // This input is rendered on a light text-field surface.
         field.normal.textColor = field.hover.textColor = field.active.textColor = Night;
         field.focused.textColor = field.onNormal.textColor = field.onHover.textColor = Night;
         field.onActive.textColor = field.onFocused.textColor = Night;
