@@ -220,6 +220,7 @@ static class BombUi {
     /// Call from custom controls that do not go through Button.
     public static void TrackHover(int id, bool hover, Rect rect, string tooltip = null) {
         if (Event.current.type != EventType.Repaint) return;
+        hover &= GUI.enabled;
         if (hover) {
             if (hoveredButton != id) {
                 hoveredButton = id;

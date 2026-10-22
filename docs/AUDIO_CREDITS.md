@@ -35,8 +35,11 @@ SHA-256 nhạc sảnh trước/sau: `6C6808475E0BF3B2CCA02925EB0048DA3A8CA1E4C7F
 | Chiến thắng | `mix_victory.ogg` | `VICTORY_0.ogg` (3,9 giây) | [Fanfares — Spring/Spring Enterprises, CC-BY 4.0](https://opengameart.org/content/fanfares) |
 | Thua cuộc | `mix_defeat.ogg` | `LOSE_0.ogg` (3,2 giây) | Fanfares — Spring/Spring Enterprises, CC-BY 4.0 |
 | Nút UI | `mix_ui.ogg` | `click_003.ogg` | Interface Sounds — Kenney, CC0 |
+| Rê chuột / đổi mục UI | Dùng lại `mix_energy.ogg` | `confirmation_003.ogg` | Interface Sounds — Kenney, CC0 |
 
 SFX được lọc bớt âm cao chói/hạ âm siêu trầm, cân RMS mục tiêu −23 dBFS và peak mục tiêu tối đa −6 dBFS trước encode; mức thực sau encode nằm trong [AUDIO_LEVELS.csv](AUDIO_LEVELS.csv). Đầu/cuối file có fade ngắn; khiên/boost có đường cong vào và tắt riêng. Pitch tiếng nổ/nhặt/lướt/tiếp đất biến thiên nhẹ giữa lần phát. Nhạc kết quả dùng cân loudness như nhạc màn chơi.
+
+Hover UI dùng nguồn phát riêng, gain 0,40 × SFX, pitch 1,25 (khoảng 0,26 giây), giới hạn mỗi 120 ms và không chồng nhiều tiếng. Dùng bản ghi xác nhận dài hơn vì tiếng click 10 ms ở gain 0,08 quá khó nghe dưới nhạc sảnh. Không thêm file audio; nhạc sảnh giữ nguyên.
 
 Bộ trộn dùng tối đa 12 voice gần/người chơi và 8 voice xa, giới hạn tổng gain SFX để chừa khoảng cho nhạc và loop, chặn sự kiện trùng quá sát nhau. Tiếng xa giảm theo khoảng cách trên mặt đất, pan theo chiều ngang màn hình. Âm nhặt năng lượng không làm nhạc lên/xuống liên tục; nổ bom, sát thương và kết quả mới ưu tiên hạ nhạc. SFX slider cập nhật cả âm đang phát. Không có âm báo bắt đầu trận.
 

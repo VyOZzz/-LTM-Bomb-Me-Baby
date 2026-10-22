@@ -17,7 +17,7 @@ public sealed class BombAudio : MonoBehaviour {
     readonly float[] nextCue = new float[(int)Cue.Count * 2];
     readonly AudioSource[] music = new AudioSource[2];
     readonly float[] musicWeight = new float[2];
-    AudioSource chargeLoop, shieldBody, boostBody, result;
+    AudioSource chargeLoop, shieldBody, boostBody, result, uiHover;
     AudioClip chargeClip, explosionLowClip, energyClip, coreClip, shieldClip, boostClip;
     AudioClip shieldBodyClip, boostBodyClip, shieldHitClip, dropClip;
     AudioClip damageClip, victoryClip, defeatClip, uiClickClip;
@@ -29,6 +29,7 @@ public sealed class BombAudio : MonoBehaviour {
     float shieldStarted = -1, boostStarted = -1;
     int activeMusic, explosionVariant, landingVariant;
     const float ShieldDuration = 1.5f, BoostDuration = .9f;
+    const float UiHoverGain = .40f;
 
     void Awake() {
         if (Instance != null && Instance != this) {
@@ -42,6 +43,7 @@ public sealed class BombAudio : MonoBehaviour {
         shieldBody = CreateSource(true, 100);
         boostBody = CreateSource(true, 100);
         result = CreateSource(false, 64);
+        uiHover = CreateSource(false, 80);
         for (int i = 0; i < music.Length; i++) music[i] = CreateSource(true, 180);
 
         chargeClip = Load("mix_charge");
@@ -60,6 +62,10 @@ public sealed class BombAudio : MonoBehaviour {
         victoryClip = Load("mix_victory");
         defeatClip = Load("mix_defeat");
         uiClickClip = Load("mix_ui");
+        // The 10 ms click is too short for a quiet hover under the lobby music.
+        // Reuse the soft confirmation recording, with one dedicated voice to avoid stacking.
+        uiHover.clip = energyClip;
+        uiHover.pitch = 1.25f;
         // User-selected lobby recording and its playback level stay unchanged.
         menuMusic = Load("music_menu");
         meadowMusic = Load("music_meadow");
@@ -97,6 +103,7 @@ public sealed class BombAudio : MonoBehaviour {
         UpdateAbility(shieldBody, ref shieldStarted, ShieldDuration, .10f, .28f, .22f, false);
         UpdateAbility(boostBody, ref boostStarted, BoostDuration, .04f, .24f, .30f, true);
         result.volume = BombSettings.Sfx * .65f;
+        uiHover.volume = BombSettings.Sfx * UiHoverGain;
         UpdateVoices();
         UpdateMusic(dt);
     }
@@ -245,6 +252,7 @@ public sealed class BombAudio : MonoBehaviour {
 
     public void SetMenuMusic() {
         StopGameplayLoops();
+        uiHover.Stop();
         foreach (Voice voice in voices) voice.source.Stop();
         result.Stop();
         hasListeningPosition = false;
@@ -254,6 +262,7 @@ public sealed class BombAudio : MonoBehaviour {
 
     public void SetMapMusic(string mapId) {
         StopGameplayLoops();
+        uiHover.Stop();
         result.Stop();
         musicDuckUntil = 0;
         System.Array.Clear(nextCue, 0, nextCue.Length);
@@ -346,8 +355,10 @@ public sealed class BombAudio : MonoBehaviour {
     /// Call once when the pointer enters a button, not on every hovered frame.
     public static void UiHover() {
         // Separate cooldowns keep a hover sound from suppressing the next click.
-        if (Instance != null && Instance.AllowCue(Cue.UiHover, true, .12f))
-            Instance.Play(Instance.uiClickClip, true, Vector3.zero, .08f);
+        if (Instance == null || Instance.uiHover.clip == null || !Instance.AllowCue(Cue.UiHover, true, .12f)) return;
+        Instance.uiHover.Stop();
+        Instance.uiHover.volume = BombSettings.Sfx * UiHoverGain;
+        Instance.uiHover.Play();
     }
 
     void OnDestroy() {
