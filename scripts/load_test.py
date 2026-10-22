@@ -16,6 +16,8 @@ import argparse
 import csv
 import datetime
 import json
+import hashlib
+from pathlib import Path
 import os
 import random
 import socket
@@ -25,7 +27,7 @@ import time
 
 RAW_FIELDS = ["t_ms", "client", "direction", "type", "bytes", "rtt_ms", "processing_us"]
 SUMMARY_FIELDS = [
-    "run_at", "label", "commit", "sync_mode", "map_id", "host", "port", "clients", "duration_s",
+    "run_at", "label", "commit", "server_source_sha256", "sync_mode", "map_id", "host", "port", "clients", "duration_s",
     "move_hz", "ping_hz", "seed",
     "recv_msgs_per_client_s", "recv_bytes_per_client_s", "server_out_bytes_s",
     "sent_msgs_per_client_s", "sent_bytes_per_client_s",
@@ -162,10 +164,20 @@ def mean(values):
 
 def git_commit():
     try:
-        return subprocess.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True,
+        return subprocess.run(["git", "describe", "--always", "--dirty"], capture_output=True,
                               text=True, check=True, cwd=os.path.dirname(__file__)).stdout.strip()
     except (OSError, subprocess.CalledProcessError):
         return ""
+
+
+def server_source_hash():
+    root = Path(__file__).resolve().parent.parent / "server"
+    digest = hashlib.sha256()
+    for source in sorted((root / "src" / "main").rglob("*.java")):
+        digest.update(source.relative_to(root).as_posix().encode("utf-8"))
+        digest.update(source.read_bytes())
+    digest.update((root / "pom.xml").read_bytes())
+    return digest.hexdigest()
 
 
 def detect_sync_mode(clients):
@@ -186,7 +198,7 @@ def summarize(rows, args, elapsed, raw_file, sync_mode, map_id):
     fmt = lambda v, d=2: round(v, d) if v != "" else ""
     return {
         "run_at": datetime.datetime.now().isoformat(timespec="seconds"),
-        "label": args.label, "commit": git_commit(), "sync_mode": sync_mode, "map_id": map_id,
+        "label": args.label, "commit": git_commit(), "server_source_sha256": server_source_hash(), "sync_mode": sync_mode, "map_id": map_id,
         "host": args.host, "port": args.port,
         "clients": args.clients, "duration_s": round(elapsed, 2), "move_hz": args.move_hz,
         "ping_hz": args.ping_hz, "seed": args.seed,
@@ -218,8 +230,15 @@ def main():
     parser.add_argument("--label", default="baseline", help="name of this experiment, e.g. baseline")
     parser.add_argument("--out-dir", default="experiments")
     args = parser.parse_args()
-    if not 1 <= args.clients <= 10:
-        parser.error("--clients must be between 1 and 10 (server room limit)")
+    if not 2 <= args.clients <= 10:
+        parser.error("--clients must be between 2 and 10")
+    if args.duration <= 0 or args.move_hz <= 0 or args.ping_hz <= 0:
+        parser.error("duration and frequencies must be positive")
+    existing_summary = Path(args.out_dir) / "summary.csv"
+    if existing_summary.exists():
+        with existing_summary.open(newline="", encoding="utf-8") as existing:
+            if next(csv.reader(existing), []) != SUMMARY_FIELDS:
+                parser.error("Existing CSV uses an older schema; choose a new --out-dir")
 
     recorder = Recorder()
     clients = [Client(i, args.host, args.port, recorder) for i in range(args.clients)]
@@ -280,6 +299,8 @@ def main():
 
     for key in SUMMARY_FIELDS:
         print(f"{key:28} {summary[key]}")
+    if summary["errors"]:
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

@@ -57,7 +57,7 @@ public final class BombServer {
             for (GameRoom room : rooms.values()) {
                 try { room.update(now, dt); }
                 catch (RuntimeException e) { System.err.println("Room " + room.code + ": " + e); }
-                if (room.isEmpty()) rooms.remove(room.code, room);
+                removeIfEmpty(room);
             }
             sessions.values().removeIf(p -> {
                 synchronized (p) {
@@ -69,6 +69,7 @@ public final class BombServer {
             System.out.println("Bomb Me Baby server on TCP port " + port);
             while (true) {
                 Socket socket = listener.accept();
+                if (connections.size() >= 64) { socket.close(); continue; }
                 socket.setTcpNoDelay(true);
                 clients.execute(new Connection(socket));
             }
@@ -76,12 +77,25 @@ public final class BombServer {
     }
 
     GameRoom createRoom(GameMode mode) {
-        GameRoom created;
-        do {
+        return createRoom(mode, null);
+    }
+
+    GameRoom createRoom(GameMode mode, PlayerState host) {
+        while (true) {
             String code = UUID.randomUUID().toString().substring(0,6).toUpperCase();
-            created = new GameRoom(code, syncMode, mode);
-        } while (rooms.putIfAbsent(created.code, created) != null);
-        return created;
+            GameRoom created = new GameRoom(code, syncMode, mode);
+            synchronized (created) {
+                if (rooms.putIfAbsent(created.code, created) != null) continue;
+                if (host != null) created.join(host);
+                return created;
+            }
+        }
+    }
+
+    void removeIfEmpty(GameRoom room) {
+        synchronized (room) {
+            if (room.isEmpty()) rooms.remove(room.code, room);
+        }
     }
 
     /** Game-loop thread: turns queued players into rooms that start right away. */
@@ -117,7 +131,7 @@ public final class BombServer {
     }
 
     final class Connection implements Runnable {
-        record Outbound(String json, boolean snapshot) {}
+        record Outbound(String json, boolean snapshot, boolean geometry) {}
 
         static final int MAX_OUTBOUND = 128;
         final Socket socket;
@@ -138,11 +152,14 @@ public final class BombServer {
 
         void send(Object value) {
             boolean snapshot = value instanceof Map<?,?> map && "STATE_UPDATE".equals(map.get("type"));
-            Outbound item = new Outbound(JSON.toJson(value), snapshot);
+            boolean geometry = value instanceof Map<?,?> map && map.containsKey("obstacles");
+            Outbound item = new Outbound(JSON.toJson(value), snapshot, geometry);
             boolean overflow = false;
             synchronized (outboundLock) {
                 if (closed) return;
-                if (snapshot) outbound.removeIf(Outbound::snapshot);
+                Outbound tail = outbound.peekLast();
+                if (snapshot && tail != null && tail.snapshot() && (!tail.geometry() || geometry))
+                    outbound.removeLast();
                 if (outbound.size() >= MAX_OUTBOUND) overflow = true;
                 else {
                     outbound.addLast(item);
@@ -162,8 +179,11 @@ public final class BombServer {
 
         void closeIfUnhealthy(long now) {
             if (closed) return;
+            // The writer can reset this volatile field to zero between two reads.
+            // Capture it once or a completed write can appear to have started at epoch zero.
+            long started = writeStartedAt;
             if (now - lastReceivedAt >= GameRules.CONNECTION_TIMEOUT_MS
-                    || writeStartedAt > 0 && now - writeStartedAt >= GameRules.WRITE_STALL_MS) close();
+                    || started > 0 && now - started >= GameRules.WRITE_STALL_MS) close();
         }
 
         private void startWriter() {
@@ -197,8 +217,7 @@ public final class BombServer {
             startWriter();
             try (socket; BufferedReader input = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8))) {
                 String line;
-                while ((line = input.readLine()) != null) {
-                    if (line.length() > 2048) { error("MESSAGE_TOO_LARGE"); break; }
+                while ((line = readFrame(input)) != null) {
                     long begin = System.nanoTime();
                     try {
                         JsonObject message = JsonParser.parseString(line).getAsJsonObject();
@@ -258,7 +277,7 @@ public final class BombServer {
                 // Keep the room locked until WELCOME and recovery state are sent:
                 // a tick cannot send STATE_UPDATE ahead of WELCOME.
                 send(GameRoom.data("type","WELCOME","playerId",player.id,
-                    "resumeToken",player.resumeToken,"lastSeq",player.lastSeq,
+                    "resumeToken",player.resumeToken,"lastSeq",player.lastSeq,"hasRoom",player.room != null,
                     "syncMode",syncMode.name(),"demoMap",GameMap.configuredDemoMapId()));
                 player.connection = this;
                 player.connected = true;
@@ -268,8 +287,13 @@ public final class BombServer {
                     room.players.forEach(p -> p.send(roomState));
                     if (room.phase == GameRoom.Phase.PLAYING)
                         send(room.snapshot(System.currentTimeMillis(), player, true));
+                    if (room.phase == GameRoom.Phase.FINISHED) {
+                        send(room.snapshot(System.currentTimeMillis(), player, true));
+                        send(room.roundResult());
+                        if (room.journeyComplete) send(room.journeyCompleteEvent());
+                    }
                     room.players.forEach(p -> p.send(GameRoom.data("type","PLAYER_RECONNECTED","playerId",player.id)));
-                }
+                } else send(GameRoom.data("type","LEFT_ROOM"));
             });
             return player != null;
         }
@@ -307,7 +331,7 @@ public final class BombServer {
                     if (mode == null) { error("INVALID_MODE"); return; }
                     synchronized (player) {
                         if (!canEnterRoom()) return;
-                        createRoom(mode).join(player);
+                        createRoom(mode, player);
                     }
                 }
                 case "JOIN_ROOM" -> {
@@ -339,13 +363,15 @@ public final class BombServer {
                     send(GameRoom.data("type","MATCHMAKING","status","CANCELLED"));
                 }
                 case "LEAVE_ROOM" -> {
-                    if (room != null) {
-                        synchronized (room) {
-                            room.leave(player);
-                            if (room.players.isEmpty()) rooms.remove(room.code, room);
+                    withSessionState(player, () -> {
+                        leaveQueue(player);
+                        GameRoom current = player.room;
+                        if (current != null) {
+                            current.leave(player);
+                            removeIfEmpty(current);
                         }
                         send(GameRoom.data("type","LEFT_ROOM"));
-                    }
+                    });
                 }
                 case "READY" -> {
                     if (room == null) { error("NOT_IN_ROOM"); return; }
@@ -376,6 +402,18 @@ public final class BombServer {
         }
 
         private void error(String code) { send(GameRoom.data("type","ERROR","code",code)); }
+    }
+
+    /** Bound allocation even if a peer never sends a newline. Limit is UTF-16 characters. */
+    static String readFrame(java.io.Reader input) throws IOException {
+        StringBuilder frame = new StringBuilder(256);
+        int c;
+        while ((c = input.read()) != -1) {
+            if (c == '\n') return frame.toString();
+            if (frame.length() >= 2048) throw new IOException("MESSAGE_TOO_LARGE");
+            frame.append((char)c);
+        }
+        return frame.isEmpty() ? null : frame.toString();
     }
 
     static String string(JsonObject object, String key) {

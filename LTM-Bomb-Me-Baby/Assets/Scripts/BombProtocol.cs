@@ -18,6 +18,9 @@ using System;
     public string code;
     public string playerId;
     public string winnerId;
+    public string roomCode;
+    public int roundIndex;
+    public bool hasRoom;
     public string resumeToken;
     public string reason;
     public string from;
@@ -115,6 +118,10 @@ using System;
 [Serializable] public class RoomData {
     public string code;
     public string phase;
+    public int roundIndex;
+    public string roundWinnerId;
+    public string roundEndReason;
+    public string[] winnerIds;
     public string mapId;
     public string mapName;
     public float arenaSize;
@@ -125,6 +132,19 @@ using System;
     public int minPlayers;
     public int maxPlayers;
     public LobbyPlayer[] players;
+}
+
+public enum MatchOutcome { Win, Loss, Draw, SharedWin }
+
+public static class BombResult {
+    public static MatchOutcome Resolve(string localId, string winnerId, string[] winners) {
+        if (winners != null && winners.Length > 0) {
+            bool included = Array.IndexOf(winners, localId) >= 0;
+            return included ? (winners.Length > 1 ? MatchOutcome.SharedWin : MatchOutcome.Win) : MatchOutcome.Loss;
+        }
+        if (string.IsNullOrEmpty(winnerId)) return MatchOutcome.Draw;
+        return winnerId == localId ? MatchOutcome.Win : MatchOutcome.Loss;
+    }
 }
 
 [Serializable] public class LobbyPlayer {

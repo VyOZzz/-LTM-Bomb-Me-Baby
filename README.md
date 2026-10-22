@@ -20,7 +20,7 @@ Java authoritative server
   ├─ thread pool nhận và kiểm tra request
   ├─ khóa riêng theo room khi đổi trạng thái
   ├─ game loop 20 Hz
-  └─ hàng đợi ghi riêng/client, snapshot 10 Hz được gộp bản mới nhất + event gameplay
+  └─ hàng đợi ghi riêng/client; gộp snapshot liền nhau, giữ thứ tự event gameplay
         │
         └─ STATE_UPDATE / ACK / PONG / GAME_OVER / JOURNEY_COMPLETE
 ```
@@ -39,10 +39,24 @@ mvn exec:java -Dexec.args="7777"
 
 Server mặc định nghe TCP port `7777`. Mở firewall cho port này nếu người chơi ở máy khác. Giao thức prototype là TCP thuần trong mạng tin cậy; chưa có đăng nhập hay TLS.
 
+Từ PowerShell ở thư mục gốc, có thể dùng:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/run_server.ps1
+```
+
+Hoặc đóng gói một lần rồi chạy chỉ với Java 17+ (máy chạy không cần Maven):
+
+```powershell
+cd server
+mvn test package
+java -Dsync.mode=optimized -jar target/bomb-me-baby-server-1.0.0.jar 7777
+```
+
 ## Tài liệu và kiểm thử phần Java server (thành viên A)
 
 - [Học từ đầu và giải thích từng phần code](docs/THANH_VIEN_A_HUONG_DAN.md).
-- [Kết quả 71 test và phạm vi đã kiểm chứng](docs/THANH_VIEN_A_KIEM_THU.md).
+- [Kết quả kiểm chứng mới nhất](docs/FINAL_VALIDATION.md), [mốc kiểm thử trước đây](docs/THANH_VIEN_A_KIEM_THU.md).
 - [Bàn giao cho T/B: tích hợp JSON và so sánh baseline/optimized](docs/THANH_VIEN_A_BAN_GIAO.md).
 
 Server mặc định dùng baseline. Từ thư mục `server/`, kiểm tra cả hai cấu hình:
@@ -84,9 +98,11 @@ Khi người chơi tạo hoặc vào phòng **Hành trình Ba Mảnh** lần đ�
 
 Điều khiển: **WASD/phím mũi tên** di chuyển theo hướng màn hình, **giữ Space** nạp và **thả Space** để nổ, **E** bật Shield, **Shift** Boost. Trong Hành trình, người đang cầm Mảnh Tim Lửa không thể nạp/nổ bom và nhấn **Q** để chủ động thả mảnh. Camera bám sát quả bóng của người chơi và chỉ hiển thị một vùng nhỏ của map. Đấu nhanh đổi sang một map khác ở vòng sau; Hành trình luôn chạy `meadow → crossroads → crater`, giữ điểm qua ba vòng.
 
-Game có nhạc riêng cho menu và ba map. Nhạc tự hạ khi có tiếng nổ/kết quả; tối đa 10 nguồn SFX 3D được phát đồng thời để tránh chồng âm trong trận đông người. Khi mất kết nối trong trận, client hiện số giây còn lại của cửa sổ reconnect 10 giây và số lần thử lại. Người còn trong phòng thấy thông báo, tên người mất kết nối và thời gian giữ chỗ; vị trí đang ẩn trong bụi không bị lộ.
+Game có nhạc riêng cho menu và ba map. Nhạc tự hạ khi có tiếng nổ/kết quả; dùng pool 20 giọng SFX với âm lượng/kênh trái phải theo vị trí người chơi để hạn chế chồng âm. Khi mất kết nối trong trận, client hiện cửa sổ reconnect 10 giây và số lần thử lại. Người còn trong phòng thấy tên người mất kết nối và thời gian giữ chỗ; vị trí đang ẩn trong bụi không bị lộ.
 
 ## Chơi thử một mình với bot
+
+**Phòng riêng và tìm nhanh:** người khác bấm Tìm trận **không vào phòng riêng bạn đã tạo**. Gửi mã phòng cho họ; hoặc cả hai cùng bấm Tìm trận ở cùng mode. Server ghép ở tick kế tiếp khi có ít nhất 2 người đang tìm.
 
 Cần Java server đang chạy và một Unity client. Bot là client TCP riêng, dùng cùng luật chơi và dữ liệu nhìn thấy như người chơi; hỗ trợ cả Đấu nhanh và Hành trình. Dùng JDK/Maven sẵn có, không cần Python hay mở thêm Unity.
 
@@ -104,6 +120,14 @@ Cần Java server đang chạy và một Unity client. Bot là client TCP riêng
 Bot biết tìm vật phẩm, đuổi đối thủ nhìn thấy, tránh đá đơn giản, nạp/nổ bom, dùng khiên/tăng tốc và mang Tim Lửa về bệ. Đây là đối thủ cơ bản phục vụ kiểm thử, không phải AI thi đấu. Thêm `-Passive` nếu muốn bot di chuyển/nhặt đồ nhưng không tấn công, thuận tiện thử âm thanh/VFX. Với server ở máy khác, thêm `-ServerHost 192.168.1.20 -Port 7777` theo địa chỉ thực tế.
 
 Nếu báo `ROOM_NOT_FOUND`, kiểm tra mã và địa chỉ server; `ROOM_UNAVAILABLE` nghĩa là phòng đã bắt đầu, đã đầy hoặc Hành trình đã chơi vòng đầu. Thêm bot trước khi vào trận. Bot giữ kết nối đến khi bạn dừng script; sau khi rời phòng trong Unity, hãy dừng bot trước khi tạo lượt thử mới.
+
+## Build Windows
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/build_client.ps1 -Isolated
+```
+
+Output: `builds/windows/BombMeBaby.exe`. `-Isolated` build trong bản sao để bạn có thể giữ Editor đang mở; bỏ cờ nếu build trực tiếp project đã đóng. Truyền `-Unity` nếu Editor nằm ở đường dẫn khác. Trong Editor có **Tools > Bomb Me Baby > Build Windows**. Gửi cả thư mục Windows, không chỉ `.exe`.
 
 ## Bật AI trong Unity Editor (tùy chọn)
 
@@ -150,20 +174,20 @@ Contribution kỹ thuật chính là **selective state synchronization**:
 - player trong bụi/ở xa và pickup ngoài phạm vi được lọc theo từng viewer;
 - event nổ không gửi tọa độ nguồn cho viewer không được phép nhìn thấy.
 
-18 lượt đo loopback với 2/4/8 client giả lập cho thấy `optimized` giảm trung bình khoảng **66–79% byte nhận trên mỗi client** so với `baseline`. Số message/giây gần như không đổi và kết quả hiện chưa chứng minh giảm RTT. Dữ liệu thô nằm trong `experiments/raw/`; cách chạy lại, bảng tổng hợp và hạn chế được ghi trong [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md).
+Phép đo mới ngày 22/10 gồm 18 lượt × 30 giây, cố định map meadow, 2/4/8 client giả lập: `optimized` giảm khoảng **62–78% byte nhận/client/s**, không có lỗi kết nối. Xem [EXPERIMENTS_FINAL.md](docs/EXPERIMENTS_FINAL.md). Kết quả chưa chứng minh giảm RTT hoặc hiệu năng LAN/Internet. Mốc cũ 19/10 (66–79%, map ngẫu nhiên) vẫn được giữ riêng trong [EXPERIMENTS.md](docs/EXPERIMENTS.md).
 
-Trạng thái kiểm tra ngày 21/10/2026:
+Trạng thái kiểm tra ngày 22/10/2026:
 
-- 71/71 test Java qua ở cả `baseline` và `optimized`;
-- Unity `6000.3.6f1` batch compile thành công, 11 SFX và 4 track nhạc được import;
-- source Unity đã hiểu snapshot optimized, hai game mode, reconnect geometry và tọa độ event bị ẩn;
-- vẫn cần phát hành lại Windows build và kiểm tra end-to-end 2–4 client trên commit cuối.
+- Windows player đã build bằng Unity `6000.3.6f1`; 19 clip SFX và 4 track nhạc đang dùng, nhạc sảnh giữ nguyên;
+- 12 kiểm tra C# và 69 kiểm tra Unity Play Mode đã qua, gồm một client Unity kết nối Java thật cùng một peer TCP;
+- test Java, lỗi đã sửa và phạm vi kiểm chứng xem [FINAL_VALIDATION.md](docs/FINAL_VALIDATION.md);
+- 98 test Java đã qua ở cả hai chế độ, và 18 lượt benchmark sau sửa hoàn tất không lỗi.
 
 ## Giới hạn hiện tại
 
-- Source Unity đã compile bằng Editor nhưng repository chưa chứa bản Windows phát hành của commit hiện tại; cần build và kiểm tra trên máy sạch trước khi nộp.
-- Chưa có lưu lịch sử trận, bot, skin, matchmaking hay TLS. Server public hiện là TCP thuần dành cho demo và chưa có gói deploy chuẩn hóa.
-- Benchmark hiện dùng loopback, map ngẫu nhiên và client giả lập; cần đo lại trên commit cuối, cố định map/seed nếu có thể và bổ sung LAN hai máy.
+- `builds/` bị Git ignore; clone source cần chạy script build. Vẫn cần kiểm tra máy sạch và nghe/chơi bằng người thật trước khi nộp.
+- Có bot thử nghiệm và matchmaking. Chưa có lưu lịch sử trận, skin hoặc TLS; server dùng TCP thuần cho demo/mạng tin cậy.
+- Benchmark mới vẫn dùng loopback và client giả lập; không thay thế đo LAN, FPS/GC hoặc đánh giá trải nghiệm người chơi.
 - Không có cơ chế chống gian lận toàn diện; server đã giới hạn movement và bỏ qua sequence trùng/cũ.
 
 ## Tài liệu và nguồn tham khảo

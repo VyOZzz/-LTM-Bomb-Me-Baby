@@ -1,5 +1,7 @@
 # Playtest map — Bomb Me Baby
 
+Kiểm tra tự động ngày 22/10 đã qua: ba map × ba chu kỳ trong Unity headless; snapshot Java → geometry/actor → kết quả → rời phòng; vật liệu gắn nhãn giữ ở 11 sau mỗi chu kỳ. Một Unity client cùng một peer TCP đã tạo/join/ready/kết thúc trên server thật. Chi tiết ở [FINAL_VALIDATION.md](FINAL_VALIDATION.md). Đây **không phải playtest người thật**, nên bảng cảm nhận/thời lượng trận bên dưới vẫn để trống.
+
 Người phụ trách: Thành viên B. Map định nghĩa trong `server/src/main/java/bombmebaby/GameMap.java`. Mục tiêu theo `docs/TEAM_PLAN.md`: kiểm tra đủ ba map bằng 2–4 client thật và chọn một map/kịch bản ổn định cho demo.
 
 ## Cách chạy

@@ -1,10 +1,10 @@
 # Runbook demo — Bomb Me Baby
 
-Cập nhật theo source và kiểm thử tự động ngày 21/10/2026. Kết quả build/client thật ngày 13/10 được giữ làm mốc lịch sử; cần chạy lại toàn bộ runbook trên build cuối trước khi nộp.
+Cập nhật 22/10/2026. Bản Windows và server JAR đã build; [FINAL_VALIDATION.md](FINAL_VALIDATION.md) ghi phạm vi kiểm tra tự động. Cần chạy checklist bằng người thật trên build này trước nộp; mốc 13/10 bên dưới chỉ là lịch sử.
 
 ## Chuẩn bị
 
-1. Chạy `mvn clean test "-Dsync.mode=baseline"` và `mvn test "-Dsync.mode=optimized"` trong `server/`; cả hai phải qua 71 test.
+1. Chạy `mvn test "-Dsync.mode=baseline"` và `mvn test package "-Dsync.mode=optimized"` trong `server/`; cả hai phải qua 98 test.
 2. Chạy server bằng `mvn compile exec:java "-Dexec.args=7777" "-Dsync.mode=optimized"` (TCP `7777`).
 3. Đặt `server.txt` cạnh file game `.exe`; dòng đầu là `HOST:PORT`.
 4. Khởi động 2–4 bản game. Client thứ nhất tạo phòng; các client còn lại nhập mã phòng rồi vào phòng.
@@ -28,10 +28,10 @@ Muốn demo lặp lại một map Đấu nhanh, thêm `"-Ddemo.map=meadow"` vào
 
 ## Trạng thái xác minh
 
-### Source hiện tại — 21/10/2026
+### Source hiện tại — 22/10/2026
 
-- Java: 71 test, 0 failure, 0 error, 0 skipped ở cả baseline và optimized.
-- Unity `6000.3.6f1`: batch compile thành công với mã thoát 0; 11 SFX và 4 track nhạc import thành công.
+- Java: 98 test, 0 failure/error ở cả baseline và optimized; JAR kèm dependency chạy bằng Java 17+.
+- Unity `6000.3.6f1`: Windows build thành công; 12 kiểm tra C# và 69 kiểm tra Play Mode tự động qua. Audio hiện có 19 SFX và 4 track nhạc; nhạc sảnh giữ nguyên.
 - Chưa đánh dấu hoàn thành demo cuối cho đến khi chạy lại 2–4 Windows client trên cùng commit/tag phát hành.
 
 ### Mốc client thật — 13/10/2026

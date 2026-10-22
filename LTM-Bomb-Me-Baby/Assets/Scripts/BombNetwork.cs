@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.IO;
 using System.Net.Sockets;
 using System.Text;
@@ -14,10 +15,10 @@ public sealed class BombNetwork : IDisposable {
     // prevents a replacement socket from racing the old session during a network black hole.
     const int ServerSilenceMilliseconds = 7000;
 
-    readonly ConcurrentQueue<string> inbox = new ConcurrentQueue<string>();
+    readonly LinkedList<string> inbox = new LinkedList<string>();
     readonly ConcurrentQueue<string> outbox = new ConcurrentQueue<string>();
     readonly AutoResetEvent writeSignal = new AutoResetEvent(false);
-    readonly object snapshotLock = new object();
+    readonly object inboxLock = new object();
     Thread worker;
     TcpClient socket;
     volatile bool running;
@@ -28,13 +29,11 @@ public sealed class BombNetwork : IDisposable {
     long lastReceivedAt;
     int sentMessages;
     int receivedMessages;
-    int queuedMessages;
     int queuedWrites;
     int retryAttempt;
     int connectionGeneration;
     int connectionAttempt;
     int failedAttempt;
-    string latestSnapshot;
     string host, name;
     int port;
     string lastError = "";
@@ -104,6 +103,7 @@ public sealed class BombNetwork : IDisposable {
                                 && (line = reader.ReadLine()) != null) {
                             Interlocked.Exchange(ref retryAttempt, 0);
                             Interlocked.Exchange(ref lastReceivedAt, NowMilliseconds());
+                            if (Volatile.Read(ref failedAttempt) != 0) break;
                             EnqueueIncoming(line);
                             Interlocked.Increment(ref receivedMessages);
                             Interlocked.Add(ref receivedBytes, Encoding.UTF8.GetByteCount(line) + 1);
@@ -155,8 +155,11 @@ public sealed class BombNetwork : IDisposable {
         lastError = Describe(error);
         Connected = false;
         transportReady = false;
-        lock (snapshotLock) latestSnapshot = null;
-        EnqueueIncoming("{\"type\":\"NETWORK_ERROR\"}");
+        lock (inboxLock) {
+            // Overflow requires a full resume, rather than silently losing lifecycle events.
+            if (inbox.Count >= MaxQueuedMessages) inbox.Clear();
+            inbox.AddLast("{\"type\":\"NETWORK_ERROR\"}");
+        }
         try { client?.Close(); } catch (Exception) { }
     }
 
@@ -209,15 +212,22 @@ public sealed class BombNetwork : IDisposable {
     }
 
     void EnqueueIncoming(string line) {
-        if (line.IndexOf("\"type\":\"STATE_UPDATE\"", StringComparison.Ordinal) >= 0) {
-            lock (snapshotLock) latestSnapshot = line;
-            return;
+        lock (inboxLock) {
+            // Only replace adjacent snapshots. Events are ordering barriers, and a full
+            // recovery snapshot must survive a following optimized snapshot without geometry.
+            if (IsSnapshot(line) && inbox.Last != null && IsSnapshot(inbox.Last.Value)
+                    && (!HasGeometry(inbox.Last.Value) || HasGeometry(line))) {
+                inbox.Last.Value = line;
+                return;
+            }
+            if (inbox.Count >= MaxQueuedMessages)
+                throw new IOException("Hàng đợi nhận mạng đã đầy; đang khôi phục trạng thái.");
+            inbox.AddLast(line);
         }
-        inbox.Enqueue(line);
-        int count = Interlocked.Increment(ref queuedMessages);
-        while (count > MaxQueuedMessages && inbox.TryDequeue(out _))
-            count = Interlocked.Decrement(ref queuedMessages);
     }
+
+    static bool IsSnapshot(string line) => line.IndexOf("\"type\":\"STATE_UPDATE\"", StringComparison.Ordinal) >= 0;
+    static bool HasGeometry(string line) => line.IndexOf("\"obstacles\":", StringComparison.Ordinal) >= 0;
 
     public void ContinueSequenceAfter(long lastAcceptedSequence) {
         long current;
@@ -228,17 +238,13 @@ public sealed class BombNetwork : IDisposable {
     }
 
     public bool TryReceive(out string line) {
-        if (inbox.TryDequeue(out line)) {
-            Interlocked.Decrement(ref queuedMessages);
-            return true;
-        }
-        lock (snapshotLock) {
-            if (latestSnapshot == null) {
+        lock (inboxLock) {
+            if (inbox.First == null) {
                 line = null;
                 return false;
             }
-            line = latestSnapshot;
-            latestSnapshot = null;
+            line = inbox.First.Value;
+            inbox.RemoveFirst();
             return true;
         }
     }
@@ -249,9 +255,7 @@ public sealed class BombNetwork : IDisposable {
     }
 
     void ClearQueues() {
-        while (inbox.TryDequeue(out _)) { }
-        Interlocked.Exchange(ref queuedMessages, 0);
-        lock (snapshotLock) latestSnapshot = null;
+        lock (inboxLock) inbox.Clear();
         ResetOutbox();
     }
 

@@ -145,6 +145,7 @@ sealed class BombShardView {
         carrierAura = Primitive("Carrier glow", PrimitiveType.Sphere, Vector3.zero, Vector3.one,
             BombGame.TransparentMaterial(BombUi.WithAlpha(BombUi.Core, .22f)));
         carrierAura.SetActive(false);
+        BombMaterialOwner.Capture(root);
     }
 
     void Place(GameObject model, string name, Vector3 position) {
@@ -164,5 +165,5 @@ sealed class BombShardView {
         return item;
     }
 
-    static void SetColor(GameObject item, Color color) => item.GetComponent<Renderer>().material.color = color;
+    static void SetColor(GameObject item, Color color) => item.GetComponent<Renderer>().sharedMaterial.color = color;
 }

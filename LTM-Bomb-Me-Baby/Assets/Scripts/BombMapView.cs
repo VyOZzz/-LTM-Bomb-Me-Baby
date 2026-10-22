@@ -81,6 +81,7 @@ sealed class BombMapView {
         foreach (BushData bush in bushes) BuildBush(style, bush);
         BuildDecor(style, arenaSize, obstacles, bushes, random);
         if (style.lava) BuildLava(arenaSize, random);
+        BombMaterialOwner.Capture(root);
     }
 
     public void Clear() {
@@ -118,9 +119,16 @@ sealed class BombMapView {
         GameObject border = Primitive("Arena surroundings", PrimitiveType.Cube, new Vector3(0, -.26f, 0), new Vector3(outer, .3f, outer),
             Color.Lerp(style.floorFallback, Color.black, .35f));
         Material ground = GroundMaterial(style.ground, style.groundTint, diameter / style.tile);
-        if (ground != null) floor.GetComponent<Renderer>().sharedMaterial = ground;
+        if (ground != null) ReplaceGroundMaterial(floor, ground);
         Material surroundings = GroundMaterial(style.ground, style.borderTint, outer / style.tile);
-        if (surroundings != null) border.GetComponent<Renderer>().sharedMaterial = surroundings;
+        if (surroundings != null) ReplaceGroundMaterial(border, surroundings);
+    }
+
+    static void ReplaceGroundMaterial(GameObject target, Material material) {
+        Renderer renderer = target.GetComponent<Renderer>();
+        // Primitive allocated a fallback material which is no longer referenced.
+        Object.Destroy(renderer.sharedMaterial);
+        renderer.sharedMaterial = material;
     }
 
     /// Ring of rocks just outside the play bounds. The south side faces the camera, so it stays low
@@ -226,7 +234,7 @@ sealed class BombMapView {
         if (lava == null) {
             Texture2D color = BombArt.Ground("lava", "color");
             if (color == null) return;
-            lava = new Material(Shader.Find("Standard")) { mainTexture = color };
+            lava = new Material(Shader.Find("Standard")) { name = BombMaterialOwner.Prefix + "lava", mainTexture = color };
             Texture2D emission = BombArt.Ground("lava", "emission");
             if (emission != null) {
                 lava.SetTexture("_EmissionMap", emission);
@@ -308,6 +316,7 @@ sealed class BombMapView {
             }
             material.SetFloat("_Glossiness", .08f);
         }
+        material.name = BombMaterialOwner.Prefix + "ground";
         material.color = tint;
         material.mainTextureScale = new Vector2(tiling, tiling);
         return material;

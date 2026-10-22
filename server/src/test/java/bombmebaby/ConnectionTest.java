@@ -365,6 +365,130 @@ class ConnectionTest {
         assertTrue(server.rooms.isEmpty());
     }
 
+    @Test void lobbyResumeExplicitlyClearsRoomAndLeaveIsIdempotent() throws Exception {
+        Peer old = hello();
+        old.request("type", "CREATE_ROOM", "seq", 1);
+        old.disconnect();
+        Peer resumed = connect();
+        resumed.send("type", "HELLO", "resumeToken", old.player.resumeToken);
+        assertFalse(resumed.until("WELCOME").get("hasRoom").getAsBoolean());
+        resumed.until("LEFT_ROOM"); resumed.until("ACK");
+        resumed.send("type", "LEAVE_ROOM", "seq", 2);
+        resumed.until("LEFT_ROOM"); resumed.until("ACK");
+        resumed.request("type", "CREATE_ROOM", "seq", 3);
+        assertNotNull(old.player.room);
+    }
+
+    @Test void finishedQuickRoundResumesWithWinnerAndMap() throws Exception {
+        Peer old = playing();
+        GameRoom room = old.player.room;
+        old.disconnect();
+        synchronized (room) {
+            room.players.stream().filter(p -> p != old.player).forEach(p -> p.alive = false);
+            room.update(System.currentTimeMillis(), 0);
+        }
+        Peer resumed = connect();
+        resumed.send("type", "HELLO", "resumeToken", old.player.resumeToken);
+        assertTrue(resumed.until("WELCOME").get("hasRoom").getAsBoolean());
+        JsonObject info = resumed.until("ROOM_STATE").getAsJsonObject("room");
+        assertEquals(old.player.id, info.get("roundWinnerId").getAsString());
+        assertEquals("FINISHED", resumed.until("STATE_UPDATE").get("phase").getAsString());
+        assertEquals(old.player.id, resumed.until("GAME_OVER").get("winnerId").getAsString());
+        resumed.until("ACK");
+        resumed.player = old.player;
+        resumed.disconnect();
+        assertSame(room, old.player.room, "Results remain resumable until the deadline");
+    }
+
+    @Test void journeyResultResumesBetweenChaptersAndAtFinale() throws Exception {
+        Peer a = hello();
+        a.request("type", "CREATE_ROOM", "seq", 1, "mode", "JOURNEY");
+        Peer b = readyOpponent(a);
+        a.request("type", "READY", "seq", 2, "ready", true);
+        GameRoom room = a.player.room;
+        for (int chapter = 0; chapter < 3; chapter++) {
+            a.disconnect();
+            synchronized (room) {
+                b.player.alive = false;
+                room.update(System.currentTimeMillis(), 0);
+            }
+            Peer resumed = connect();
+            resumed.send("type", "HELLO", "resumeToken", a.player.resumeToken);
+            resumed.until("WELCOME");
+            assertEquals(chapter, resumed.until("ROOM_STATE").getAsJsonObject("room").get("chapterIndex").getAsInt());
+            assertEquals(a.player.id, resumed.until("GAME_OVER").get("winnerId").getAsString());
+            if (chapter == 2) assertEquals(a.player.id,
+                resumed.until("JOURNEY_COMPLETE").getAsJsonArray("winnerIds").get(0).getAsString());
+            resumed.until("ACK");
+            resumed.player = a.player; a = resumed;
+            if (chapter < 2) {
+                b.request("type", "READY", "seq", 10 + chapter, "ready", true);
+                a.request("type", "READY", "seq", 10 + chapter, "ready", true);
+            }
+        }
+        a.disconnect();
+        assertSame(room, a.player.room, "Final journey results also survive disconnect");
+    }
+
+    @Test void oversizedUnterminatedFrameClosesWithoutWaitingForNewline() throws Exception {
+        Peer peer = hello();
+        peer.writer.print("x".repeat(2049)); peer.writer.flush();
+        peer.finished.get(2, TimeUnit.SECONDS);
+        assertTrue(peer.connection.closed);
+        assertNotNull(hello().player, "Other connections still work");
+    }
+
+    @Test void malformedJsonDoesNotPoisonFollowingFrame() throws Exception {
+        Peer peer = connect();
+        peer.writer.println("{broken");
+        assertEquals("INVALID_MESSAGE", peer.until("ERROR").get("code").getAsString());
+        peer.send("type", "HELLO", "name", "Recovered");
+        peer.until("WELCOME"); peer.until("ACK");
+    }
+
+    @Test void outboundSnapshotsRespectEventsAndRecoveryGeometry() throws Exception {
+        try (ServerSocket listener = new ServerSocket(0, 1, InetAddress.getLoopbackAddress());
+             Socket client = new Socket(listener.getInetAddress(), listener.getLocalPort())) {
+            var connection = server.new Connection(listener.accept());
+            try {
+                connection.send(GameRoom.data("type", "STATE_UPDATE", "tick", 1, "obstacles", List.of(1)));
+                connection.send(GameRoom.data("type", "STATE_UPDATE", "tick", 2));
+                connection.send(GameRoom.data("type", "GAME_OVER"));
+                connection.send(GameRoom.data("type", "STATE_UPDATE", "tick", 3));
+                connection.send(GameRoom.data("type", "STATE_UPDATE", "tick", 4));
+                assertEquals(4, connection.outbound.size());
+                assertTrue(connection.outbound.getFirst().geometry());
+                var ordered = connection.outbound.stream().map(BombServer.Connection.Outbound::json).toList();
+                assertTrue(ordered.get(1).contains("\"tick\":2"));
+                assertTrue(ordered.get(2).contains("GAME_OVER"));
+                assertTrue(ordered.get(3).contains("\"tick\":4"));
+            } finally { connection.close(); }
+        }
+    }
+
+    @Test void watchdogDoesNotMisreadAWriteFinishingBetweenVolatileReads() throws Exception {
+        try (ServerSocket listener = new ServerSocket(0, 1, InetAddress.getLoopbackAddress());
+             Socket client = new Socket(listener.getInetAddress(), listener.getLocalPort())) {
+            var connection = server.new Connection(listener.accept());
+            var stop = new java.util.concurrent.atomic.AtomicBoolean();
+            Thread writer = new Thread(() -> {
+                while (!stop.get()) {
+                    connection.writeStartedAt = System.currentTimeMillis();
+                    connection.writeStartedAt = 0;
+                }
+            });
+            writer.start();
+            try {
+                for (int i = 0; i < 1_000_000 && !connection.closed; i++) {
+                    long now = System.currentTimeMillis();
+                    connection.lastReceivedAt = now;
+                    connection.closeIfUnhealthy(now);
+                }
+                assertFalse(connection.closed, "Finishing a healthy write must not look like an epoch-old stall");
+            } finally { stop.set(true); writer.join(2000); connection.close(); }
+        }
+    }
+
     private Peer hello() throws Exception {
         Peer peer = connect();
         peer.send("type", "HELLO", "name", "A");

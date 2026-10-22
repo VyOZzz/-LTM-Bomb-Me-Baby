@@ -1,5 +1,11 @@
 # Phân công nhóm — Bomb Me Baby
 
+## Bổ sung tích hợp 22/10/2026
+
+Các mốc bên dưới giữ nguyên để phản ánh lịch sử đóng góp. Trạng thái mới nhất xem [FINAL_VALIDATION.md](FINAL_VALIDATION.md): đã sửa R1–R8, watchdog đóng nhầm connection, metadata chương trên HUD và vòng đời vật liệu; 98 test Java qua cả hai mode, thêm regression test C#/Unity, script bot, build Windows và server JAR. Nguồn đang ở working tree, chưa tự commit/merge. Benchmark mới ghi riêng tại [EXPERIMENTS_FINAL.md](EXPERIMENTS_FINAL.md); không thay thế hay sửa số liệu 19/10.
+
+Việc nhóm cần chốt: thông tin trang bìa, playtest người thật/LAN, kiểm tra Compilatio và bàn giao bản Report đã nộp. Các số 71 test/11 SFX ở phần lịch sử không mô tả bản hiện tại.
+
 Cập nhật: 21/10/2026, đối chiếu lại với code, test và các commit Unity/âm thanh mới. Bản 15/10 và 20/10 xem trong lịch sử Git của file này. Tài liệu đối chiếu: `final-project/Topics.md`, `Instruction.md`, `Submission.md` và `README.md`.
 
 | Người | Vai trò | Tài khoản Git |

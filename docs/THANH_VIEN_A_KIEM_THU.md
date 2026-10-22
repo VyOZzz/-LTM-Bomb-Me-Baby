@@ -1,5 +1,7 @@
 # Kết quả kiểm thử phần A
 
+Bản ghi này là mốc kiểm thử 21/10. Bản tích hợp 22/10 đã có **98 test Java** qua ở cả hai mode, kèm kiểm tra Unity và benchmark mới; xem [FINAL_VALIDATION.md](FINAL_VALIDATION.md). Giữ số liệu bên dưới để không viết lại lịch sử đóng góp.
+
 Ngày kiểm tra gần nhất: 21/10/2026, Windows 11, JDK 21.0.10, Maven 3.9.16. POM giữ `maven.compiler.release=17`, Gson 2.11.0 và JUnit 5.11.4. Đã chạy lại từ `mvn clean test` để không tính nhầm báo cáo Surefire cũ còn trong `target/`.
 
 ## 1. Các lần chạy thực tế

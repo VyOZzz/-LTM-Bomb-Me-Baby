@@ -1,6 +1,19 @@
 # TCP JSON protocol
 
-Cập nhật 21/10/2026. Mỗi message là một JSON object trên một dòng UTF-8. TCP được giữ xuyên suốt phiên chơi. Client phải gửi `HELLO` đầu tiên.
+Cập nhật 22/10/2026. Mỗi message là một JSON object trên một dòng UTF-8. TCP được giữ xuyên suốt phiên chơi. Client phải gửi `HELLO` đầu tiên. Server đọc tối đa 2048 ký tự UTF-16 mỗi frame; vượt giới hạn sẽ đóng socket ngay cả khi chưa có newline. Tối đa 64 connection đồng thời.
+
+## Khôi phục và thứ tự message (22/10)
+
+- `WELCOME.hasRoom`: true khi session còn phòng; false hoặc thiếu ở session mới. Client xóa phòng/actor cũ khi false. Resume không còn phòng còn nhận `LEFT_ROOM`; `LEAVE_ROOM` luôn được xác nhận bằng `LEFT_ROOM`, kể cả đã ở menu.
+- Phòng đã bắt đầu giữ session mất kết nối tối đa 10 giây, kể cả ở FINISHED hoặc khi Hành trình hoàn tất. Lobby chưa bắt đầu bỏ người mất kết nối; hết hạn giữ chỗ thì server dọn người và phòng rỗng.
+- Resume PLAYING: `WELCOME → ROOM_STATE → STATE_UPDATE` có geometry → `PLAYER_RECONNECTED → ACK`.
+- Resume FINISHED: `WELCOME → ROOM_STATE → STATE_UPDATE` có geometry → `GAME_OVER → JOURNEY_COMPLETE` (nếu đã hoàn tất) → `PLAYER_RECONNECTED → ACK`.
+- `ROOM_STATE.room` có `roundIndex`, `roundWinnerId`, `roundEndReason`, `winnerIds`, `journeyComplete` để dựng lại kết quả độc lập với event đã bỏ lỡ.
+- `GAME_START`, `GAME_OVER` có `roundIndex`; `STATE_UPDATE` có `roomCode` và `roundIndex` tăng từ 1 mỗi vòng trong phòng. Client chỉ nhận snapshot khớp phòng/vòng; snapshot PLAYING không được mở lại vòng đã FINISHED.
+- Cả hai đầu chỉ gộp các snapshot liền nhau. Event là mốc thứ tự; snapshot recovery có geometry được giữ nếu snapshot sau không có geometry. Inbox client đầy 256 message sẽ reconnect để khôi phục thay vì âm thầm bỏ event; outbound server đầy 128 sẽ đóng connection chậm.
+- `winnerIds` gồm những người đồng chiến thắng Hành trình. Danh sách rỗng và `winnerId` rỗng là hòa; người không thuộc nhóm đồng thắng vẫn thua.
+
+Client và server phải được cập nhật cùng phiên bản này.
 
 ## Sequence và reconnect
 
@@ -51,7 +64,7 @@ Mỗi phòng, kể cả phòng tạo bằng mã, cần ít nhất `minPlayers` =
 {"type":"MATCHMAKING","status":"SEARCHING","mode":"QUICK","waiting":2,"minPlayers":2,"maxPlayers":4}
 ```
 
-Đủ 4 người thì ghép ngay. Có 2–3 người thì server chờ thêm 4 giây cho người đến sau rồi ghép cả hàng. Server tạo phòng mới, gửi `{"type":"MATCH_FOUND","room":"ABC123","mode":"QUICK"}` cho từng người, rồi `ROOM_STATE` và `GAME_START` ngay, không cần `READY`. Sau trận, phòng ghép hoạt động như phòng thường: mọi người bấm `READY` để chơi tiếp hoặc `LEAVE_ROOM` để tìm trận khác.
+Đủ 2 người cùng mode thì ghép ở lần tick kế tiếp (game loop 50 ms), tối đa 4 người mỗi nhóm đang chờ. Server tạo phòng mới, gửi `{"type":"MATCH_FOUND","room":"ABC123","mode":"QUICK"}` cho từng người, rồi `ROOM_STATE` và `GAME_START`, không cần `READY`. Phòng riêng không được đưa vào tìm trận: bạn bè phải nhập mã. Sau trận, mọi người bấm `READY` để chơi tiếp hoặc `LEAVE_ROOM` để tìm trận khác.
 
 `CANCEL_MATCH` rời hàng chờ và nhận `{"type":"MATCHMAKING","status":"CANCELLED"}`; không ở trong hàng nhận `NOT_SEARCHING`. Đang trong hàng chờ thì `CREATE_ROOM`, `JOIN_ROOM`, `FIND_MATCH` nhận `ALREADY_SEARCHING`; đang ở trong phòng thì `FIND_MATCH` nhận `ALREADY_IN_ROOM`. Mất kết nối khi đang chờ thì bị xóa khỏi hàng; reconnect không tự vào lại hàng.
 
@@ -171,8 +184,8 @@ Server là nguồn chính thức: client chỉ gửi hướng/hành động, kh�
 2. `BombNetwork.Send()` gắn `seq` và `clientTime`, serialize JSON rồi đưa vào hàng đợi giới hạn; thread ghi riêng phát một dòng UTF-8 lên TCP để Unity main thread không bị chặn.
 3. Một `BombServer.Connection` đọc dòng JSON trên thread của client, kiểm tra session và sequence, sau đó gọi `GameRoom.action()`.
 4. Mọi thay đổi trong một phòng đi qua monitor `synchronized` của `GameRoom`; game loop 20 Hz cũng dùng cùng monitor khi gọi `update()`. Vì vậy input, tick và tranh nhặt Core không sửa đồng thời cùng một room.
-5. Server tích phân movement, collision, pickup, cooldown và damage. Mỗi hai tick, server tạo `STATE_UPDATE`; hàng đợi ghi riêng của từng connection thay snapshot chưa gửi bằng bản mới nhất và giữ thứ tự event. Client đọc chậm không chặn khóa room/game loop; write quá 3 giây hoặc queue control đầy sẽ đóng riêng connection đó.
-6. Thread đọc của `BombNetwork` đưa event vào queue giới hạn và chỉ giữ `STATE_UPDATE` mới nhất. `BombGame.Update()` trên Unity main thread áp snapshot, nội suy transform và cập nhật HUD/VFX.
+5. Server tích phân movement, collision, pickup, cooldown và damage. Mỗi hai tick tạo `STATE_UPDATE`; hàng đợi ghi chỉ thay snapshot liền trước bằng bản mới hơn nếu không làm mất geometry recovery. Client đọc chậm không chặn khóa room/game loop; write quá 3 giây hoặc queue đầy sẽ đóng riêng connection đó. Watchdog chụp timestamp ghi một lần trước khi kiểm tra để tránh race với writer vừa hoàn tất.
+6. Thread đọc của `BombNetwork` đưa tất cả message vào cùng queue có thứ tự, gộp snapshot liền nhau theo cùng quy tắc geometry. Khi đầy, reconnect để lấy state đầy đủ. `BombGame.Update()` kiểm tra phòng/vòng, áp snapshot, làm mượt transform và cập nhật HUD/VFX.
 
 ```text
 Input Unity → BombNetwork (TCP JSON) → BombServer.Connection

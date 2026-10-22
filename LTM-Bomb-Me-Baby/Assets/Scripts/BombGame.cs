@@ -56,6 +56,10 @@ public sealed class BombGame : MonoBehaviour {
     string host = "127.0.0.1", port = "7777", playerName = "Bom";
     string joinCode = "", myId = "", status = "Nhập tên rồi kết nối tới server.", phase = "MENU", winnerId = "";
     RoomData room;
+    string[] winnerIds = Array.Empty<string>();
+    string lastResultSound = "";
+    int activeRoundIndex;
+    bool recoveryMusicPending;
     float nextMoveAt, nextPingAt, nextMetricsAt, rttMs, serverMicros;
     const float ReconnectWindowSeconds = 10;
     float reconnectStartedAt = -1;
@@ -175,7 +179,7 @@ public sealed class BombGame : MonoBehaviour {
         return found == null ? null : found.transform;
     }
 
-    void OnDestroy() { network.Dispose(); }
+    void OnDestroy() { network.Dispose(); mapView.Clear(); shardView.Clear(); }
 
     void Update() {
         TickNotice();
@@ -340,7 +344,9 @@ public sealed class BombGame : MonoBehaviour {
                 reconnectStartedAt = -1;
                 reconnectExpired = false;
                 status = resumed ? "Đã kết nối lại với server." : "";
-                if (resumed) Toast("Đã kết nối lại — trận đấu tiếp tục.");
+                if (!msg.hasRoom) ResetRoomState();
+                recoveryMusicPending = msg.hasRoom;
+                if (resumed) Toast(msg.hasRoom ? "Đã kết nối lại vào phòng." : "Đã kết nối lại — hãy chọn phòng.");
                 // The server drops a disconnected player from the matchmaking queue.
                 modeMenu.StopSearch();
                 break;
@@ -363,6 +369,12 @@ public sealed class BombGame : MonoBehaviour {
                 if (room != null) {
                     TrackReconnectDeadlines(room.players);
                     phase = room.phase;
+                    activeRoundIndex = room.roundIndex;
+                    if (phase == "FINISHED") {
+                        journeyCompleteReceived = room.journeyComplete;
+                        winnerIds = room.journeyComplete ? room.winnerIds ?? Array.Empty<string>() : Array.Empty<string>();
+                        winnerId = room.journeyComplete ? (winnerIds.Length == 1 ? winnerIds[0] : "") : room.roundWinnerId;
+                    }
                     if (phase == "WAITING") {
                         gameAudio.SetMenuMusic();
                         status = "Đã vào phòng " + room.code + ". Chờ đủ người và mọi người sẵn sàng.";
@@ -371,17 +383,14 @@ public sealed class BombGame : MonoBehaviour {
                 }
                 break;
             case "LEFT_ROOM":
-                room = null; phase = "MENU"; winnerId = "";
-                journeyGuideVisible = false;
-                journeyCompleteReceived = false;
+                ResetRoomState();
                 status = "Đã rời phòng. Tìm trận, tạo phòng hoặc nhập mã phòng.";
-                gameAudio.StopGameplayLoops();
-                gameAudio.SetMenuMusic();
-                ClearNotices();
-                ClearActors();
                 break;
             case "GAME_START":
                 phase = "PLAYING"; winnerId = ""; charging = false;
+                winnerIds = Array.Empty<string>();
+                activeRoundIndex = msg.roundIndex;
+                recoveryMusicPending = false;
                 journeyCompleteReceived = false;
                 journeyGuideVisible = msg.mode == "JOURNEY" && msg.chapterIndex == 0;
                 matchStartedAt = Time.unscaledTime;
@@ -397,7 +406,10 @@ public sealed class BombGame : MonoBehaviour {
                 gameAudio.SetMapMusic(msg.mapId);
                 break;
             case "STATE_UPDATE":
+                if (room == null || msg.roomCode != room.code || msg.roundIndex != activeRoundIndex
+                        || phase == "FINISHED" && msg.phase == "PLAYING") break;
                 phase = msg.phase;
+                if (recoveryMusicPending) { gameAudio.SetMapMusic(msg.mapId); recoveryMusicPending = false; }
                 ApplySnapshot(msg);
                 break;
             case "PLAYER_EXPLODE":
@@ -461,8 +473,9 @@ public sealed class BombGame : MonoBehaviour {
             case "GAME_OVER":
                 phase = "FINISHED";
                 winnerId = msg.winnerId;
+                winnerIds = Array.Empty<string>();
                 gameAudio.StopGameplayLoops();
-                if (msg.mode != "JOURNEY" || msg.chapterIndex < 2) gameAudio.PlayResult(winnerId == myId);
+                if (msg.mode != "JOURNEY" || msg.chapterIndex < 2) PlayResultOnce(false);
                 if (msg.mode != "JOURNEY")
                     status = winnerId == myId ? "Bạn chiến thắng!" : "Trận đấu kết thúc.";
                 else if (string.IsNullOrEmpty(winnerId))
@@ -478,8 +491,9 @@ public sealed class BombGame : MonoBehaviour {
                 phase = "FINISHED";
                 journeyCompleteReceived = true;
                 winnerId = msg.winnerId;
+                winnerIds = msg.winnerIds ?? Array.Empty<string>();
                 gameAudio.StopGameplayLoops();
-                gameAudio.PlayResult(winnerId == myId);
+                PlayResultOnce(true);
                 int shards = 0;
                 if (msg.scores != null) foreach (ScoreData s in msg.scores) if (s.playerId == winnerId) shards = s.roundWins;
                 if (string.IsNullOrEmpty(winnerId)) status = "Hành trình kết thúc: đồng hạng.";
@@ -672,6 +686,7 @@ public sealed class BombGame : MonoBehaviour {
                 boostTrail.minVertexDistance = .12f;
                 boostTrail.material = TransparentMaterial(BombUi.WithAlpha(BombUi.Boost,.65f));
                 boostTrail.emitting = false;
+                BombMaterialOwner.Capture(body);
                 a = new Avatar {
                     body = body, rollingVisual = rollingVisual, shield = shield,
                     chargeAura = chargeAura, boostTrail = boostTrail, color = playerColor
@@ -761,6 +776,16 @@ public sealed class BombGame : MonoBehaviour {
     Color ColorOf(string id) => AvatarOf(id)?.color ?? BombUi.Text;
 
     void ApplyMap(ServerMessage snapshot) {
+        // GAME_START and snapshots advance chapter/map even when ROOM_STATE has not arrived.
+        if (room != null) {
+            room.phase = phase;
+            room.roundIndex = snapshot.roundIndex;
+            room.chapterIndex = snapshot.chapterIndex;
+            room.mode = snapshot.mode;
+            room.mapId = snapshot.mapId; room.mapName = snapshot.mapName;
+            room.arenaSize = snapshot.arenaSize;
+            if (snapshot.scores != null) room.scores = snapshot.scores;
+        }
         if (string.IsNullOrEmpty(snapshot.mapId) || snapshot.mapId == activeMapId) return;
         activeMapId = snapshot.mapId;
         activeMapName = snapshot.mapName;
@@ -824,6 +849,7 @@ public sealed class BombGame : MonoBehaviour {
         if (effectsRoot != null) effect.transform.SetParent(effectsRoot, false);
         Destroy(effect.GetComponent<Collider>());
         effect.GetComponent<Renderer>().material = TransparentMaterial(BombUi.WithAlpha(BombUi.Charge,.4f));
+        BombMaterialOwner.Capture(effect);
         effect.transform.position = position;
         float time = 0;
         while (time < .35f) {
@@ -855,14 +881,14 @@ public sealed class BombGame : MonoBehaviour {
     internal static Material MaterialFor(Color color) {
         Shader shader = Shader.Find("Universal Render Pipeline/Lit");
         if (shader == null) shader = Shader.Find("Standard");
-        var material = new Material(shader);
+        var material = new Material(shader) { name = BombMaterialOwner.Prefix + "opaque" };
         material.color = color;
         if (material.HasProperty("_BaseColor")) material.SetColor("_BaseColor",color);
         return material;
     }
 
     internal static Material TransparentMaterial(Color color) {
-        var material = new Material(Shader.Find("Standard"));
+        var material = new Material(Shader.Find("Standard")) { name = BombMaterialOwner.Prefix + "transparent" };
         material.SetFloat("_Mode", 3);
         material.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
         material.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
@@ -1250,19 +1276,23 @@ public sealed class BombGame : MonoBehaviour {
 
     /// End-of-round card: outcome, why it ended, journey standings, then ready-up and leave.
     void DrawResultPopup() {
-        bool won = !string.IsNullOrEmpty(winnerId) && winnerId == myId;
+        MatchOutcome outcome = BombResult.Resolve(myId, winnerId, winnerIds);
+        bool won = outcome == MatchOutcome.Win || outcome == MatchOutcome.SharedWin;
+        bool draw = outcome == MatchOutcome.Draw;
         bool completedJourney = JourneyFinished();
         bool nextChapter = JourneyHasNextChapter();
         bool ready = IsLocalPlayerReady();
         int scoreRows = room != null && room.mode == "JOURNEY" && room.scores != null ? room.scores.Length : 0;
-        Color accent = nextChapter ? BombUi.Core : won ? BombUi.Charge : BombUi.Danger;
-        string title = nextChapter ? "SANG CHƯƠNG MỚI" : won ? "CHIẾN THẮNG!" : "BẠN ĐÃ THUA";
+        Color accent = nextChapter || draw ? BombUi.Core : won ? BombUi.Charge : BombUi.Danger;
+        string title = nextChapter ? "SANG CHƯƠNG MỚI" : outcome == MatchOutcome.SharedWin ? "ĐỒNG CHIẾN THẮNG!"
+            : draw ? "HÒA!" : won ? "CHIẾN THẮNG!" : "BẠN ĐÃ THUA";
         string body;
         if (nextChapter)
             body = string.IsNullOrEmpty(winnerId) ? "Chương này kết thúc mà chưa ai giữ được Mảnh Tim Lửa."
                 : winnerId == myId ? "Bạn đã giành Mảnh Tim Lửa của chương này!"
                 : NameOf(winnerId) + " đã giành Mảnh Tim Lửa của chương này.";
-        else body = won ? "Bạn là người chiến thắng chung cuộc." : WinnerText();
+        else body = outcome == MatchOutcome.SharedWin ? "Bạn cùng đứng đầu bảng Hành trình."
+            : draw ? "Trận đấu kết thúc mà không có người chiến thắng." : won ? "Bạn là người chiến thắng chung cuộc." : WinnerText();
         string detail = nextChapter ? $"Tiếp theo: Chương {room.chapterIndex + 2}/3. Điểm và số mảnh được giữ lại." : "";
         int count = room?.players == null ? 0 : room.players.Length;
         string readyLine = completedJourney ? "Rời phòng để bắt đầu một hành trình mới."
@@ -1313,12 +1343,12 @@ public sealed class BombGame : MonoBehaviour {
     static readonly string[] JourneySteps = {
         "Mảnh Tim Lửa xuất hiện sau 10 giây — tìm viên pha lê hồng trên minimap.",
         "Chạm để mang mảnh về bệ đá giữa bản đồ. Nổ trúng người giữ 2 lần bằng cú nạp đủ mạnh để làm rơi mảnh.",
-        "Nếu mảnh đã ở trên bệ, đứng trong vòng 3 giây để phá ấn và cướp lại. Giữ mảnh đến hết giờ để thắng chương.",
+        "Chờ bảo hộ bệ hết rồi đứng trong vòng để phá ấn: 3 giây, hoặc 6 giây nếu chủ mảnh đang thủ bệ. Giữ mảnh đến hết giờ để thắng chương.",
         "Khi cầm mảnh, bạn không thể nổ bom; nhấn Q để thả mảnh. E dùng Khiên • Shift Tăng tốc."
     };
 
     void DrawJourneyGuide() {
-        const string footer = "Thắng chương: +3 điểm • Loại đối thủ: +1 điểm • Sau 3 chương, người nhiều điểm nhất thắng.";
+        const string footer = "Sau 3 chương: nhiều mảnh nhất thắng; nếu hòa, xét số lần hạ đối thủ rồi người thắng chương cuối. Vẫn hòa thì đồng chiến thắng. Điểm chỉ để thống kê.";
         float pad = U(28), number = U(28);
         float width = Mathf.Min(U(560), Screen.width - 32);
         float w = width - pad * 2;
@@ -1356,11 +1386,29 @@ public sealed class BombGame : MonoBehaviour {
     }
 
     string WinnerText() {
+        if (winnerIds.Length > 1) return "Những người đồng chiến thắng: " + string.Join(", ", Array.ConvertAll(winnerIds, NameOf)) + ".";
         if (string.IsNullOrEmpty(winnerId)) return "Không còn người chơi sống sót.";
         if (room?.players != null)
             foreach (LobbyPlayer player in room.players)
                 if (player.id == winnerId) return player.name + " đã chiến thắng.";
         return "Đối thủ đã chiến thắng.";
+    }
+
+    void PlayResultOnce(bool finalJourney) {
+        string key = (room?.code ?? "") + ":" + activeRoundIndex + ":" + finalJourney;
+        if (lastResultSound == key) return;
+        lastResultSound = key;
+        MatchOutcome result = BombResult.Resolve(myId, winnerId, winnerIds);
+        if (result != MatchOutcome.Draw) gameAudio.PlayResult(result != MatchOutcome.Loss);
+    }
+
+    void ResetRoomState() {
+        modeMenu.StopSearch();
+        room = null; phase = "MENU"; winnerId = ""; activeRoundIndex = 0;
+        winnerIds = Array.Empty<string>(); lastResultSound = "";
+        journeyGuideVisible = false; journeyCompleteReceived = false; charging = false;
+        gameAudio.StopGameplayLoops(); gameAudio.SetMenuMusic();
+        ClearNotices(); ClearActors();
     }
 
     bool IsLocalPlayerReady() {
@@ -1409,9 +1457,7 @@ public sealed class BombGame : MonoBehaviour {
         reconnectStartedAt = -1;
         reconnectExpired = false;
         myId = "";
-        room = null;
-        phase = "MENU";
-        winnerId = "";
+        ResetRoomState();
         latestPlayers = Array.Empty<PlayerData>();
         ClearNotices();
         ClearActors();

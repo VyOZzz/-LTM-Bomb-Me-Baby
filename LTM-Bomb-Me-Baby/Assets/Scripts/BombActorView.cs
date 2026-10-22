@@ -109,10 +109,11 @@ sealed class BombActorView : MonoBehaviour {
             pool.transform.localRotation = Quaternion.Euler(90, 0, 0);
             Shader shader = Shader.Find("Legacy Shaders/Particles/Additive") ?? Shader.Find("Sprites/Default");
             var renderer = pool.GetComponent<Renderer>();
-            renderer.material = new Material(shader) { mainTexture = poolTexture, color = BombUi.WithAlpha(color, .55f) };
+            renderer.sharedMaterial = new Material(shader) { name = BombMaterialOwner.Prefix + "pickup pool", mainTexture = poolTexture, color = BombUi.WithAlpha(color, .55f) };
             renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         }
         root.AddComponent<BombBob>().Begin(model.transform, core ? .14f : .09f, core ? 70 : 120);
+        BombMaterialOwner.Capture(root);
         return root;
     }
 
@@ -164,6 +165,7 @@ sealed class BombActorView : MonoBehaviour {
     internal static Material GlowMaterial(Color color) {
         if (GlowMaterials.TryGetValue(color, out Material cached)) return cached;
         Material material = BombGame.MaterialFor(color);
+        material.name = "Shared pickup glow"; // Cached across rounds, owned by the cache.
         material.EnableKeyword("_EMISSION");
         material.SetColor("_EmissionColor", color * .75f);
         if (material.HasProperty("_Glossiness")) material.SetFloat("_Glossiness", .8f);

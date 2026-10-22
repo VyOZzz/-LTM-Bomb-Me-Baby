@@ -9,6 +9,7 @@ plus the byte saving of optimized relative to baseline for the same client count
 """
 import argparse
 import csv
+import sys
 from collections import defaultdict
 
 METRICS = [
@@ -26,6 +27,8 @@ def mean(values):
 
 
 def main():
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--summary", default="experiments/summary.csv")
     parser.add_argument("--labels", nargs="*", help="only use rows with these labels")

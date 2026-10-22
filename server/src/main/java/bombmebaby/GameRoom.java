@@ -51,6 +51,9 @@ final class GameRoom {
     boolean journeyComplete;
     List<String> journeyWinnerIds = List.of();
     String finalRoundWinnerId = "";
+    String roundWinnerId = "";
+    String roundEndReason = "";
+    int roundIndex;
     private int nextPickupId = 1;
     private long lastOrbAt;
     private boolean hasStarted;
@@ -118,6 +121,9 @@ final class GameRoom {
         List<double[]> spawns = randomSpawns(players.size());
         hasStarted = true;
         phase = Phase.PLAYING;
+        roundIndex++;
+        roundWinnerId = "";
+        roundEndReason = "";
         tick = 0;
         orbs.clear(); cores.clear();
         for (int i = 0; i < players.size(); i++) {
@@ -140,7 +146,7 @@ final class GameRoom {
         // has the full layout even when optimized STATE_UPDATEs omit it.
         broadcast(data("type", "GAME_START", "room", code,
             "mapId", map.id, "mapName", map.name, "arenaSize", map.halfSize,
-            "mode",mode.name(),"chapterIndex",protocolChapterIndex(),"scores",scores(),
+            "mode",mode.name(),"roundIndex",roundIndex,"chapterIndex",protocolChapterIndex(),"scores",scores(),
             "obstacles", obstacles, "bushes", bushes));
         broadcastSnapshots(now);
     }
@@ -182,9 +188,12 @@ final class GameRoom {
                 if (now >= p.boostReadyAt) {
                     p.boostUntil = now + GameRules.BOOST_MS;
                     p.boostReadyAt = now + GameRules.BOOST_COOLDOWN_MS;
+                    double sizeBefore = p.size;
                     p.size = Math.max(p.baseSize, p.size - 0.23);
                     double ox = p.x - p.dx * 0.8, oz = p.z - p.dz * 0.8;
-                    if (orbs.size() < GameRules.MAX_ORBS && free(ox, oz, 0.2)) orbs.add(new Pickup(nextPickupId++, ox, oz));
+                    if (sizeBefore - p.size + 1e-6 >= GameRules.ENERGY_SIZE_VALUE
+                            && orbs.size() < GameRules.MAX_ORBS && free(ox, oz, 0.2))
+                        orbs.add(new Pickup(nextPickupId++, ox, oz));
                     broadcast(data("type", "BOOST_ACTIVATED", "playerId", p.id));
                 } else reject(p,"BOOST_COOLDOWN");
             }
@@ -241,6 +250,7 @@ final class GameRoom {
     }
 
     private void pickup(PlayerState p, long now) {
+        double previousSize = p.size;
         for (int i = orbs.size() - 1; i >= 0; i--) {
             Pickup o = orbs.get(i);
             if (GameRules.distance(p.x,p.z,o.x,o.z) < 0.55 * p.size + 0.35) {
@@ -250,6 +260,7 @@ final class GameRoom {
                 broadcast(data("type","ENERGY_PICKED","playerId",p.id,"pickupId",o.id));
             }
         }
+        if (p.size > previousSize) resolveGrowthOverlap(p);
     }
 
     private void pickupCores() {
@@ -269,6 +280,7 @@ final class GameRoom {
             cores.remove(i);
             closest.baseSize = Math.min(GameRules.MAX_BASE, closest.baseSize + 0.1);
             closest.size = Math.max(closest.size, closest.baseSize);
+            resolveGrowthOverlap(closest);
             broadcast(data("type","CORE_PICKED","playerId",closest.id,"pickupId",core.id));
         }
     }
@@ -415,6 +427,35 @@ final class GameRoom {
         else if (impulse) p.knockbackZ = 0;
     }
 
+    /** Growing changes collision radius immediately; project out before the next move. */
+    private void resolveGrowthOverlap(PlayerState p) {
+        double radius = GameRules.PLAYER_RADIUS * p.size;
+        double originX = p.x, originZ = p.z;
+        for (int pass = 0; pass < 16; pass++) {
+            p.x = GameRules.clamp(p.x, -map.halfSize + radius, map.halfSize - radius);
+            p.z = GameRules.clamp(p.z, -map.halfSize + radius, map.halfSize - radius);
+            if (free(p.x, p.z, radius)) return;
+            for (GameMap.Obstacle rock : obstacles) {
+                double dx = p.x - rock.x(), dz = p.z - rock.z();
+                double distance = Math.hypot(dx, dz), separation = radius + rock.radius() + 0.001;
+                if (distance >= separation) continue;
+                if (distance < 1e-8) { dx = 1; dz = 0; distance = 1; }
+                p.x = rock.x() + dx / distance * separation;
+                p.z = rock.z() + dz / distance * separation;
+            }
+        }
+        // Concave clusters can oscillate under projection. Find the nearest free ring
+        // around the original position; this fallback only runs on growth, never each tick.
+        for (double step = .1; step <= map.halfSize * 3; step += .1) {
+            for (int angle = 0; angle < 64; angle++) {
+                double theta = angle * Math.PI * 2 / 64;
+                double x = originX + Math.cos(theta) * step, z = originZ + Math.sin(theta) * step;
+                if (free(x, z, radius)) { p.x = x; p.z = z; return; }
+            }
+        }
+        throw new IllegalStateException("No space for player radius on " + map.id);
+    }
+
     private double[] safeShardDrop(PlayerState carrier, double explosionX, double explosionZ) {
         double dx = carrier.x - explosionX;
         double dz = carrier.z - explosionZ;
@@ -454,16 +495,21 @@ final class GameRoom {
             }
         }
         phase = Phase.FINISHED;
-        String winnerId = winner == null ? "" : winner.id;
-        broadcast(data("type","GAME_OVER","winnerId",winnerId,"room",code,"reason",reason,
-            "mode",mode.name(),"chapterIndex",protocolChapterIndex(),"scores",scores()));
+        roundWinnerId = winner == null ? "" : winner.id;
+        roundEndReason = reason;
+        broadcast(roundResult());
         if (mode == GameMode.JOURNEY && chapterIndex == JOURNEY_MAPS.size() - 1) {
-            finalRoundWinnerId = winnerId;
+            finalRoundWinnerId = roundWinnerId;
             journeyComplete = true;
             journeyWinnerIds = selectJourneyWinners();
             broadcast(journeyCompleteEvent());
         }
         broadcast(data("type","ROOM_STATE","room",roomInfo()));
+    }
+
+    synchronized Map<String,Object> roundResult() {
+        return data("type","GAME_OVER","winnerId",roundWinnerId,"room",code,"reason",roundEndReason,
+            "mode",mode.name(),"roundIndex",roundIndex,"chapterIndex",protocolChapterIndex(),"scores",scores());
     }
 
     /** Most shards wins; ties go to more eliminations, then to the final chapter's winner. */
@@ -595,7 +641,8 @@ final class GameRoom {
         return data("code",code,"phase",phase.name(),"mapId",map.id,"mapName",map.name,
             "arenaSize",map.halfSize,"minPlayers",GameRules.MIN_PLAYERS,"maxPlayers",GameRules.MAX_PLAYERS,
             "mode",mode.name(),"chapterIndex",protocolChapterIndex(),"scores",scores(),
-            "journeyComplete",journeyComplete,"players",players.stream().map(p -> data(
+            "roundIndex",roundIndex,"roundWinnerId",roundWinnerId,"roundEndReason",roundEndReason,
+            "winnerIds",journeyWinnerIds,"journeyComplete",journeyComplete,"players",players.stream().map(p -> data(
             "id",p.id,"name",p.name,"ready",p.ready,"connected",p.connected,
             "reconnectRemaining",p.connected ? 0 : Math.max(0,p.disconnectedAt + GameRules.RECONNECT_MS - System.currentTimeMillis()) / 1000.0)).toList());
     }
@@ -660,6 +707,7 @@ final class GameRoom {
         }
 
         Map<String,Object> snap = data("type","STATE_UPDATE","tick",tick,"phase",phase.name(),
+            "roomCode",code,"roundIndex",roundIndex,
             "mapId",map.id,"mapName",map.name,"arenaSize",map.halfSize,
             "mode",mode.name(),"chapterIndex",protocolChapterIndex(),"scores",scores(),
             "players",states,"orbs",visibleOrbs,"cores",visibleCores);
@@ -685,7 +733,7 @@ final class GameRoom {
     }
 
     synchronized boolean keepsDisconnectedSession() {
-        return phase == Phase.PLAYING || (mode == GameMode.JOURNEY && hasStarted && !journeyComplete);
+        return hasStarted;
     }
 
     synchronized boolean isEmpty() { return players.isEmpty(); }

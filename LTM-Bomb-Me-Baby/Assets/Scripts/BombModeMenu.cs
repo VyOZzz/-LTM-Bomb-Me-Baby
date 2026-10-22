@@ -154,11 +154,12 @@ sealed class BombModeMenu {
         bool stacked = width < 820;
         float gap = 28;
         float panelWidth = stacked ? Mathf.Min(520, width - 80) : Mathf.Min(440, (width - 112 - gap) / 2);
-        float panelHeight = stacked ? 250 : 330;
+        float panelHeight = 340;
+        float joinHeight = stacked ? 250 : panelHeight;
         float left = (width - (stacked ? panelWidth : panelWidth * 2 + gap)) / 2;
-        float top = Mathf.Max(184, (height - (stacked ? panelHeight * 2 + gap : panelHeight)) / 2);
+        float top = Mathf.Max(164, (height - (stacked ? panelHeight + joinHeight + gap : panelHeight)) / 2);
         Rect create = new Rect(left, top, panelWidth, panelHeight);
-        Rect join = stacked ? new Rect(left, top + panelHeight + gap, panelWidth, panelHeight)
+        Rect join = stacked ? new Rect(left, top + panelHeight + gap, panelWidth, joinHeight)
                             : new Rect(left + panelWidth + gap, top, panelWidth, panelHeight);
 
         Event e = Event.current;
@@ -180,7 +181,7 @@ sealed class BombModeMenu {
             e.Use();
         }
 
-        // Matchmaking panel; a private room is the small secondary action in its corner.
+        // Public matchmaking and code-only rooms are distinct, visible actions.
         Panel3D(create, card.accent);
         tagStyle.normal.textColor = card.accent;
         Rect button = new Rect(create.x + 28, create.yMax - 74, create.width - 56, 50);
@@ -205,8 +206,9 @@ sealed class BombModeMenu {
             Label(new Rect(create.x + 28, create.y + 48, create.width - 56, 40), "TÌM TRẬN", cardTitle);
             Label(new Rect(create.x + 28, create.y + 96, create.width - 56, 80),
                 "Ghép với người chơi khác cũng đang tìm chế độ này. Đủ người là vào trận ngay.", bodyText);
-            if (HeaderButton(new Rect(create.xMax - 28 - 150, create.y + 20, 150, 34), "Tạo phòng riêng", TextMuted,
-                    "Mở phòng kín rồi gửi mã cho bạn bè"))
+            Rect privateButton = new Rect(button.x, button.y - 66, button.width, 50);
+            if (BigButton(privateButton, "TẠO PHÒNG RIÊNG", PanelRaised, Text, true,
+                    "Bạn bè vào bằng mã; người tìm trận ngẫu nhiên không vào phòng này"))
                 choice = Choice.Create;
             if (BigButton(button, "TÌM TRẬN", card.accent, Night, true, "Ghép ngẫu nhiên với người đang chờ (Enter)"))
                 choice = Choice.FindMatch;

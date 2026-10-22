@@ -1,5 +1,7 @@
 # Thực nghiệm đồng bộ trạng thái — Bomb Me Baby
 
+Đây là mốc lịch sử 19/10. Phép đo bản tích hợp 22/10, map cố định, dữ liệu lỗi trước sửa và 18 lượt sau sửa được ghi riêng tại [EXPERIMENTS_FINAL.md](EXPERIMENTS_FINAL.md).
+
 Người phụ trách: Thành viên B. Đo ngày 19/10/2026. Dữ liệu: `experiments/summary.csv` (mỗi dòng một lượt đo) và `experiments/raw/` (mỗi dòng một message gửi hoặc nhận).
 
 ## Câu hỏi

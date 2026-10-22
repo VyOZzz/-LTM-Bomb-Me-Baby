@@ -40,7 +40,7 @@ Giọng điệu: vui, cạnh tranh, hơi bí ẩn; nhân vật bị **loại kh�
 ### 2. Hành trình Ba Mảnh — đã có logic server và UI cơ bản
 
 - 2–4 người trong cùng phòng chơi **ba vòng theo thứ tự** `meadow → crossroads → crater`.
-- Sau mỗi vòng, người bị loại trở lại ở vòng sau. Mỗi người thắng vòng được **3 điểm**, mỗi lần loại đối thủ được **1 điểm**. Hết ba vòng, tổng điểm cao nhất thắng hành trình; hòa điểm thì xét số vòng thắng, sau đó là người thắng vòng cuối. Nếu vẫn bằng nhau, công bố đồng hạng.
+- Sau mỗi vòng, người bị loại trở lại ở vòng sau. Sau ba chương, **nhiều mảnh nhất thắng**; hòa thì xét số lần hạ đối thủ, rồi người thắng chương cuối trong nhóm đang hòa. Nếu vẫn bằng nhau, công bố đồng chiến thắng. Điểm (+3 khi thắng chương, +1 khi hạ đối thủ) chỉ là thống kê, không quyết định xếp hạng.
 - Giữa các vòng: màn kể chuyện ngắn, bảng điểm và nút Ready. Vòng mới đặt lại HP/Size/cooldown như hiện tại; **điểm hành trình** được giữ trên server.
 - Server chọn map, tính điểm và phát kết quả; client chỉ hiển thị. `mode`, `chapterIndex`, `scores` đã có trong trạng thái và `JOURNEY_COMPLETE` kết thúc hành trình. Xem `docs/PROTOCOL.md`.
 

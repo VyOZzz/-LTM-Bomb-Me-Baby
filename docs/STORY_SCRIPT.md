@@ -18,10 +18,10 @@ Phòng chờ ─► Mở đầu ─► Chương 1 (meadow) ─► Bảng điểm
          ─► Bảng điểm ─► Chương 3 (crater) ─► Kết hành trình ─► Về phòng chờ
 ```
 
-- Mỗi chương là **một vòng PvP** theo luật hiện có: 100 HP, không hồi sinh trong vòng, người sống cuối cùng thắng vòng.
+- Mỗi chương là **một vòng PvP**: 100 HP, không hồi sinh trong vòng. Người sống cuối cùng thắng sớm; nếu còn nhiều người khi hết 3 phút, chủ bệ hoặc người đang cầm mảnh thắng chương. Không ai giữ mảnh thì chương hòa.
 - Đầu mỗi vòng, HP, Size, Base Size và cooldown được đặt lại như hiện tại. Điểm hành trình được giữ lại qua các vòng.
 - **Tính điểm:** thắng vòng được **3 điểm**, mỗi lần hạ một đối thủ được **1 điểm**.
-- **Xếp hạng khi bằng điểm:** xét số vòng thắng, rồi xét người thắng chương 3. Nếu vẫn bằng thì công bố đồng hạng.
+- **Xếp hạng chung cuộc:** xét số mảnh/vòng thắng trước, tiếp theo là số lần hạ đối thủ, rồi người thắng chương 3 trong nhóm đang hòa. Nếu vẫn bằng thì đồng chiến thắng. Tổng điểm chỉ để thống kê.
 - Người bị loại ở vòng trước vẫn chơi tiếp ở vòng sau.
 
 ## 3. Mở đầu (màn hình trước chương 1)
