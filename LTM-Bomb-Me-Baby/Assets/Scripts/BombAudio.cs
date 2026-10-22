@@ -129,6 +129,11 @@ public sealed class BombAudio : MonoBehaviour {
         if (Instance != null) Instance.Play2D(Instance.uiClickClip, .55f);
     }
 
+    /// Soft tick when the pointer enters a button.
+    public static void UiHover() {
+        if (Instance != null) Instance.Play2D(Instance.uiClickClip, .14f);
+    }
+
     void PlayForPlayer(AudioClip clip, bool local, Vector3 position, float volume) {
         if (local) Play2D(clip, volume);
         else PlayAt(clip, position, volume * .52f, 22);

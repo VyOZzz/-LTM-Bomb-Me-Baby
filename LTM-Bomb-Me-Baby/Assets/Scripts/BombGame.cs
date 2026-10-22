@@ -67,7 +67,6 @@ public sealed class BombGame : MonoBehaviour {
     long previousSentBytes, previousReceivedBytes, sentBytesPerSecond, receivedBytesPerSecond;
     bool charging;
     PlayerData[] latestPlayers = Array.Empty<PlayerData>();
-    bool showNetworkSettings;
     BombStory story;
     BombStoryCinematic cinematic;
     BombAudio gameAudio;
@@ -78,17 +77,19 @@ public sealed class BombGame : MonoBehaviour {
     [SerializeField] Transform pickupsRoot;
     [SerializeField] Transform effectsRoot;
     GameObject authoredEnvironment;
-    GameObject runtimeMapRoot;
+    readonly BombMapView mapView = new BombMapView();
     BushData[] activeBushes = Array.Empty<BushData>();
     string activeMapId = "", activeMapName = "";
     float activeArenaSize;
-    GUIStyle titleStyle, bodyStyle, smallStyle, panelStyle, buttonStyle, fieldStyle;
-    GUIStyle heroStyle, sectionStyle, quietButtonStyle, metricStyle;
+    GUIStyle titleStyle, bodyStyle, smallStyle, sectionStyle, sectionRightStyle, codeStyle, nameStyle, badgeStyle;
+    GUIStyle cellStyle, cellRightStyle, buttonStyle, quietButtonStyle;
+    GUIStyle resultTitleStyle, centeredBodyStyle, centeredMutedStyle;
     GUIStyle noticeTitleStyle, noticeBodyStyle;
-    Texture2D buttonTexture, buttonHoverTexture, quietButtonTexture;
+    float ui = 1, uiStylesScale, noticeStylesScale;
+    float codeCopiedUntil;
     static readonly Color HudPanel = new Color(.035f,.047f,.075f,.88f);
-    static readonly Color HudPanelSoft = new Color(.055f,.075f,.11f,.78f);
-    static readonly Color WarmWhite = new Color(1f,.96f,.88f);
+    /// Secondary button face: a step lighter than the PanelRaised cards it sits on.
+    static readonly Color QuietFace = new Color(.24f,.2f,.35f);
     static readonly Color AttackOrange = new Color(1f,.43f,.08f);
     static readonly Color ShieldCyan = new Color(.12f,.9f,1f);
     static readonly Color BoostBlue = new Color(.18f,.55f,1f);
@@ -205,6 +206,10 @@ public sealed class BombGame : MonoBehaviour {
                 if (phase == "PLAYING") network.Send(new BombMessage { type = "MOVE", directionX = 0, directionZ = 0 });
             }
         }
+        if (room != null && !overlay.IsOpen && (cinematic == null || !cinematic.IsPlaying)) {
+            bool enter = Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter);
+            if (enter || Input.GetKeyDown(KeyCode.R)) HandleRoomShortcut(enter);
+        }
         if (phase == "PLAYING" && !overlay.IsOpen && (cinematic == null || !cinematic.IsPlaying)
                 && network.Connected && !string.IsNullOrEmpty(myId)) HandleInput();
         foreach (Avatar avatar in avatars.Values) {
@@ -306,6 +311,7 @@ public sealed class BombGame : MonoBehaviour {
             return;
         Vector3 focus = me.body.transform.position;
         focus.y = 0;
+        mapView.SetLocalBush(me.body.activeSelf ? BushIndex(focus.x, focus.z) : -1);
         Vector3 desiredPosition = focus + CameraOffset;
         float follow = 1 - Mathf.Exp(-6f * Time.unscaledDeltaTime);
         gameCamera.transform.position = Vector3.Lerp(gameCamera.transform.position, desiredPosition, follow);
@@ -405,30 +411,37 @@ public sealed class BombGame : MonoBehaviour {
                 break;
             case "ENERGY_PICKED":
                 gameAudio.PlayEnergyPickup(msg.playerId == myId, PositionOf(msg.playerId));
+                EventEffect(msg.type, msg.playerId);
                 ShowStoryEvent(msg);
                 break;
             case "CORE_PICKED":
                 gameAudio.PlayCorePickup(msg.playerId == myId, PositionOf(msg.playerId));
+                EventEffect(msg.type, msg.playerId);
                 ShowStoryEvent(msg);
                 break;
             case "PLAYER_DAMAGED":
                 gameAudio.PlayDamage(msg.playerId == myId, PositionOf(msg.playerId));
+                EventEffect(msg.type, msg.playerId);
                 ShowStoryEvent(msg);
                 break;
             case "DAMAGE_REFLECTED":
                 gameAudio.PlayDamage(msg.to == myId, PositionOf(msg.to));
+                EventEffect(msg.type, msg.to);
                 ShowStoryEvent(msg);
                 break;
             case "SHIELD_ACTIVATED":
                 gameAudio.PlayShield(msg.playerId == myId, PositionOf(msg.playerId));
+                EventEffect(msg.type, msg.playerId);
                 ShowStoryEvent(msg);
                 break;
             case "BOOST_ACTIVATED":
                 gameAudio.PlayBoost(msg.playerId == myId, PositionOf(msg.playerId));
+                EventEffect(msg.type, msg.playerId);
                 ShowStoryEvent(msg);
                 break;
             case "PLAYER_ELIMINATED":
                 reconnectDeadlines.Remove(msg.playerId);
+                EventEffect(msg.type, msg.playerId);
                 if (msg.playerId == myId) gameAudio.StopGameplayLoops();
                 else gameAudio.PlayDamage(false, PositionOf(msg.playerId));
                 ShowStoryEvent(msg);
@@ -600,32 +613,36 @@ public sealed class BombGame : MonoBehaviour {
                 if (actorsRoot != null) body.transform.SetParent(actorsRoot, false);
                 // Concept look: black toy bomb with white eyes; the player's color is the band.
                 Color playerColor = playerColors[i % playerColors.Length];
-                GameObject rollingVisual = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-                rollingVisual.name = "Rolling ball";
-                rollingVisual.transform.SetParent(body.transform, false);
-                rollingVisual.GetComponent<Renderer>().material = MaterialFor(BombUi.BombBody);
-                Destroy(rollingVisual.GetComponent<Collider>());
-                GameObject rollBand = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-                rollBand.name = "Roll band";
-                rollBand.transform.SetParent(rollingVisual.transform, false);
-                rollBand.transform.localScale = new Vector3(1.02f,.06f,1.02f);
-                rollBand.GetComponent<Renderer>().material = MaterialFor(playerColor);
-                Destroy(rollBand.GetComponent<Collider>());
-                for (int side = -1; side <= 1; side += 2) {
-                    GameObject eye = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-                    eye.name = "Eye";
-                    eye.transform.SetParent(body.transform, false);
-                    eye.transform.localPosition = new Vector3(side * .13f,.1f,-.44f);
-                    eye.transform.localScale = new Vector3(.1f,.2f,.08f);
-                    eye.GetComponent<Renderer>().material = MaterialFor(BombUi.Text);
-                    Destroy(eye.GetComponent<Collider>());
+                // Kenney bomb model when available; the primitive bomb below is the fallback.
+                if (!BombActorView.BuildBody(body, playerColor, out Transform rollingVisual)) {
+                    GameObject rollingBall = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                    rollingBall.name = "Rolling ball";
+                    rollingBall.transform.SetParent(body.transform, false);
+                    rollingBall.GetComponent<Renderer>().material = MaterialFor(BombUi.BombBody);
+                    Destroy(rollingBall.GetComponent<Collider>());
+                    rollingVisual = rollingBall.transform;
+                    GameObject rollBand = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+                    rollBand.name = "Roll band";
+                    rollBand.transform.SetParent(rollingVisual, false);
+                    rollBand.transform.localScale = new Vector3(1.02f,.06f,1.02f);
+                    rollBand.GetComponent<Renderer>().material = MaterialFor(playerColor);
+                    Destroy(rollBand.GetComponent<Collider>());
+                    for (int side = -1; side <= 1; side += 2) {
+                        GameObject eye = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                        eye.name = "Eye";
+                        eye.transform.SetParent(body.transform, false);
+                        eye.transform.localPosition = new Vector3(side * .13f,.1f,-.44f);
+                        eye.transform.localScale = new Vector3(.1f,.2f,.08f);
+                        eye.GetComponent<Renderer>().material = MaterialFor(BombUi.Text);
+                        Destroy(eye.GetComponent<Collider>());
+                    }
+                    GameObject fuse = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+                    fuse.transform.SetParent(body.transform, false);
+                    fuse.transform.localPosition = new Vector3(0,.53f,0);
+                    fuse.transform.localScale = new Vector3(.09f,.2f,.09f);
+                    fuse.GetComponent<Renderer>().material = MaterialFor(new Color(.45f,.33f,.24f));
+                    Destroy(fuse.GetComponent<Collider>());
                 }
-                GameObject fuse = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-                fuse.transform.SetParent(body.transform, false);
-                fuse.transform.localPosition = new Vector3(0,.53f,0);
-                fuse.transform.localScale = new Vector3(.09f,.2f,.09f);
-                fuse.GetComponent<Renderer>().material = MaterialFor(new Color(.45f,.33f,.24f));
-                Destroy(fuse.GetComponent<Collider>());
                 GameObject shield = GameObject.CreatePrimitive(PrimitiveType.Sphere);
                 shield.name = "Shield";
                 shield.transform.SetParent(body.transform, false);
@@ -644,13 +661,14 @@ public sealed class BombGame : MonoBehaviour {
                 boostTrail.material = TransparentMaterial(BombUi.WithAlpha(BombUi.Boost,.65f));
                 boostTrail.emitting = false;
                 a = new Avatar {
-                    body = body, rollingVisual = rollingVisual.transform, shield = shield,
+                    body = body, rollingVisual = rollingVisual, shield = shield,
                     chargeAura = chargeAura, boostTrail = boostTrail, color = playerColor
                 };
                 avatars.Add(p.id,a);
                 body.transform.position = new Vector3(p.x,.55f,p.z);
             }
             a.state = p;
+            if (a.body.TryGetComponent(out BombActorView actorView)) actorView.Apply(p);
             if (shouldRender) a.target = new Vector3(p.x, .55f * p.size, p.z);
             a.body.SetActive(p.alive && shouldRender);
         }
@@ -731,50 +749,7 @@ public sealed class BombGame : MonoBehaviour {
         activeObstacles = snapshot.obstacles ?? Array.Empty<ObstacleData>();
 
         if (authoredEnvironment != null) authoredEnvironment.SetActive(false);
-        if (runtimeMapRoot != null) Destroy(runtimeMapRoot);
-        runtimeMapRoot = new GameObject("Runtime Map - " + activeMapId);
-
-        Color floorColor;
-        Color wallColor;
-        Color rockColor;
-        // Concept palette: violet-grey stone everywhere, ground tinted per region.
-        switch (activeMapId) {
-            case "crater":
-                floorColor = new Color(.40f,.24f,.25f);
-                wallColor = new Color(.46f,.32f,.36f);
-                rockColor = new Color(.56f,.44f,.48f);
-                break;
-            case "crossroads":
-                floorColor = new Color(.46f,.38f,.44f);
-                wallColor = new Color(.38f,.32f,.50f);
-                rockColor = new Color(.60f,.55f,.66f);
-                break;
-            default:
-                floorColor = new Color(.25f,.43f,.33f);
-                wallColor = new Color(.42f,.37f,.50f);
-                rockColor = new Color(.58f,.54f,.62f);
-                break;
-        }
-
-        float diameter = activeArenaSize * 2;
-        CreateMapPrimitive("Arena floor", PrimitiveType.Cube, runtimeMapRoot.transform,
-            new Vector3(0,-.2f,0), new Vector3(diameter + 1,.3f,diameter + 1), floorColor);
-        CreateMapPrimitive("West wall", PrimitiveType.Cube, runtimeMapRoot.transform,
-            new Vector3(-activeArenaSize-.7f,.6f,0), new Vector3(.5f,1.2f,diameter + 1.8f), wallColor);
-        CreateMapPrimitive("East wall", PrimitiveType.Cube, runtimeMapRoot.transform,
-            new Vector3(activeArenaSize+.7f,.6f,0), new Vector3(.5f,1.2f,diameter + 1.8f), wallColor);
-        CreateMapPrimitive("South wall", PrimitiveType.Cube, runtimeMapRoot.transform,
-            new Vector3(0,.6f,-activeArenaSize-.7f), new Vector3(diameter + 1.8f,1.2f,.5f), wallColor);
-        CreateMapPrimitive("North wall", PrimitiveType.Cube, runtimeMapRoot.transform,
-            new Vector3(0,.6f,activeArenaSize+.7f), new Vector3(diameter + 1.8f,1.2f,.5f), wallColor);
-
-        if (snapshot.obstacles != null) foreach (ObstacleData obstacle in snapshot.obstacles) {
-            CreateMapPrimitive("Rock", PrimitiveType.Cylinder, runtimeMapRoot.transform,
-                new Vector3(obstacle.x,.65f,obstacle.z),
-                new Vector3(obstacle.radius * 2,.65f,obstacle.radius * 2), rockColor);
-        }
-        foreach (BushData bush in activeBushes)
-            CreateRuntimeBush(new Vector3(bush.x,0,bush.z), bush.radius, runtimeMapRoot.transform);
+        mapView.Build(activeMapId, activeArenaSize, activeObstacles, activeBushes);
     }
 
     void SyncPickups(PickupData[] pickups, Dictionary<int, GameObject> views, float size, Color color) {
@@ -782,12 +757,15 @@ public sealed class BombGame : MonoBehaviour {
         if (pickups != null) foreach (PickupData p in pickups) {
             seen.Add(p.id);
             if (!views.TryGetValue(p.id, out GameObject view)) {
-                view = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-                view.name = size > .3f ? "Core" : "Energy";
-                if (pickupsRoot != null) view.transform.SetParent(pickupsRoot, false);
-                view.transform.localScale = Vector3.one * size * 2;
-                view.GetComponent<Renderer>().material = MaterialFor(color);
-                Destroy(view.GetComponent<Collider>());
+                view = BombActorView.CreatePickup(size, color, pickupsRoot);
+                if (view == null) {
+                    view = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                    view.name = size > .3f ? "Core" : "Energy";
+                    if (pickupsRoot != null) view.transform.SetParent(pickupsRoot, false);
+                    view.transform.localScale = Vector3.one * size * 2;
+                    view.GetComponent<Renderer>().sharedMaterial = BombActorView.GlowMaterial(color);
+                    Destroy(view.GetComponent<Collider>());
+                }
                 views[p.id] = view;
             }
             view.transform.position = new Vector3(p.x, size + .08f, p.z);
@@ -797,7 +775,30 @@ public sealed class BombGame : MonoBehaviour {
         }
     }
 
+    /// Where to draw an event effect for this player; false while they are hidden or unknown.
+    bool TryEffectPosition(string id, out Vector3 position) {
+        Avatar avatar = AvatarOf(id);
+        position = avatar?.body != null ? avatar.body.transform.position : Vector3.zero;
+        return avatar?.body != null && avatar.body.activeInHierarchy;
+    }
+
+    /// Particle feedback for gameplay events, drawn at the player's feet.
+    void EventEffect(string kind, string id) {
+        if (!TryEffectPosition(id, out Vector3 at)) return;
+        Vector3 ground = new Vector3(at.x, 0, at.z);
+        switch (kind) {
+            case "ENERGY_PICKED": BombVfx.PickupSparkle(ground, BombUi.Energy, false, effectsRoot); break;
+            case "CORE_PICKED": BombVfx.PickupSparkle(ground, BombUi.Core, true, effectsRoot); break;
+            case "PLAYER_DAMAGED":
+            case "DAMAGE_REFLECTED": BombVfx.Hit(ground, effectsRoot); break;
+            case "SHIELD_ACTIVATED": BombVfx.ShieldRing(ground, effectsRoot); break;
+            case "BOOST_ACTIVATED": BombVfx.BoostBurst(ground, effectsRoot); break;
+            case "PLAYER_ELIMINATED": BombVfx.EliminationPuff(ground, ColorOf(id), effectsRoot); break;
+        }
+    }
+
     IEnumerator Explosion(Vector3 position, float radius) {
+        if (BombVfx.Explosion(position, radius, effectsRoot)) yield break;
         GameObject effect = GameObject.CreatePrimitive(PrimitiveType.Sphere);
         effect.name = "Explosion";
         if (effectsRoot != null) effect.transform.SetParent(effectsRoot, false);
@@ -830,35 +831,6 @@ public sealed class BombGame : MonoBehaviour {
         lightObject.transform.rotation = Quaternion.Euler(45,-35,0);
     }
 
-    GameObject CreateMapPrimitive(string objectName, PrimitiveType type, Transform parent,
-                                  Vector3 position, Vector3 scale, Color color) {
-        GameObject item = GameObject.CreatePrimitive(type);
-        item.name = objectName;
-        item.transform.SetParent(parent, false);
-        item.transform.position = position;
-        item.transform.localScale = scale;
-        item.GetComponent<Renderer>().material = MaterialFor(color);
-        return item;
-    }
-
-    void CreateRuntimeBush(Vector3 position, float radius, Transform parent) {
-        GameObject root = new GameObject("Bush");
-        root.transform.SetParent(parent, false);
-        root.transform.position = position;
-        Color[] colors = { new Color(.12f,.42f,.20f), new Color(.18f,.55f,.25f), new Color(.28f,.66f,.30f) };
-        Vector3[] offsets = {
-            new Vector3(0,.55f,0), new Vector3(-.55f,.42f,.15f),
-            new Vector3(.5f,.45f,.25f), new Vector3(.05f,.4f,-.55f)
-        };
-        for (int i = 0; i < offsets.Length; i++) {
-            GameObject leaf = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            leaf.transform.SetParent(root.transform, false);
-            leaf.transform.localPosition = offsets[i] * radius;
-            leaf.transform.localScale = Vector3.one * radius * (i == 0 ? 1.15f : .9f);
-            leaf.GetComponent<Renderer>().material = MaterialFor(colors[i % colors.Length]);
-            Destroy(leaf.GetComponent<Collider>());
-        }
-    }
 
     internal static Material MaterialFor(Color color) {
         Shader shader = Shader.Find("Universal Render Pipeline/Lit");
@@ -916,35 +888,11 @@ public sealed class BombGame : MonoBehaviour {
                 QuitGame();
                 break;
         }
+        BombUi.DrawTooltip();
     }
 
     void DrawScreen() {
-        if (titleStyle == null) {
-            BombUi.EnsureShapes();
-            titleStyle = BombUi.TextStyle(24, FontStyle.Bold, BombUi.Text);
-            bodyStyle = BombUi.TextStyle(16, FontStyle.Normal, BombUi.Text);
-            bodyStyle.wordWrap = true;
-            bodyStyle.margin = new RectOffset(0, 0, 3, 3);
-            smallStyle = BombUi.TextStyle(12, FontStyle.Normal, BombUi.TextMuted);
-            smallStyle.margin = new RectOffset(0, 0, 2, 2);
-            panelStyle = new GUIStyle {
-                padding = new RectOffset(18, 18, 16, 16), border = new RectOffset(20, 20, 20, 20)
-            };
-            panelStyle.normal.background = BombUi.RoundBig.normal.background;
-            buttonStyle = new GUIStyle(GUI.skin.button) {
-                fontSize = 16, fontStyle = FontStyle.Bold, border = new RectOffset(10, 10, 10, 10),
-                margin = new RectOffset(0, 0, 6, 6)
-            };
-            buttonStyle.normal.background = buttonStyle.hover.background = buttonStyle.active.background
-                = BombUi.RoundSmall.normal.background;
-            buttonStyle.normal.textColor = buttonStyle.hover.textColor = buttonStyle.active.textColor = BombUi.Night;
-            fieldStyle = new GUIStyle(GUI.skin.textField) {
-                fontSize = 16, border = new RectOffset(10, 10, 10, 10), padding = new RectOffset(10, 10, 7, 7)
-            };
-            fieldStyle.normal.background = fieldStyle.hover.background = fieldStyle.focused.background
-                = BombUi.RoundSmall.normal.background;
-            fieldStyle.normal.textColor = fieldStyle.hover.textColor = fieldStyle.focused.textColor = BombUi.Text;
-        }
+        EnsureScreenStyles();
         if (!string.IsNullOrEmpty(myId) && room == null) {
             switch (modeMenu.Draw(playerName, status, ref joinCode)) {
                 case BombModeMenu.Choice.Create:
@@ -993,51 +941,206 @@ public sealed class BombGame : MonoBehaviour {
             if (journeyGuideVisible) DrawJourneyGuide();
             return;
         }
-        if (phase == "FINISHED") {
-            bool won = winnerId == myId;
-            hud.DrawBanner(won ? "CHIẾN THẮNG!" : "TRẬN ĐẤU KẾT THÚC", status, won ? BombUi.Charge : BombUi.TextMuted);
-        }
-        // Lobby / connect card: hugs its content instead of filling the screen height.
-        GUILayout.BeginArea(new Rect(16,14,360,Screen.height-28));
-        GUI.backgroundColor = BombUi.Panel;
-        GUILayout.BeginVertical(panelStyle);
-        GUI.backgroundColor = BombUi.PanelRaised;
-        GUILayout.Label("BOMB ME BABY", titleStyle);
-        if (!string.IsNullOrEmpty(status) && phase != "FINISHED") GUILayout.Label(status, bodyStyle);
-        GUILayout.Space(8);
-        {
-            GUILayout.Label(room.mode == "JOURNEY"
-                ? $"Hành trình Ba Mảnh  •  Chương {room.chapterIndex + 1}/3" : "Đấu nhanh", bodyStyle);
-            GUILayout.Label($"Mã phòng: {room.code}" + (string.IsNullOrEmpty(room.mapName) ? "" : $"  •  {room.mapName}"), smallStyle);
-            if (room.scores != null && room.scores.Length > 0) {
-                GUILayout.Space(6);
-                GUILayout.Label("Mảnh Tim Lửa", bodyStyle);
-                foreach (ScoreData score in room.scores)
-                    GUILayout.Label($"{score.name}:  {score.roundWins} mảnh  •  {score.eliminations} lần hạ", smallStyle);
-            }
-            GUILayout.Space(6);
-            if (room.players != null) foreach (LobbyPlayer p in room.players)
-                GUILayout.Label((p.id == myId ? "▶ " : "   ") + p.name + (p.ready ? "  ✓" : "")
-                    + (p.connected ? "" : $"  (mất kết nối — còn {Mathf.CeilToInt(ReconnectRemaining(p.id, p.reconnectRemaining))}s)"), bodyStyle);
-            if (!room.journeyComplete) {
-                bool myReady = false;
-                if (room.players != null) foreach (LobbyPlayer p in room.players) if (p.id == myId) myReady = p.ready;
-                GUILayout.Space(6);
-                if (PanelButton(myReady ? "Bỏ sẵn sàng" : "Sẵn sàng", myReady ? BombUi.TextMuted : BombUi.Health))
-                    network.Send(new BombMessage { type = "READY", ready = !myReady });
-                int capacity = room.maxPlayers > 0 ? room.maxPlayers : 10;
-                int minimum = room.minPlayers > 0 ? room.minPlayers : 2;
-                int missing = minimum - (room.players == null ? 0 : room.players.Length);
-                GUILayout.Label(missing > 0
-                    ? $"Cần thêm {missing} người nữa mới bắt đầu được. Gửi mã phòng cho bạn bè."
-                    : $"Bắt đầu khi mọi người sẵn sàng; tối thiểu {minimum}, tối đa {capacity} người.", smallStyle);
-            }
-            if (PanelButton("Rời phòng", BombUi.PanelRaised, BombUi.Text)) network.Send(new BombMessage { type = "LEAVE_ROOM" });
-        }
-        GUILayout.EndVertical();
-        GUI.backgroundColor = Color.white;
-        GUILayout.EndArea();
+        // The result card carries the outcome text itself, so the lobby stays hidden behind it.
         if (phase == "FINISHED") DrawResultPopup();
+        else DrawLobby();
+    }
+
+    float U(float value) => value * ui;
+    int Px(float value) => Mathf.RoundToInt(value * ui);
+
+    void EnsureScreenStyles() {
+        BombUi.EnsureShapes();
+        ui = Mathf.Clamp(Screen.height / 1080f, .75f, 1.6f);
+        if (titleStyle != null && Mathf.Approximately(uiStylesScale, ui)) return;
+        uiStylesScale = ui;
+        titleStyle = BombUi.TextStyle(Px(28), FontStyle.Bold, BombUi.Text, TextAnchor.MiddleLeft);
+        bodyStyle = BombUi.TextStyle(Px(17), FontStyle.Normal, BombUi.Text, TextAnchor.UpperLeft);
+        bodyStyle.wordWrap = true;
+        smallStyle = BombUi.TextStyle(Px(14), FontStyle.Normal, BombUi.TextMuted, TextAnchor.MiddleLeft);
+        smallStyle.wordWrap = true;
+        sectionStyle = BombUi.TextStyle(Px(13), FontStyle.Bold, BombUi.TextFaint, TextAnchor.MiddleLeft);
+        sectionRightStyle = BombUi.TextStyle(Px(13), FontStyle.Bold, BombUi.TextFaint, TextAnchor.MiddleRight);
+        codeStyle = BombUi.TextStyle(Px(46), FontStyle.Bold, BombUi.Charge, TextAnchor.MiddleLeft);
+        nameStyle = BombUi.TextStyle(Px(18), FontStyle.Bold, BombUi.Text, TextAnchor.MiddleLeft);
+        nameStyle.clipping = TextClipping.Clip;
+        badgeStyle = BombUi.TextStyle(Px(12), FontStyle.Bold, BombUi.Text, TextAnchor.MiddleCenter);
+        cellStyle = BombUi.TextStyle(Px(15), FontStyle.Normal, BombUi.Text, TextAnchor.MiddleLeft);
+        cellStyle.clipping = TextClipping.Clip;
+        cellRightStyle = BombUi.TextStyle(Px(15), FontStyle.Bold, BombUi.Text, TextAnchor.MiddleRight);
+        buttonStyle = BombUi.TextStyle(Px(19), FontStyle.Bold, BombUi.Night, TextAnchor.MiddleCenter);
+        quietButtonStyle = BombUi.TextStyle(Px(15), FontStyle.Bold, BombUi.Text, TextAnchor.MiddleCenter);
+        resultTitleStyle = BombUi.TextStyle(Px(40), FontStyle.Bold, BombUi.Charge, TextAnchor.MiddleCenter);
+        centeredBodyStyle = BombUi.TextStyle(Px(18), FontStyle.Bold, BombUi.Text, TextAnchor.MiddleCenter);
+        centeredBodyStyle.wordWrap = true;
+        centeredMutedStyle = BombUi.TextStyle(Px(15), FontStyle.Normal, BombUi.TextMuted, TextAnchor.MiddleCenter);
+        centeredMutedStyle.wordWrap = true;
+    }
+
+    /// Room lobby: mode, shareable code, map, roster with ready badges, journey scores and actions.
+    /// The card hugs its content; player rows shrink before the card would leave the screen.
+    void DrawLobby() {
+        int count = room.players == null ? 0 : room.players.Length;
+        int capacity = room.maxPlayers > 0 ? room.maxPlayers : 10;
+        int minimum = room.minPlayers > 0 ? room.minPlayers : 2;
+        int scoreRows = room.scores == null ? 0 : room.scores.Length;
+        bool journey = room.mode == "JOURNEY";
+        bool showStatus = !string.IsNullOrEmpty(status);
+
+        float pad = U(32), gap = U(6);
+        float topH = U(154) + (showStatus ? U(40) : 0) + U(34);
+        float scoresH = scoreRows > 0 ? U(38) + (scoreRows + 1) * U(26) : 0;
+        float actionsH = room.journeyComplete ? U(44) : U(168);
+        float fixedH = topH + scoresH + U(14) + actionsH + pad;
+        float width = Mathf.Min(U(580), Screen.width - 32);
+        float maxHeight = Screen.height - 32;
+        int rows = Mathf.Max(1, count);
+        float rowH = Mathf.Clamp((maxHeight - fixedH) / rows - gap, U(28), U(46));
+        float height = Mathf.Min(maxHeight, fixedH + rows * (rowH + gap));
+        Rect card = new Rect((Screen.width - width) * .5f, (Screen.height - height) * .5f, width, height);
+        Color modeAccent = journey ? BombUi.Core : BombUi.Charge;
+        BombUi.Card(card, modeAccent, ui);
+
+        float x = card.x + pad, w = card.width - pad * 2, y = card.y + U(28);
+        sectionStyle.normal.textColor = modeAccent;
+        GUI.Label(new Rect(x, y, w, U(24)),
+            journey ? $"HÀNH TRÌNH BA MẢNH  •  CHƯƠNG {room.chapterIndex + 1}/3" : "ĐẤU NHANH", sectionStyle);
+        sectionStyle.normal.textColor = BombUi.TextFaint;
+        if (!string.IsNullOrEmpty(room.mapName))
+            DrawChip(x + w, y, U(24), room.mapName.ToUpperInvariant(), BombUi.MapAccent(room.mapId));
+        y += U(36);
+        GUI.Label(new Rect(x, y, w, U(18)), "MÃ PHÒNG", sectionStyle);
+        y += U(20);
+        GUI.Label(new Rect(x, y, w - U(170), U(56)), room.code, codeStyle);
+        bool copied = Time.unscaledTime < codeCopiedUntil;
+        if (BombUi.Button(new Rect(x + w - U(160), y + U(6), U(160), U(44)), copied ? "ĐÃ SAO CHÉP ✓" : "SAO CHÉP",
+                copied ? BombUi.Health : QuietFace, copied ? BombUi.Night : BombUi.Text, quietButtonStyle,
+                true, "Sao chép mã phòng để gửi cho bạn bè")) {
+            GUIUtility.systemCopyBuffer = room.code;
+            codeCopiedUntil = Time.unscaledTime + 1.8f;
+        }
+        y += U(70);
+        if (showStatus) {
+            GUI.Label(new Rect(x, y, w, U(34)), status, smallStyle);
+            y += U(40);
+        }
+
+        GUI.Label(new Rect(x, y, w, U(24)), $"NGƯỜI CHƠI  {count}/{capacity}", sectionStyle);
+        GUI.Label(new Rect(x, y, w, U(24)), $"SẴN SÀNG  {ReadyCount()}/{count}", sectionRightStyle);
+        y += U(34);
+        for (int i = 0; i < count; i++) {
+            LobbyPlayer p = room.players[i];
+            bool isMe = p.id == myId;
+            Rect row = new Rect(x, y, w, rowH);
+            BombUi.Fill(row, isMe ? BombUi.WithAlpha(BombUi.Charge, .16f) : new Color(0, 0, 0, .22f), BombUi.RoundSmall);
+            Color color = AvatarOf(p.id)?.color ?? playerColors[i % playerColors.Length];
+            BombUi.Fill(BombUi.Centered(new Vector2(row.x + U(22), row.center.y), Mathf.Min(U(16), rowH * .45f)), color, BombUi.Circle);
+            string state;
+            Color stateColor;
+            if (!p.connected) {
+                state = $"MẤT KẾT NỐI  {Mathf.CeilToInt(ReconnectRemaining(p.id, p.reconnectRemaining))}s";
+                stateColor = BombUi.Danger;
+            } else if (p.ready) {
+                state = "SẴN SÀNG";
+                stateColor = BombUi.Health;
+            } else {
+                state = "ĐANG CHỜ";
+                stateColor = BombUi.TextMuted;
+            }
+            float chipH = Mathf.Min(U(26), rowH - U(10));
+            float chipW = DrawChip(row.xMax - U(10), row.center.y - chipH / 2, chipH, state, stateColor);
+            GUI.Label(new Rect(row.x + U(40), row.y, row.width - U(60) - chipW, rowH), isMe ? p.name + "  (bạn)" : p.name, nameStyle);
+            y += rowH + gap;
+        }
+        if (scoreRows > 0) {
+            y += U(8);
+            GUI.Label(new Rect(x, y, w, U(22)), "MẢNH TIM LỬA", sectionStyle);
+            y += U(30);
+            DrawScoreTable(new Rect(x, y, w, (scoreRows + 1) * U(26)), room.scores);
+        }
+
+        float by = card.yMax - pad - U(44);
+        if (BombUi.Button(new Rect(x, by, w, U(44)), "RỜI PHÒNG", QuietFace, BombUi.Text, quietButtonStyle))
+            network.Send(new BombMessage { type = "LEAVE_ROOM" });
+        if (room.journeyComplete) return;
+        bool myReady = IsLocalPlayerReady();
+        by -= U(72);
+        if (BombUi.Button(new Rect(x, by, w, U(60)), myReady ? "BỎ SẴN SÀNG" : "SẴN SÀNG",
+                myReady ? QuietFace : BombUi.Health, myReady ? BombUi.Text : BombUi.Night, buttonStyle,
+                true, "Phím tắt: R hoặc Enter"))
+            ToggleReady();
+        by -= U(52);
+        int missing = minimum - count;
+        GUI.Label(new Rect(x, by, w, U(44)), (missing > 0
+            ? $"Cần thêm {missing} người nữa mới bắt đầu được. Gửi mã phòng cho bạn bè."
+            : $"Bắt đầu khi mọi người sẵn sàng; tối thiểu {minimum}, tối đa {capacity} người.") + "  Phím tắt: R.", smallStyle);
+    }
+
+    /// Small rounded label tinted with its accent, sized to the text and right-aligned at xMax.
+    /// Returns the chip width so callers can keep text clear of it.
+    float DrawChip(float xMax, float y, float height, string text, Color accent) {
+        badgeStyle.normal.textColor = accent;
+        float width = badgeStyle.CalcSize(new GUIContent(text)).x + U(22);
+        Rect chip = new Rect(xMax - width, y, width, height);
+        BombUi.Fill(chip, BombUi.WithAlpha(accent, .2f), BombUi.RoundSmall);
+        GUI.Label(chip, text, badgeStyle);
+        return width;
+    }
+
+    /// Journey standings: one header row then one row per player, the local player in orange.
+    void DrawScoreTable(Rect area, ScoreData[] scores) {
+        float rowH = U(26), column = U(64);
+        float nameWidth = area.width - column * 3;
+        Rect Cell(float rowY, int index) => new Rect(area.x + nameWidth + column * index, rowY, column, rowH);
+        GUI.Label(new Rect(area.x, area.y, nameWidth, rowH), "NGƯỜI CHƠI", sectionStyle);
+        GUI.Label(Cell(area.y, 0), "MẢNH", sectionRightStyle);
+        GUI.Label(Cell(area.y, 1), "HẠ", sectionRightStyle);
+        GUI.Label(Cell(area.y, 2), "ĐIỂM", sectionRightStyle);
+        float y = area.y + rowH;
+        foreach (ScoreData score in scores) {
+            Color ink = score.playerId == myId ? BombUi.Charge : BombUi.Text;
+            cellStyle.normal.textColor = cellRightStyle.normal.textColor = ink;
+            GUI.Label(new Rect(area.x, y, nameWidth, rowH), score.name, cellStyle);
+            GUI.Label(Cell(y, 0), score.roundWins.ToString(), cellRightStyle);
+            GUI.Label(Cell(y, 1), score.eliminations.ToString(), cellRightStyle);
+            GUI.Label(Cell(y, 2), score.points.ToString(), cellRightStyle);
+            y += rowH;
+        }
+        cellStyle.normal.textColor = cellRightStyle.normal.textColor = BombUi.Text;
+    }
+
+    int ReadyCount() {
+        int ready = 0;
+        if (room?.players != null) foreach (LobbyPlayer player in room.players) if (player.ready) ready++;
+        return ready;
+    }
+
+    void ToggleReady() => network.Send(new BombMessage { type = "READY", ready = !IsLocalPlayerReady() });
+
+    bool JourneyFinished() => room != null && room.mode == "JOURNEY"
+        && (room.journeyComplete || journeyCompleteReceived || room.chapterIndex >= 2);
+
+    bool JourneyHasNextChapter() => room != null && room.mode == "JOURNEY" && room.chapterIndex < 2
+        && !room.journeyComplete && !journeyCompleteReceived;
+
+    /// R / Enter: toggle ready in the lobby, ready up for the next round, or close the journey guide.
+    void HandleRoomShortcut(bool enter) {
+        if (phase == "PLAYING") {
+            if (enter && journeyGuideVisible) {
+                BombAudio.UiClick();
+                journeyGuideVisible = false;
+            }
+            return;
+        }
+        if (phase == "FINISHED") {
+            if (JourneyFinished() || IsLocalPlayerReady()) return;
+            BombAudio.UiClick();
+            network.Send(new BombMessage { type = "READY", ready = true });
+            return;
+        }
+        if (room.journeyComplete) return;
+        BombAudio.UiClick();
+        ToggleReady();
     }
 
     void RunAfterJourneyIntro(Action action) {
@@ -1097,302 +1200,139 @@ public sealed class BombGame : MonoBehaviour {
         DrawStoryNotice();
     }
 
-    void EnsureGuiStyles() {
-        if (titleStyle != null) return;
-        titleStyle = LabelStyle(28, FontStyle.Bold, WarmWhite, TextAnchor.MiddleLeft);
-        heroStyle = LabelStyle(42, FontStyle.Bold, WarmWhite, TextAnchor.MiddleCenter);
-        sectionStyle = LabelStyle(18, FontStyle.Bold, WarmWhite, TextAnchor.MiddleLeft);
-        bodyStyle = LabelStyle(16, FontStyle.Normal, WarmWhite, TextAnchor.MiddleLeft);
-        smallStyle = LabelStyle(13, FontStyle.Normal, new Color(.82f,.86f,.92f), TextAnchor.MiddleLeft);
-        metricStyle = LabelStyle(12, FontStyle.Normal, new Color(.65f,.74f,.82f), TextAnchor.MiddleRight);
-        noticeTitleStyle = LabelStyle(16, FontStyle.Bold, WarmWhite, TextAnchor.MiddleLeft);
-        noticeBodyStyle = LabelStyle(14, FontStyle.Normal, WarmWhite, TextAnchor.UpperLeft);
-        noticeBodyStyle.wordWrap = true;
-        buttonTexture = SolidTexture(new Color(.94f,.28f,.06f));
-        buttonHoverTexture = SolidTexture(new Color(1f,.43f,.08f));
-        quietButtonTexture = SolidTexture(new Color(.12f,.16f,.23f));
-        buttonStyle = new GUIStyle(GUI.skin.button) {
-            fontSize = 18, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter,
-            padding = new RectOffset(16,16,10,10)
-        };
-        buttonStyle.normal.background = buttonTexture;
-        buttonStyle.hover.background = buttonHoverTexture;
-        buttonStyle.active.background = buttonHoverTexture;
-        buttonStyle.normal.textColor = Color.white;
-        buttonStyle.hover.textColor = Color.white;
-        quietButtonStyle = new GUIStyle(buttonStyle) { fontSize = 15 };
-        quietButtonStyle.normal.background = quietButtonTexture;
-    }
-
-    static GUIStyle LabelStyle(int size, FontStyle weight, Color color, TextAnchor alignment) {
-        var style = new GUIStyle(GUI.skin.label) { fontSize = size, fontStyle = weight, alignment = alignment };
-        style.normal.textColor = color;
-        return style;
-    }
-
-    static Texture2D SolidTexture(Color color) {
-        var texture = new Texture2D(1,1) { hideFlags = HideFlags.HideAndDontSave };
-        texture.SetPixel(0,0,color);
-        texture.Apply();
-        return texture;
-    }
-
-    static void FillRect(Rect rect, Color color) {
-        Color previous = GUI.color;
-        GUI.color = color;
-        GUI.DrawTexture(rect, Texture2D.whiteTexture);
-        GUI.color = previous;
-    }
-
-    static void Panel(Rect rect, Color accent) {
-        FillRect(rect, HudPanel);
-        FillRect(new Rect(rect.x,rect.y,5,rect.height),accent);
-        FillRect(new Rect(rect.x,rect.y,rect.width,1),new Color(1,1,1,.12f));
-    }
-
-    void DrawFrontEnd() {
-        FillRect(new Rect(0,0,Screen.width,Screen.height),new Color(.02f,.03f,.055f,.42f));
-        float width = Mathf.Min(520,Screen.width - 40);
-        float height = room == null ? (string.IsNullOrEmpty(myId) ? 430 : 420) : Mathf.Min(610,Screen.height - 40);
-        Rect card = new Rect((Screen.width-width)*.5f,(Screen.height-height)*.5f,width,height);
-        Panel(card,AttackOrange);
-        GUILayout.BeginArea(new Rect(card.x+34,card.y+24,card.width-68,card.height-48));
-        GUILayout.Label("BOMB ME BABY", heroStyle);
-        GUILayout.Label("Đấu trường bom nhiều người chơi", new GUIStyle(smallStyle) { alignment = TextAnchor.MiddleCenter });
-        GUILayout.Space(18);
-        DrawStatusBanner();
-        GUILayout.Space(14);
-        if (string.IsNullOrEmpty(myId)) DrawConnectMenu();
-        else if (room == null) DrawRoomMenu();
-        else DrawLobbyMenu();
-        GUILayout.FlexibleSpace();
-        GUILayout.BeginHorizontal();
-        GUILayout.Label(network.Connected ? "● ĐÃ KẾT NỐI" : "● NGOẠI TUYẾN", new GUIStyle(smallStyle) {
-            normal = { textColor = network.Connected ? EnergyGreen : new Color(1f,.4f,.35f) }
-        });
-        GUILayout.FlexibleSpace();
-        if (GUILayout.Button("Thoát",quietButtonStyle,GUILayout.Width(100),GUILayout.Height(34))) QuitGame();
-        GUILayout.EndHorizontal();
-        GUILayout.EndArea();
-    }
-
-    void DrawStatusBanner() {
-        Rect banner = GUILayoutUtility.GetRect(10,44,GUILayout.ExpandWidth(true));
-        FillRect(banner,HudPanelSoft);
-        GUI.Label(new Rect(banner.x+14,banner.y,banner.width-28,banner.height),status,smallStyle);
-    }
-
-    void DrawConnectMenu() {
-        GUILayout.Label("TÊN NGƯỜI CHƠI",sectionStyle);
-        playerName = GUILayout.TextField(playerName,20,GUILayout.Height(40));
-        GUILayout.Space(12);
-        if (GUILayout.Button("VÀO ĐẤU TRƯỜNG",buttonStyle,GUILayout.Height(48))) ConnectToConfiguredServer();
-        GUILayout.Space(8);
-        if (GUILayout.Button(showNetworkSettings ? "Ẩn cài đặt mạng" : "Cài đặt mạng nâng cao",quietButtonStyle,GUILayout.Height(38)))
-            showNetworkSettings = !showNetworkSettings;
-        if (showNetworkSettings) DrawNetworkSettings();
-    }
-
-    void DrawRoomMenu() {
-        GUILayout.Label("CHỌN CÁCH CHƠI",sectionStyle);
-        GUILayout.Space(8);
-        if (GUILayout.Button("TẠO PHÒNG MỚI",buttonStyle,GUILayout.Height(50)))
-            network.Send(new BombMessage { type = "CREATE_ROOM" });
-        GUILayout.Space(18);
-        GUILayout.Label("HOẶC NHẬP MÃ PHÒNG",sectionStyle);
-        joinCode = GUILayout.TextField(joinCode.ToUpperInvariant(),6,GUILayout.Height(40));
-        GUILayout.Space(8);
-        if (GUILayout.Button("VÀO PHÒNG",quietButtonStyle,GUILayout.Height(44)))
-            network.Send(new BombMessage { type = "JOIN_ROOM", code = joinCode });
-    }
-
-    void DrawLobbyMenu() {
-        GUILayout.BeginHorizontal();
-        GUILayout.Label("PHÒNG " + room.code,titleStyle);
-        GUILayout.FlexibleSpace();
-        if (!string.IsNullOrEmpty(room.mapName)) GUILayout.Label(room.mapName.ToUpperInvariant(),smallStyle);
-        GUILayout.EndHorizontal();
-        GUILayout.Space(8);
-        int playerCount = room.players == null ? 0 : room.players.Length;
-        int capacity = room.maxPlayers > 0 ? room.maxPlayers : 10;
-        GUILayout.Label($"NGƯỜI CHƠI  {playerCount}/{capacity}",sectionStyle);
-        GUILayout.Space(5);
-        if (room.players != null) foreach (LobbyPlayer player in room.players) {
-            Rect row = GUILayoutUtility.GetRect(10,38,GUILayout.ExpandWidth(true));
-            FillRect(row,player.id == myId ? new Color(1f,.43f,.08f,.18f) : HudPanelSoft);
-            GUI.Label(new Rect(row.x+12,row.y,row.width-120,row.height),(player.id == myId ? "▶  " : "    ") + player.name,bodyStyle);
-            string state = !player.connected
-                ? $"MẤT KẾT NỐI {Mathf.CeilToInt(ReconnectRemaining(player.id, player.reconnectRemaining))}s"
-                : player.ready ? "SẴN SÀNG" : "ĐANG CHỜ";
-            Color stateColor = !player.connected ? new Color(1f,.4f,.35f) : player.ready ? EnergyGreen : new Color(.7f,.74f,.8f);
-            GUI.Label(new Rect(row.x+row.width-150,row.y,138,row.height),state,new GUIStyle(smallStyle) { alignment = TextAnchor.MiddleRight, normal = { textColor = stateColor } });
-        }
-        GUILayout.FlexibleSpace();
-        bool myReady = IsLocalPlayerReady();
-        if (GUILayout.Button(myReady ? "BỎ SẴN SÀNG" : "SẴN SÀNG",myReady ? quietButtonStyle : buttonStyle,GUILayout.Height(48)))
-            network.Send(new BombMessage { type = "READY", ready = !myReady });
-        GUILayout.Space(7);
-        if (GUILayout.Button("Rời phòng",quietButtonStyle,GUILayout.Height(36)))
-            network.Send(new BombMessage { type = "LEAVE_ROOM" });
-    }
-
-    void DrawGameplayHud() {
-        avatars.TryGetValue(myId,out Avatar me);
-        PlayerData state = me?.state;
-        int alive = 0, total = 0;
-        foreach (Avatar avatar in avatars.Values) if (avatar.state != null) { total++; if (avatar.state.alive) alive++; }
-
-        Rect playerPanel = new Rect(22,20,320,112);
-        Panel(playerPanel,EnergyGreen);
-        GUI.Label(new Rect(40,28,280,28),state == null ? playerName : state.name,sectionStyle);
-        float hp = state == null ? 0 : Mathf.Clamp01(state.hp/100f);
-        GUI.Label(new Rect(40,58,45,22),"HP",smallStyle);
-        DrawBar(new Rect(82,62,228,16),hp,EnergyGreen);
-        GUI.Label(new Rect(40,87,270,24),state == null ? "Đang đồng bộ..." : $"{state.hp:0} / 100    •    KÍCH THƯỚC {state.size:0.00}",smallStyle);
-
-        Rect roundPanel = new Rect((Screen.width-330)*.5f,20,330,66);
-        Panel(roundPanel,AttackOrange);
-        GUI.Label(new Rect(roundPanel.x+16,roundPanel.y+5,298,28),$"{alive} / {Mathf.Max(total,alive)} NGƯỜI CÒN LẠI",new GUIStyle(sectionStyle) { alignment = TextAnchor.MiddleCenter });
-        GUI.Label(new Rect(roundPanel.x+16,roundPanel.y+32,298,22),string.IsNullOrEmpty(activeMapName) ? "ĐANG CHIẾN ĐẤU" : activeMapName.ToUpperInvariant(),new GUIStyle(smallStyle) { alignment = TextAnchor.MiddleCenter });
-
-        float charge = state == null ? 0 : Mathf.Clamp01(state.charge);
-        Rect chargePanel = new Rect((Screen.width-540)*.5f,Screen.height-104,540,76);
-        Panel(chargePanel,AttackOrange);
-        GUI.Label(new Rect(chargePanel.x+18,chargePanel.y+7,160,24),charging ? "THẢ SPACE ĐỂ NỔ" : "GIỮ SPACE • NẠP BOM",smallStyle);
-        DrawBar(new Rect(chargePanel.x+18,chargePanel.y+39,504,20),charge,AttackOrange);
-
-        float abilityWidth = 132;
-        float abilityY = Screen.height-126;
-        DrawAbility(new Rect(Screen.width-298,abilityY,abilityWidth,98),"E","KHIÊN",state?.shieldCooldown ?? 0,ShieldCyan);
-        DrawAbility(new Rect(Screen.width-154,abilityY,abilityWidth,98),"SHIFT","TĂNG TỐC",state?.boostCooldown ?? 0,BoostBlue);
-
-        Rect helpPanel = new Rect(22,Screen.height-105,300,77);
-        FillRect(helpPanel,HudPanelSoft);
-        GUI.Label(new Rect(35,helpPanel.y+8,275,24),"WASD / PHÍM MŨI TÊN  •  DI CHUYỂN",smallStyle);
-        GUI.Label(new Rect(35,helpPanel.y+34,275,24),state != null && BushIndex(state.x,state.z) >= 0 ? "ẨN THÂN TRONG BỤI" : "SPACE  •  NẠP VÀ NỔ BOM",new GUIStyle(smallStyle) { normal = { textColor = state != null && BushIndex(state.x,state.z) >= 0 ? EnergyGreen : smallStyle.normal.textColor } });
-
-        GUI.Label(new Rect(Screen.width-420,10,398,22),$"RTT {rttMs:0} ms  •  {sentPerSecond}/{receivedPerSecond} msg/s  •  {sentBytesPerSecond}/{receivedBytesPerSecond} B/s",metricStyle);
-    }
-
+    /// Story/event notice. Sits at ~28% of the screen height, below the top-centre objective panel
+    /// and toast, fades in and out and drains a thin line along its bottom edge.
     void DrawStoryNotice() {
         if (activeNotice == null) return;
-        if (noticeTitleStyle == null) {
-            noticeTitleStyle = BombUi.TextStyle(16, FontStyle.Bold, BombUi.Text);
-            noticeBodyStyle = BombUi.TextStyle(14, FontStyle.Normal, BombUi.Text);
+        if (noticeTitleStyle == null || !Mathf.Approximately(noticeStylesScale, ui)) {
+            noticeStylesScale = ui;
+            noticeTitleStyle = BombUi.TextStyle(Px(17), FontStyle.Bold, BombUi.Text);
+            noticeBodyStyle = BombUi.TextStyle(Px(15), FontStyle.Normal, BombUi.Text);
             noticeBodyStyle.wordWrap = true;
         }
         float remaining = noticeEndsAt - Time.unscaledTime;
         float fadeIn = Mathf.Clamp01((Time.unscaledTime - noticeStartedAt) / .18f);
         float fadeOut = Mathf.Clamp01(remaining / .22f);
         float alpha = Mathf.Min(fadeIn, fadeOut);
-        float width = Mathf.Min(620, Screen.width - 44);
-        Rect card = new Rect((Screen.width - width) * .5f, 98, width, 88);
-        FillRect(card, new Color(HudPanel.r, HudPanel.g, HudPanel.b, HudPanel.a * alpha));
-        FillRect(new Rect(card.x, card.y, 5, card.height), new Color(activeNotice.accent.r, activeNotice.accent.g, activeNotice.accent.b, alpha));
-        FillRect(new Rect(card.x, card.yMax - 4, card.width * Mathf.Clamp01(remaining / activeNotice.duration), 4),
-            new Color(activeNotice.accent.r, activeNotice.accent.g, activeNotice.accent.b, alpha));
+        float width = Mathf.Min(U(620), Screen.width - 44);
+        Rect card = new Rect((Screen.width - width) * .5f, Screen.height * .28f, width, U(92));
+        Color accent = activeNotice.accent;
+        BombUi.Fill(card, BombUi.WithAlpha(HudPanel, alpha), BombUi.RoundSmall);
+        BombUi.Fill(new Rect(card.x + U(8), card.y + U(12), U(5), card.height - U(24)), BombUi.WithAlpha(accent, alpha), BombUi.RoundSmall);
+        BombUi.Fill(new Rect(card.x + U(12), card.yMax - U(7), (card.width - U(24)) * Mathf.Clamp01(remaining / activeNotice.duration), U(3)),
+            BombUi.WithAlpha(accent, alpha), null);
         Color previous = GUI.color;
         GUI.color = new Color(1, 1, 1, alpha);
-        GUI.Label(new Rect(card.x + 18, card.y + 8, card.width - 36, 24), activeNotice.title, noticeTitleStyle);
-        GUI.Label(new Rect(card.x + 18, card.y + 34, card.width - 36, 47), activeNotice.body, noticeBodyStyle);
+        GUI.Label(new Rect(card.x + U(24), card.y + U(10), card.width - U(42), U(26)), activeNotice.title, noticeTitleStyle);
+        GUI.Label(new Rect(card.x + U(24), card.y + U(37), card.width - U(42), U(48)), activeNotice.body, noticeBodyStyle);
         GUI.color = previous;
     }
 
-    void DrawAbility(Rect rect, string key, string label, float cooldown, Color accent) {
-        Panel(rect,accent);
-        Rect keyRect = new Rect(rect.x+12,rect.y+12,44,44);
-        FillRect(keyRect,new Color(accent.r,accent.g,accent.b,.2f));
-        GUI.Label(keyRect,key,new GUIStyle(sectionStyle) { alignment = TextAnchor.MiddleCenter, normal = { textColor = accent } });
-        GUI.Label(new Rect(rect.x+64,rect.y+12,rect.width-74,26),label,new GUIStyle(smallStyle) { fontStyle = FontStyle.Bold });
-        string value = cooldown > 0 ? cooldown.ToString("0.0") + "s" : "SẴN SÀNG";
-        GUI.Label(new Rect(rect.x+64,rect.y+39,rect.width-74,22),value,new GUIStyle(smallStyle) { normal = { textColor = cooldown > 0 ? WarmWhite : accent } });
-        DrawBar(new Rect(rect.x+12,rect.y+75,rect.width-24,8),cooldown > 0 ? Mathf.Clamp01(1-cooldown/8f) : 1,accent);
-    }
-
-    void DrawBar(Rect rect, float value, Color fill) {
-        FillRect(rect,new Color(0,0,0,.55f));
-        Rect inner = new Rect(rect.x+2,rect.y+2,Mathf.Max(0,(rect.width-4)*Mathf.Clamp01(value)),Mathf.Max(0,rect.height-4));
-        FillRect(inner,fill);
-    }
-
-    void DrawWorldNameplate(Rect rect, string text) {
-        FillRect(rect,new Color(.02f,.03f,.05f,.76f));
-        GUI.Label(rect,text,new GUIStyle(smallStyle) { alignment = TextAnchor.MiddleCenter });
-    }
-
+    /// End-of-round card: outcome, why it ended, journey standings, then ready-up and leave.
     void DrawResultPopup() {
-        float width = Mathf.Min(470, Screen.width - 32);
-        float height = Mathf.Min(270, Screen.height - 32);
-        Rect popup = new Rect((Screen.width - width) * .5f, (Screen.height - height) * .5f, width, height);
-        GUI.Box(popup, GUIContent.none);
-        GUILayout.BeginArea(new Rect(popup.x + 24, popup.y + 22, width - 48, height - 44));
         bool won = !string.IsNullOrEmpty(winnerId) && winnerId == myId;
-        bool completedJourney = room != null && room.mode == "JOURNEY"
-            && (room.journeyComplete || journeyCompleteReceived || room.chapterIndex >= 2);
-        bool nextChapter = room != null && room.mode == "JOURNEY" && room.chapterIndex < 2
-            && !room.journeyComplete && !journeyCompleteReceived;
-        GUILayout.Label(nextChapter ? "SANG CHƯƠNG MỚI"
-            : won ? "CHIẾN THẮNG!" : "BẠN ĐÃ THUA", titleStyle);
-        GUILayout.Space(8);
-        if (nextChapter) {
-            string chapterResult = string.IsNullOrEmpty(winnerId)
-                ? "Chương này kết thúc mà chưa ai giữ được Mảnh Tim Lửa."
+        bool completedJourney = JourneyFinished();
+        bool nextChapter = JourneyHasNextChapter();
+        bool ready = IsLocalPlayerReady();
+        int scoreRows = room != null && room.mode == "JOURNEY" && room.scores != null ? room.scores.Length : 0;
+        Color accent = nextChapter ? BombUi.Core : won ? BombUi.Charge : BombUi.Danger;
+        string title = nextChapter ? "SANG CHƯƠNG MỚI" : won ? "CHIẾN THẮNG!" : "BẠN ĐÃ THUA";
+        string body;
+        if (nextChapter)
+            body = string.IsNullOrEmpty(winnerId) ? "Chương này kết thúc mà chưa ai giữ được Mảnh Tim Lửa."
                 : winnerId == myId ? "Bạn đã giành Mảnh Tim Lửa của chương này!"
                 : NameOf(winnerId) + " đã giành Mảnh Tim Lửa của chương này.";
-            GUILayout.Label(chapterResult, bodyStyle);
-            GUILayout.Space(6);
-            GUILayout.Label($"Tiếp theo: Chương {room.chapterIndex + 2}/3. Điểm và số mảnh được giữ lại.", smallStyle);
-        } else {
-            GUILayout.Label(won ? "Bạn là người chiến thắng chung cuộc." : WinnerText(), bodyStyle);
+        else body = won ? "Bạn là người chiến thắng chung cuộc." : WinnerText();
+        string detail = nextChapter ? $"Tiếp theo: Chương {room.chapterIndex + 2}/3. Điểm và số mảnh được giữ lại." : "";
+        int count = room?.players == null ? 0 : room.players.Length;
+        string readyLine = completedJourney ? "Rời phòng để bắt đầu một hành trình mới."
+            : ready ? $"Đã sẵn sàng  •  {ReadyCount()}/{count} người"
+            : $"Nhấn R hoặc Enter để sẵn sàng  •  {ReadyCount()}/{count} người đã sẵn sàng";
+
+        float pad = U(32);
+        float width = Mathf.Min(U(560), Screen.width - 32);
+        float w = width - pad * 2;
+        float statusH = string.IsNullOrEmpty(status) ? 0 : centeredMutedStyle.CalcHeight(new GUIContent(status), w) + U(8);
+        float bodyH = centeredBodyStyle.CalcHeight(new GUIContent(body), w) + U(6);
+        float detailH = detail.Length == 0 ? 0 : centeredMutedStyle.CalcHeight(new GUIContent(detail), w) + U(6);
+        float scoresH = scoreRows > 0 ? U(14) + (scoreRows + 1) * U(26) : 0;
+        float height = U(86) + statusH + bodyH + detailH + scoresH + U(40) + U(114) + pad;
+        height = Mathf.Min(height, Screen.height - 32);
+        Rect card = new Rect((Screen.width - width) * .5f, (Screen.height - height) * .5f, width, height);
+        BombUi.Card(card, accent, ui);
+
+        float x = card.x + pad, y = card.y + U(30);
+        resultTitleStyle.normal.textColor = accent;
+        GUI.Label(new Rect(x, y, w, U(52)), title, resultTitleStyle);
+        y += U(56);
+        if (statusH > 0) {
+            GUI.Label(new Rect(x, y, w, statusH), status, centeredMutedStyle);
+            y += statusH;
         }
-        GUILayout.FlexibleSpace();
-        bool ready = IsLocalPlayerReady();
-        if (completedJourney) {
-            bool wasEnabled = GUI.enabled;
-            GUI.enabled = false;
-            GUILayout.Button("HÀNH TRÌNH ĐÃ HOÀN TẤT", GUILayout.Height(44));
-            GUI.enabled = wasEnabled;
-        } else {
-            string primary = ready ? "Đang chờ người chơi khác..."
-                : nextChapter ? $"Sẵn sàng sang Chương {room.chapterIndex + 2}" : "Chơi lại";
-            if (GUILayout.Button(primary, GUILayout.Height(44)) && !ready) {
-                BombAudio.UiClick();
-                network.Send(new BombMessage { type = "READY", ready = true });
-            }
+        GUI.Label(new Rect(x, y, w, bodyH), body, centeredBodyStyle);
+        y += bodyH;
+        if (detailH > 0) {
+            GUI.Label(new Rect(x, y, w, detailH), detail, centeredMutedStyle);
+            y += detailH;
         }
-        if (GUILayout.Button("Rời phòng", GUILayout.Height(32))) {
-            BombAudio.UiClick();
+        if (scoreRows > 0) DrawScoreTable(new Rect(x, y + U(14), w, (scoreRows + 1) * U(26)), room.scores);
+
+        float by = card.yMax - pad - U(44);
+        if (BombUi.Button(new Rect(x, by, w, U(44)), "RỜI PHÒNG", QuietFace, BombUi.Text, quietButtonStyle))
             network.Send(new BombMessage { type = "LEAVE_ROOM" });
-        }
-        GUILayout.EndArea();
+        by -= U(70);
+        Rect primary = new Rect(x, by, w, U(58));
+        if (completedJourney) BombUi.Button(primary, "HÀNH TRÌNH ĐÃ HOÀN TẤT", accent, BombUi.Night, buttonStyle, false);
+        else if (BombUi.Button(primary, ready ? "ĐANG CHỜ NGƯỜI CHƠI KHÁC..."
+                    : nextChapter ? $"SẴN SÀNG SANG CHƯƠNG {room.chapterIndex + 2}" : "CHƠI LẠI",
+                BombUi.Health, BombUi.Night, buttonStyle, !ready, "Phím tắt: R hoặc Enter"))
+            network.Send(new BombMessage { type = "READY", ready = true });
+        GUI.Label(new Rect(x, by - U(36), w, U(28)), readyLine, centeredMutedStyle);
     }
 
-    void DrawJourneyGuide() {
-        float scale = Mathf.Clamp(Screen.height / 900f, .75f, 1.25f);
-        float width = Mathf.Min(520 * scale, Screen.width - 32);
-        float height = Mathf.Min(410 * scale, Screen.height - 32);
-        float top = Screen.height >= 620 ? Mathf.Max(164, (Screen.height - height) * .5f) : 16;
-        Rect panel = new Rect(16, top, width, height);
-        BombUi.Fill(new Rect(panel.x + 7, panel.y + 8, panel.width, panel.height),
-            new Color(0, 0, 0, .48f), BombUi.RoundBig);
-        BombUi.Fill(panel, new Color(BombUi.Panel.r, BombUi.Panel.g, BombUi.Panel.b, .96f), BombUi.RoundBig);
-        BombUi.Fill(new Rect(panel.x, panel.y, 6, panel.height), BombUi.Core, null);
+    static readonly string[] JourneySteps = {
+        "Mảnh Tim Lửa xuất hiện sau 10 giây — tìm viên pha lê hồng trên minimap.",
+        "Chạm để mang mảnh về bệ đá giữa bản đồ. Nổ trúng người giữ 2 lần bằng cú nạp đủ mạnh để làm rơi mảnh.",
+        "Nếu mảnh đã ở trên bệ, đứng trong vòng 3 giây để phá ấn và cướp lại. Giữ mảnh đến hết giờ để thắng chương.",
+        "Khi cầm mảnh, bạn không thể nổ bom; nhấn Q để thả mảnh. E dùng Khiên • Shift Tăng tốc."
+    };
 
-        GUILayout.BeginArea(new Rect(panel.x + 24, panel.y + 18, panel.width - 48, panel.height - 36));
-        GUILayout.Label("CÁCH CHƠI CỐT TRUYỆN", titleStyle);
-        GUILayout.Space(8);
-        GUILayout.Label("1. Mảnh Tim Lửa xuất hiện sau 10 giây — tìm viên pha lê hồng trên minimap.", bodyStyle);
-        GUILayout.Label("2. Chạm để mang mảnh về bệ đá giữa bản đồ. Nổ trúng người giữ 2 lần bằng cú nạp đủ mạnh để làm rơi mảnh.", bodyStyle);
-        GUILayout.Label("3. Nếu mảnh đã ở trên bệ, đứng trong vòng 3 giây để phá ấn và cướp lại. Giữ mảnh đến hết giờ để thắng chương.", bodyStyle);
-        GUILayout.Label("4. Khi cầm mảnh, bạn không thể nổ bom; nhấn Q để thả mảnh. E dùng Khiên • Shift Tăng tốc.", bodyStyle);
-        GUILayout.Space(4);
-        GUILayout.Label("Thắng chương: +3 điểm • Loại đối thủ: +1 điểm • Sau 3 chương, người nhiều điểm nhất thắng.", smallStyle);
-        GUILayout.FlexibleSpace();
-        if (GUILayout.Button("ĐÃ HIỂU  •  H để mở lại", GUILayout.Height(44))) {
-            BombAudio.UiClick();
-            journeyGuideVisible = false;
+    void DrawJourneyGuide() {
+        const string footer = "Thắng chương: +3 điểm • Loại đối thủ: +1 điểm • Sau 3 chương, người nhiều điểm nhất thắng.";
+        float pad = U(28), number = U(28);
+        float width = Mathf.Min(U(560), Screen.width - 32);
+        float w = width - pad * 2;
+        float textW = w - number - U(14);
+        float stepsH = 0;
+        foreach (string step in JourneySteps)
+            stepsH += Mathf.Max(number, bodyStyle.CalcHeight(new GUIContent(step), textW)) + U(12);
+        float footerH = smallStyle.CalcHeight(new GUIContent(footer), w);
+        float height = Mathf.Min(U(72) + stepsH + footerH + U(24) + U(52) + pad, Screen.height - 32);
+        float top = Screen.height >= 620 ? Mathf.Max(U(164), (Screen.height - height) * .5f) : 16;
+        top = Mathf.Max(16, Mathf.Min(top, Screen.height - height - 16));
+        Rect panel = new Rect(16, top, width, height);
+        BombUi.Card(panel, BombUi.Core, ui);
+
+        float x = panel.x + pad, y = panel.y + U(24);
+        GUI.Label(new Rect(x, y, w, U(40)), "CÁCH CHƠI CỐT TRUYỆN", titleStyle);
+        y += U(48);
+        badgeStyle.normal.textColor = BombUi.Night;
+        for (int i = 0; i < JourneySteps.Length; i++) {
+            float stepH = Mathf.Max(number, bodyStyle.CalcHeight(new GUIContent(JourneySteps[i]), textW));
+            Rect badge = new Rect(x, y, number, number);
+            BombUi.Fill(badge, BombUi.Core, BombUi.Circle);
+            GUI.Label(badge, (i + 1).ToString(), badgeStyle);
+            GUI.Label(new Rect(x + number + U(14), y + U(3), textW, stepH), JourneySteps[i], bodyStyle);
+            y += stepH + U(12);
         }
-        GUILayout.EndArea();
+        GUI.Label(new Rect(x, y, w, footerH), footer, smallStyle);
+
+        Rect button = new Rect(x, panel.yMax - pad - U(52), w * .5f, U(52));
+        if (BombUi.Button(button, "ĐÃ HIỂU", BombUi.Core, BombUi.Night, buttonStyle, true, "Phím tắt: Enter"))
+            journeyGuideVisible = false;
+        sectionRightStyle.normal.textColor = BombUi.TextMuted;
+        GUI.Label(new Rect(button.xMax + U(12), button.y, w - button.width - U(12), button.height), "NHẤN H ĐỂ MỞ LẠI", sectionRightStyle);
+        sectionRightStyle.normal.textColor = BombUi.TextFaint;
     }
 
     string WinnerText() {
@@ -1419,13 +1359,11 @@ public sealed class BombGame : MonoBehaviour {
         host = host.Trim();
         if (string.IsNullOrEmpty(host)) {
             status = "Bản game chưa được cấu hình server. Hãy liên hệ người gửi game.";
-            showNetworkSettings = true;
             mainMenu.ShowNetworkSettings();
             return;
         }
         if (!int.TryParse(port, out int parsed) || parsed < 1 || parsed > 65535) {
             status = "Cấu hình server có port không hợp lệ.";
-            showNetworkSettings = true;
             mainMenu.ShowNetworkSettings();
             return;
         }
@@ -1496,15 +1434,6 @@ public sealed class BombGame : MonoBehaviour {
         }
     }
 
-    void DrawNetworkSettings() {
-        GUILayout.Space(6);
-        GUILayout.Label("Dành cho chủ phòng / kiểm thử", smallStyle);
-        GUILayout.Label("Địa chỉ server", bodyStyle); host = GUILayout.TextField(host);
-        GUILayout.Label("Port", bodyStyle); port = GUILayout.TextField(port,5);
-        if (host == "127.0.0.1" || host.Equals("localhost", StringComparison.OrdinalIgnoreCase))
-            GUILayout.Label("Chỉ dùng khi server chạy trên chính máy này.", smallStyle);
-    }
-
     void QuitGame() {
         network.Dispose();
 #if UNITY_EDITOR
@@ -1527,18 +1456,6 @@ public sealed class BombGame : MonoBehaviour {
             });
         }
         return dots.ToArray();
-    }
-
-    bool PanelButton(string label, Color face) => PanelButton(label, face, BombUi.Night);
-
-    bool PanelButton(string label, Color face, Color text) {
-        Color savedBackground = GUI.backgroundColor;
-        GUI.backgroundColor = face;
-        buttonStyle.normal.textColor = buttonStyle.hover.textColor = buttonStyle.active.textColor = text;
-        bool clicked = GUILayout.Button(label, buttonStyle, GUILayout.Height(38));
-        GUI.backgroundColor = savedBackground;
-        if (clicked) BombAudio.UiClick();
-        return clicked;
     }
 
     int BushIndex(float x, float z) {
