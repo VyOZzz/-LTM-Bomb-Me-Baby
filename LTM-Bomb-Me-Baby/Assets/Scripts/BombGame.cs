@@ -381,7 +381,6 @@ public sealed class BombGame : MonoBehaviour {
                 ClearNotices();
                 ShowMapIntro(msg.mapId);
                 gameAudio.SetMapMusic(msg.mapId);
-                gameAudio.PlayMatchStart();
                 break;
             case "STATE_UPDATE":
                 phase = msg.phase;
@@ -391,7 +390,7 @@ public sealed class BombGame : MonoBehaviour {
                 if (msg.playerId == myId) charging = false;
                 if (msg.visible) {
                     Vector3 explosionPosition = new Vector3(msg.x, .45f, msg.z);
-                    gameAudio.PlayExplosion(explosionPosition, msg.radius);
+                    gameAudio.PlayExplosion(explosionPosition, msg.radius, msg.playerId == myId);
                     StartCoroutine(Explosion(explosionPosition, msg.radius));
                 }
                 break;

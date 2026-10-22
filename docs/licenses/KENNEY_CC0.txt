@@ -1,0 +1,15 @@
+Kenney audio assets used by Bomb Me Baby
+
+Packages:
+- Sci-Fi Sounds 1.0: https://kenney.nl/assets/sci-fi-sounds
+- Impact Sounds 1.0: https://kenney.nl/assets/impact-sounds
+- Interface Sounds 1.0: https://kenney.nl/assets/interface-sounds
+
+Created and distributed by Kenney (https://kenney.nl).
+
+License: Creative Commons Zero (CC0 1.0)
+https://creativecommons.org/publicdomain/zero/1.0/
+
+The original package license files state that the content is free to use in
+personal, educational, and commercial projects. Attribution is not required;
+credit to Kenney is included in this project for clear provenance.
