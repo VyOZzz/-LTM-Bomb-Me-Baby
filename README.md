@@ -86,6 +86,25 @@ Khi người chơi tạo hoặc vào phòng **Hành trình Ba Mảnh** lần đ�
 
 Game có nhạc riêng cho menu và ba map. Nhạc tự hạ khi có tiếng nổ/kết quả; tối đa 10 nguồn SFX 3D được phát đồng thời để tránh chồng âm trong trận đông người. Khi mất kết nối trong trận, client hiện số giây còn lại của cửa sổ reconnect 10 giây và số lần thử lại. Người còn trong phòng thấy thông báo, tên người mất kết nối và thời gian giữ chỗ; vị trí đang ẩn trong bụi không bị lộ.
 
+## Chơi thử một mình với bot
+
+Cần Java server đang chạy và một Unity client. Bot là client TCP riêng, dùng cùng luật chơi và dữ liệu nhìn thấy như người chơi; hỗ trợ cả Đấu nhanh và Hành trình. Dùng JDK/Maven sẵn có, không cần Python hay mở thêm Unity.
+
+1. Chạy server như hướng dẫn trên. Trong Unity, chọn chế độ → **Tạo phòng riêng**, lấy mã phòng 6 ký tự.
+2. Mở PowerShell tại thư mục gốc repository, chạy:
+
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File scripts/run_bots.ps1 -RoomCode ABC123 -Count 3
+   ```
+
+   Thay `ABC123` bằng mã phòng của bạn. `-Count` từ 1 đến 9, mặc định 1; tổng người và bot không quá 10. Bỏ `-RoomCode` thì script sẽ hỏi mã. Bot vào đủ rồi tự sẵn sàng.
+3. Trong Unity bấm **Sẵn sàng** để chơi. Kết thúc vòng, bạn bấm sẵn sàng/chơi tiếp; bot tự sẵn sàng cho vòng kế tiếp. Hành trình chuyển đủ ba map; hết hành trình thì tạo phòng mới và chạy lại lệnh với mã mới.
+4. Nhấn **Ctrl+C** trong cửa sổ bot để dừng và cho bot rời phòng.
+
+Bot biết tìm vật phẩm, đuổi đối thủ nhìn thấy, tránh đá đơn giản, nạp/nổ bom, dùng khiên/tăng tốc và mang Tim Lửa về bệ. Đây là đối thủ cơ bản phục vụ kiểm thử, không phải AI thi đấu. Thêm `-Passive` nếu muốn bot di chuyển/nhặt đồ nhưng không tấn công, thuận tiện thử âm thanh/VFX. Với server ở máy khác, thêm `-ServerHost 192.168.1.20 -Port 7777` theo địa chỉ thực tế.
+
+Nếu báo `ROOM_NOT_FOUND`, kiểm tra mã và địa chỉ server; `ROOM_UNAVAILABLE` nghĩa là phòng đã bắt đầu, đã đầy hoặc Hành trình đã chơi vòng đầu. Thêm bot trước khi vào trận. Bot giữ kết nối đến khi bạn dừng script; sau khi rời phòng trong Unity, hãy dừng bot trước khi tạo lượt thử mới.
+
 ## Bật AI trong Unity Editor (tùy chọn)
 
 Project đang khai báo package preview `com.unity.ai.assistant`. Package này chỉ phục vụ hỗ trợ trong Editor và không thuộc luồng chạy game. Nếu cần dùng:

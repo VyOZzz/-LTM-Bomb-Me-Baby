@@ -4,7 +4,7 @@ using UnityEngine;
 public sealed class BombAudio : MonoBehaviour {
     public static BombAudio Instance { get; private set; }
 
-    enum Cue { Explosion, Energy, Core, Shield, Boost, Damage, Land, Drop, ShieldHit, Ui, Count }
+    enum Cue { Explosion, Energy, Core, Shield, Boost, Damage, Land, Drop, ShieldHit, Ui, UiHover, Count }
     sealed class Voice {
         public AudioSource source;
         public float gain;
@@ -327,7 +327,7 @@ public sealed class BombAudio : MonoBehaviour {
         }
     }
 
-    public void PlayExplosion(Vector3 position, float radius, bool local) {
+    public void PlayExplosion(Vector3 position, float radius, bool local = false) {
         if (!AllowCue(Cue.Explosion, local, local ? .08f : .12f)) return;
         float pan;
         if (Audibility(local, position, 38, out pan) < .005f) return;
@@ -341,6 +341,13 @@ public sealed class BombAudio : MonoBehaviour {
     public static void UiClick() {
         if (Instance != null && Instance.AllowCue(Cue.Ui, true, .045f))
             Instance.Play(Instance.uiClickClip, true, Vector3.zero, .30f);
+    }
+
+    /// Call once when the pointer enters a button, not on every hovered frame.
+    public static void UiHover() {
+        // Separate cooldowns keep a hover sound from suppressing the next click.
+        if (Instance != null && Instance.AllowCue(Cue.UiHover, true, .12f))
+            Instance.Play(Instance.uiClickClip, true, Vector3.zero, .08f);
     }
 
     void OnDestroy() {
