@@ -147,7 +147,12 @@ sealed class BombHud {
 
         PlayerData me = v.me;
         GUI.Label(R(128, 30, 250, 24), me == null ? "" : me.name, name);
-        if (me == null || !me.alive) {
+        if (me == null) {
+            Fill(R(128, 62, 190, 26), WithAlpha(TextMuted, .2f), RoundSmall);
+            GUI.Label(R(128, 62, 190, 26), "ĐANG ĐỒNG BỘ DỮ LIỆU...", centerText);
+            return;
+        }
+        if (!me.alive) {
             Fill(R(128, 62, 190, 26), WithAlpha(Danger, .25f), RoundSmall);
             GUI.Label(R(128, 62, 190, 26), "ĐÃ BỊ LOẠI • ĐANG XEM", centerText);
             return;
@@ -191,7 +196,7 @@ sealed class BombHud {
         float x0 = W / 2 - width / 2;
         Rect pill = R(x0, 20, width, 54);
         Fill(pill, Panel, RoundBig);
-        GUI.Label(R(x0 + 20, 20, 44, 54), v.alive.ToString(), big);
+        GUI.Label(R(x0 + 20, 20, 44, 54), v.total > 0 ? v.alive.ToString() : "—", big);
         GUI.Label(R(x0 + 58, 20, 80, 54), "CÒN LẠI", label);
         Fill(R(x0 + 136, 34, 2, 26), new Color(1, 1, 1, .15f), null);
         label.normal.textColor = v.journey ? Core : Charge;

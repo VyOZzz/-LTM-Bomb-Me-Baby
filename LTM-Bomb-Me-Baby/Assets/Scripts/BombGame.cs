@@ -406,8 +406,14 @@ public sealed class BombGame : MonoBehaviour {
                 gameAudio.SetMapMusic(msg.mapId);
                 break;
             case "STATE_UPDATE":
-                if (room == null || msg.roomCode != room.code || msg.roundIndex != activeRoundIndex
-                        || phase == "FINISHED" && msg.phase == "PLAYING") break;
+                if (room == null) break;
+                // Current servers identify every snapshot so delayed packets from another
+                // room/round cannot revive stale state. Older course-demo servers omitted
+                // these fields; accept their ordered snapshots instead of leaving the HUD
+                // permanently at zero players after GAME_START.
+                bool wrongRoom = !string.IsNullOrEmpty(msg.roomCode) && msg.roomCode != room.code;
+                bool wrongRound = msg.roundIndex > 0 && msg.roundIndex != activeRoundIndex;
+                if (wrongRoom || wrongRound || phase == "FINISHED" && msg.phase == "PLAYING") break;
                 phase = msg.phase;
                 if (recoveryMusicPending) { gameAudio.SetMapMusic(msg.mapId); recoveryMusicPending = false; }
                 ApplySnapshot(msg);
