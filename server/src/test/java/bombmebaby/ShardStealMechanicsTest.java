@@ -7,26 +7,24 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class ShardStealMechanicsTest {
-    @Test void weakChargeOrLowActualDamageDoesNotBreakFireLock() {
+    @Test void everyRealHitWearsDownFireLockRightAfterPickup() {
         Fixture f = carried();
-        long hit = f.time + ShardObjective.CARRIER_PROTECTION_MS;
+        f.shard.onDamaged(f.a, 5, f.time + 1, 5, 0);
+        f.shard.onDamaged(f.a, 3, f.time + 2, 5, 0);
 
-        f.shard.onDamaged(f.a, ShardObjective.MIN_LOCK_BREAK_CHARGE - .01, 50, hit, 5, 0);
-        f.shard.onDamaged(f.a, 1, ShardObjective.MIN_LOCK_BREAK_DAMAGE - .01, hit + 1, 5, 0);
-
-        assertEquals(ShardObjective.FIRE_LOCK_MAX, f.shard.fireLock);
+        assertEquals(ShardObjective.FIRE_LOCK_MAX - 8, f.shard.fireLock, .001);
         assertSame(f.a, f.shard.carrier);
     }
 
     @Test void shieldedExplosionDoesNotBreakLockOrResetSeal() {
         Fixture carried = carried();
-        long hit = carried.time + ShardObjective.CARRIER_PROTECTION_MS;
+        long hit = carried.time + 1;
         park(carried.a, .5, 0);
         park(carried.b, 0, 0);
         carried.a.shieldUntil = hit + 1;
         fullyCharge(carried.b, hit);
         carried.room.action(carried.b, "EXPLODE", 0, 0, hit);
-        assertEquals(ShardObjective.FIRE_LOCK_MAX, carried.shard.fireLock);
+        assertEquals(ShardObjective.FIRE_LOCK_MAX, carried.shard.fireLock, .001);
 
         Fixture placed = placed();
         long active = placed.time + ShardObjective.PEDESTAL_PROTECTION_MS;
@@ -43,23 +41,27 @@ class ShardStealMechanicsTest {
         assertEquals(0, placed.b.staggerUntil);
     }
 
-    @Test void twoValidHitsDropShardAndLockRecoversWhenSecondHitIsLate() {
+    @Test void lockRegeneratesGraduallyAfterDelayAndDropsShardWhenEmpty() {
         Fixture f = carried();
-        long hit = f.time + ShardObjective.CARRIER_PROTECTION_MS;
-        f.shard.onDamaged(f.a, .7, 20, hit, 8, 0);
-        assertEquals(1, f.shard.fireLock);
-        f.shard.onDamaged(f.a, .7, 20, hit + ShardObjective.FIRE_LOCK_RECOVERY_MS, 8, 0);
-        assertEquals(1, f.shard.fireLock, "Lock first recovers to two, then this hit removes one pip");
-        f.shard.onDamaged(f.a, .7, 20, hit + ShardObjective.FIRE_LOCK_RECOVERY_MS + 100, 8, 0);
+        long hit = f.time + 1;
+        f.shard.onDamaged(f.a, 25, hit, 8, 0);
+        double left = ShardObjective.FIRE_LOCK_MAX - 25;
+        f.shard.update(hit + ShardObjective.FIRE_LOCK_REGEN_DELAY_MS - 1, f.room.players);
+        assertEquals(left, f.shard.fireLock, .001, "No regeneration before the delay");
+        long oneSecondIn = hit + ShardObjective.FIRE_LOCK_REGEN_DELAY_MS + 1_000;
+        f.shard.update(oneSecondIn, f.room.players);
+        left += ShardObjective.FIRE_LOCK_REGEN_PER_SECOND;
+        assertEquals(left, f.shard.fireLock, .01, "Regenerates per second, not all at once");
+
+        f.shard.onDamaged(f.a, left, oneSecondIn + 1, 8, 0);
         assertEquals(ShardObjective.State.GROUND, f.shard.state);
         assertEquals(8, f.shard.x, .001);
     }
 
-    @Test void formerCarrierCannotRepickBeforeLockoutAndNewCarrierGetsProtection() {
+    @Test void formerCarrierCannotRepickBeforeLockoutAndNewCarrierIsVulnerable() {
         Fixture f = carried();
-        long hit = f.time + ShardObjective.CARRIER_PROTECTION_MS;
-        f.shard.onDamaged(f.a, .8, 20, hit, 8, 0);
-        f.shard.onDamaged(f.a, .8, 20, hit + 100, 8, 0);
+        long hit = f.time + 1;
+        f.shard.onDamaged(f.a, ShardObjective.FIRE_LOCK_MAX, hit, 8, 0);
         park(f.a, 8, 0);
         park(f.b, 30, 30);
         f.room.update(hit + ShardObjective.GROUND_NEUTRAL_MS + 150, 0);
@@ -70,8 +72,8 @@ class ShardStealMechanicsTest {
         long pickup = hit + ShardObjective.GROUND_NEUTRAL_MS + 200;
         f.room.update(pickup, 0);
         assertSame(f.b, f.shard.carrier);
-        f.shard.onDamaged(f.b, 1, 50, pickup + 1_000, 10, 0);
-        assertEquals(ShardObjective.FIRE_LOCK_MAX, f.shard.fireLock);
+        f.shard.onDamaged(f.b, 10, pickup + 1, 10, 0);
+        assertEquals(ShardObjective.FIRE_LOCK_MAX - 10, f.shard.fireLock, .001);
     }
 
     @Test void pedestalProtectionBlocksAllSealProgress() {

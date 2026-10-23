@@ -23,8 +23,15 @@ static class BombArt {
         if (prefab == null) return null;
         GameObject instance = Object.Instantiate(prefab, parent, false);
         instance.name = prefab.name;
-        foreach (Collider collider in instance.GetComponentsInChildren<Collider>()) Object.Destroy(collider);
+        foreach (Collider collider in instance.GetComponentsInChildren<Collider>()) Discard(collider);
         return instance;
+    }
+
+    /// Destroy that also works outside Play mode, where the map preview builds the same art.
+    public static void Discard(Object target) {
+        if (target == null) return;
+        if (Application.isPlaying) Object.Destroy(target);
+        else Object.DestroyImmediate(target);
     }
 
     /// Ground texture per map: Ground("meadow", "color") or Ground("crater", "normal").

@@ -79,9 +79,8 @@ using System;
     public string challengerId;
     public float capture;         // 0..1 progress of the current challenger
     public SealBreakerData[] sealBreakers;
-    public int fireLock;
-    public int fireLockMax;
-    public float carrierProtection;
+    public float fireLock;        // shard health while carried: hits wear it down, 0 drops it
+    public float fireLockMax;
     public float pedestalProtection;
     public float pedestalOverheat;
     public string pickupPriorityId;

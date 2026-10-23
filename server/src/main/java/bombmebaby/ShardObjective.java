@@ -17,17 +17,16 @@ final class ShardObjective {
     static final long CAPTURE_MS = SEAL_BREAK_MS;
     static final long PEDESTAL_PROTECTION_MS = 5_000;
     static final long PEDESTAL_OVERHEAT_MS = 4_000;
-    static final long CARRIER_PROTECTION_MS = 2_000;
-    static final long FIRE_LOCK_RECOVERY_MS = 6_000;
+    /** Fire Lock is a health bar on the carried shard: real damage wears it down, at zero it drops. */
+    static final double FIRE_LOCK_MAX = 40;
+    static final long FIRE_LOCK_REGEN_DELAY_MS = 3_000;
+    static final double FIRE_LOCK_REGEN_PER_SECOND = 10;
     static final long GROUND_NEUTRAL_MS = 500;
     static final long FORMER_CARRIER_LOCKOUT_MS = 1_300;
     static final long BREAKER_PICKUP_PRIORITY_MS = 750;
     static final long CARRIER_DISCONNECT_DROP_MS = 2_000;
     static final long RESET_FLASH_MS = 450;
-    static final double MIN_LOCK_BREAK_CHARGE = 0.35;
-    static final double MIN_LOCK_BREAK_DAMAGE = 10.0;
-    static final int FIRE_LOCK_MAX = 2;
-    static final double CARRIER_DROP_DISTANCE = 2.5;
+    static final double CARRIER_DROP_DISTANCE = 7.0;
     static final double PEDESTAL_DROP_DISTANCE = 3.45;
     static final double OWNER_DEFENSE_SPEED_FACTOR = 0.5;
     static final double PEDESTAL_X = 0, PEDESTAL_Z = 0, PEDESTAL_RADIUS = 3.0;
@@ -40,8 +39,8 @@ final class ShardObjective {
     PlayerState carrier, owner;
     /** Leading breaker, retained for the compact/legacy DTO fields. */
     PlayerState challenger;
-    int fireLock = FIRE_LOCK_MAX;
-    long carrierProtectionUntil, pedestalProtectionUntil, pedestalOverheatUntil;
+    double fireLock = FIRE_LOCK_MAX;
+    long pedestalProtectionUntil, pedestalOverheatUntil;
     PlayerState pickupPriority, formerCarrier;
     long pickupPriorityUntil, pickupUnlockAt, formerCarrierBlockedUntil;
     private long fireLockLastHitAt;
@@ -61,7 +60,7 @@ final class ShardObjective {
         long dt = Math.max(0, now - lastUpdate);
         lastUpdate = now;
         clearInvalidPriority(now);
-        recoverFireLock(now);
+        regenerateFireLock(now, dt);
         switch (state) {
             case WAITING -> {
                 if (now - startedAt >= SPAWN_DELAY_MS) {
@@ -91,7 +90,7 @@ final class ShardObjective {
     }
 
     /** Applies objective-specific consequences of an explosion that dealt real damage. */
-    boolean onDamaged(PlayerState target, double charge, double actualDamage,
+    boolean onDamaged(PlayerState target, double actualDamage,
                       long now, double safeDropX, double safeDropZ) {
         boolean reset = false;
         if (state == State.PLACED && sealProgressMs.containsKey(target)) {
@@ -99,10 +98,8 @@ final class ShardObjective {
             resetFlashUntil.put(target, now + RESET_FLASH_MS);
             reset = true;
         }
-        if (state != State.CARRIED || target != carrier || now < carrierProtectionUntil
-                || charge < MIN_LOCK_BREAK_CHARGE || actualDamage < MIN_LOCK_BREAK_DAMAGE) return reset;
-        recoverFireLock(now);
-        fireLock--;
+        if (state != State.CARRIED || target != carrier || actualDamage <= 0) return reset;
+        fireLock = Math.max(0, fireLock - actualDamage);
         fireLockLastHitAt = now;
         if (fireLock <= 0) dropAt(safeDropX, safeDropZ, now);
         return reset;
@@ -196,7 +193,6 @@ final class ShardObjective {
         owner = null;
         fireLock = FIRE_LOCK_MAX;
         fireLockLastHitAt = 0;
-        carrierProtectionUntil = now + CARRIER_PROTECTION_MS;
         pickupPriority = null;
         pickupPriorityUntil = 0;
         formerCarrier = null;
@@ -230,12 +226,12 @@ final class ShardObjective {
         return state == State.CARRIED && carrier == player;
     }
 
-    private void recoverFireLock(long now) {
-        if (state == State.CARRIED && fireLock < FIRE_LOCK_MAX && fireLockLastHitAt > 0
-                && now - fireLockLastHitAt >= FIRE_LOCK_RECOVERY_MS) {
-            fireLock = FIRE_LOCK_MAX;
-            fireLockLastHitAt = 0;
-        }
+    /** Refills the lock gradually once the carrier has gone FIRE_LOCK_REGEN_DELAY_MS without a hit. */
+    private void regenerateFireLock(long now, long dt) {
+        if (state != State.CARRIED || fireLock >= FIRE_LOCK_MAX) return;
+        long regenFrom = fireLockLastHitAt + FIRE_LOCK_REGEN_DELAY_MS;
+        long regenMs = Math.min(dt, now - regenFrom);
+        if (regenMs > 0) fireLock = Math.min(FIRE_LOCK_MAX, fireLock + regenMs * FIRE_LOCK_REGEN_PER_SECOND / 1000.0);
     }
 
     private void clearInvalidPriority(long now) {
@@ -281,7 +277,6 @@ final class ShardObjective {
             "carrierId", id(carrier), "ownerId", id(owner), "challengerId", id(challenger),
             "capture", Math.min(1.0, lead / SEAL_BREAK_MS), "sealBreakers", breakers,
             "fireLock", fireLock, "fireLockMax", FIRE_LOCK_MAX,
-            "carrierProtection", remaining(carrierProtectionUntil, now),
             "pedestalProtection", remaining(pedestalProtectionUntil, now),
             "pedestalOverheat", remaining(pedestalOverheatUntil, now),
             "pickupPriorityId", id(pickupPriority),

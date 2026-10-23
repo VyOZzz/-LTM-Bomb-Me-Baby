@@ -312,7 +312,7 @@ final class GameRoom {
                 broadcast(data("type","PLAYER_DAMAGED","playerId",target.id,"by",source.id,"amount",damage));
                 if (target.hp > 0 && objective != null) {
                     double[] shardDrop = safeShardDrop(target, source.x, source.z);
-                    boolean resetSeal = objective.onDamaged(target, charge, actualDamage, now,
+                    boolean resetSeal = objective.onDamaged(target, actualDamage, now,
                         shardDrop[0], shardDrop[1]);
                     if (resetSeal && now >= target.staggerImmuneUntil) {
                         target.staggerUntil = now + GameRules.SEAL_STAGGER_MS;

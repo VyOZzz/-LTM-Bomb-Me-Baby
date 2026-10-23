@@ -40,6 +40,9 @@ public sealed class BombGame : MonoBehaviour {
     readonly Dictionary<string, float> reconnectDeadlines = new Dictionary<string, float>();
     int aliveCount, playerCount;
     float matchStartedAt;
+    /// The result card waits this long after the round ends so the final blast can be seen.
+    const float ResultDelaySeconds = 2.5f;
+    float finishedAt;
     ObjectiveData objective;
     ObstacleData[] activeObstacles = Array.Empty<ObstacleData>();
     string toast = "";
@@ -95,10 +98,6 @@ public sealed class BombGame : MonoBehaviour {
     /// Secondary button face: a step lighter than the PanelRaised cards it sits on.
     static readonly Color QuietFace = new Color(.24f,.2f,.35f);
     static readonly Color AttackOrange = new Color(1f,.43f,.08f);
-    static readonly Color ShieldCyan = new Color(.12f,.9f,1f);
-    static readonly Color BoostBlue = new Color(.18f,.55f,1f);
-    static readonly Color EnergyGreen = new Color(.35f,.92f,.24f);
-    static readonly Color CoreMagenta = new Color(1f,.16f,.72f);
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     static void Bootstrap() {
@@ -179,7 +178,12 @@ public sealed class BombGame : MonoBehaviour {
         return found == null ? null : found.transform;
     }
 
-    void OnDestroy() { network.Dispose(); mapView.Clear(); shardView.Clear(); }
+    void OnDestroy() {
+        network.Dispose(); mapView.Clear(); shardView.Clear();
+#if UNITY_EDITOR
+        BombDevBots.StopAll();
+#endif
+    }
 
     void Update() {
         TickNotice();
@@ -383,6 +387,9 @@ public sealed class BombGame : MonoBehaviour {
                 }
                 break;
             case "LEFT_ROOM":
+#if UNITY_EDITOR
+                BombDevBots.StopAll();
+#endif
                 ResetRoomState();
                 status = "Đã rời phòng. Tìm trận, tạo phòng hoặc nhập mã phòng.";
                 break;
@@ -439,12 +446,10 @@ public sealed class BombGame : MonoBehaviour {
             case "ENERGY_PICKED":
                 gameAudio.PlayEnergyPickup(msg.playerId == myId, PositionOf(msg.playerId));
                 EventEffect(msg.type, msg.playerId);
-                ShowStoryEvent(msg);
                 break;
             case "CORE_PICKED":
                 gameAudio.PlayCorePickup(msg.playerId == myId, PositionOf(msg.playerId));
                 EventEffect(msg.type, msg.playerId);
-                ShowStoryEvent(msg);
                 break;
             case "CORE_SPAWNED":
                 gameAudio.PlayDrop(false, new Vector3(msg.x, 0, msg.z));
@@ -452,31 +457,32 @@ public sealed class BombGame : MonoBehaviour {
             case "PLAYER_DAMAGED":
                 gameAudio.PlayDamage(msg.playerId == myId, PositionOf(msg.playerId));
                 EventEffect(msg.type, msg.playerId);
-                ShowStoryEvent(msg);
                 break;
             case "DAMAGE_REFLECTED":
                 gameAudio.PlayDamage(msg.to == myId, PositionOf(msg.to));
                 EventEffect(msg.type, msg.to);
-                ShowStoryEvent(msg);
                 break;
             case "SHIELD_ACTIVATED":
                 gameAudio.PlayShield(msg.playerId == myId, PositionOf(msg.playerId));
                 EventEffect(msg.type, msg.playerId);
-                ShowStoryEvent(msg);
                 break;
             case "BOOST_ACTIVATED":
                 gameAudio.PlayBoost(msg.playerId == myId, PositionOf(msg.playerId));
                 EventEffect(msg.type, msg.playerId);
-                ShowStoryEvent(msg);
                 break;
             case "PLAYER_ELIMINATED":
                 reconnectDeadlines.Remove(msg.playerId);
                 EventEffect(msg.type, msg.playerId);
+                // The round-ending kill gets no further snapshot: hide the body now, leaving the puff.
+                if (avatars.TryGetValue(msg.playerId, out Avatar eliminated) && eliminated.state != null) {
+                    eliminated.state.alive = false;
+                    if (eliminated.body != null) eliminated.body.SetActive(false);
+                }
                 if (msg.playerId == myId) gameAudio.StopGameplayLoops();
                 else gameAudio.PlayDamage(false, PositionOf(msg.playerId));
-                ShowStoryEvent(msg);
                 break;
             case "GAME_OVER":
+                if (phase != "FINISHED") finishedAt = Time.unscaledTime;
                 phase = "FINISHED";
                 winnerId = msg.winnerId;
                 winnerIds = Array.Empty<string>();
@@ -494,6 +500,7 @@ public sealed class BombGame : MonoBehaviour {
                         : $"{NameOf(winnerId)} là người cuối cùng và giữ mảnh.";
                 break;
             case "JOURNEY_COMPLETE":
+                if (phase != "FINISHED") finishedAt = Time.unscaledTime;
                 phase = "FINISHED";
                 journeyCompleteReceived = true;
                 winnerId = msg.winnerId;
@@ -548,40 +555,6 @@ public sealed class BombGame : MonoBehaviour {
         string body = map.intro;
         if (!string.IsNullOrEmpty(map.hint)) body += "\n" + map.hint;
         EnqueueNotice(title, body, 6f, AttackOrange, 2);
-    }
-
-    void ShowStoryEvent(ServerMessage message) {
-        BombStoryEvent item = story?.FindEvent(message.type);
-        if (item == null) return;
-        bool localSubject = message.playerId == myId || message.to == myId;
-        string template = localSubject ? item.self : item.other;
-        string body = BombStory.Format(template, message, PlayerName);
-        if (string.IsNullOrEmpty(body)) return;
-        EnqueueNotice(item.title, body, Mathf.Max(1.2f, item.duration), NoticeAccent(message.type), 1);
-    }
-
-    string PlayerName(string playerId) {
-        if (string.IsNullOrEmpty(playerId)) return "đối thủ";
-        if (playerId == myId) return "bạn";
-        if (room?.players != null)
-            foreach (LobbyPlayer player in room.players)
-                if (player.id == playerId) return player.name;
-        if (avatars.TryGetValue(playerId, out Avatar avatar) && avatar.state != null)
-            return avatar.state.name;
-        return "đối thủ";
-    }
-
-    static Color NoticeAccent(string type) {
-        switch (type) {
-            case "ENERGY_PICKED": return EnergyGreen;
-            case "CORE_PICKED": return CoreMagenta;
-            case "SHIELD_ACTIVATED": return ShieldCyan;
-            case "BOOST_ACTIVATED": return BoostBlue;
-            case "PLAYER_DAMAGED":
-            case "DAMAGE_REFLECTED":
-            case "PLAYER_ELIMINATED": return new Color(1f,.28f,.22f);
-            default: return AttackOrange;
-        }
     }
 
     void EnqueueNotice(string title, string body, float duration, Color accent, int priority) {
@@ -800,7 +773,8 @@ public sealed class BombGame : MonoBehaviour {
         activeObstacles = snapshot.obstacles ?? Array.Empty<ObstacleData>();
 
         if (authoredEnvironment != null) authoredEnvironment.SetActive(false);
-        mapView.Build(activeMapId, activeArenaSize, activeObstacles, activeBushes);
+        mapView.Build(activeMapId, activeArenaSize, activeObstacles, activeBushes,
+            parent: authoredEnvironment != null ? authoredEnvironment.transform.parent : null);
     }
 
     void SyncPickups(PickupData[] pickups, Dictionary<int, GameObject> views, float size, Color color) {
@@ -994,8 +968,10 @@ public sealed class BombGame : MonoBehaviour {
             return;
         }
         // The result card carries the outcome text itself, so the lobby stays hidden behind it.
-        if (phase == "FINISHED") DrawResultPopup();
-        else DrawLobby();
+        if (phase == "FINISHED") {
+            if (Time.unscaledTime - finishedAt < ResultDelaySeconds) DrawMatchHud();
+            else DrawResultPopup();
+        } else DrawLobby();
     }
 
     float U(float value) => value * ui;
@@ -1043,6 +1019,9 @@ public sealed class BombGame : MonoBehaviour {
         float topH = U(154) + (showStatus ? U(40) : 0) + U(34);
         float scoresH = scoreRows > 0 ? U(38) + (scoreRows + 1) * U(26) : 0;
         float actionsH = room.journeyComplete ? U(44) : U(168);
+#if UNITY_EDITOR
+        if (!room.journeyComplete) actionsH += U(52);
+#endif
         float fixedH = topH + scoresH + U(14) + actionsH + pad;
         float width = Mathf.Min(U(580), Screen.width - 32);
         float maxHeight = Screen.height - 32;
@@ -1126,7 +1105,25 @@ public sealed class BombGame : MonoBehaviour {
         GUI.Label(new Rect(x, by, w, U(44)), (missing > 0
             ? $"Cần thêm {missing} người nữa mới bắt đầu được. Gửi mã phòng cho bạn bè."
             : $"Bắt đầu khi mọi người sẵn sàng; tối thiểu {minimum}, tối đa {capacity} người.") + "  Phím tắt: R.", smallStyle);
+#if UNITY_EDITOR
+        by -= U(52);
+        DrawDevBots(new Rect(x, by, w, U(44)), count < capacity);
+#endif
     }
+
+#if UNITY_EDITOR
+    /// Editor-only playtest row: bots join this room as real clients and ready up by themselves.
+    void DrawDevBots(Rect area, bool hasSeat) {
+        float half = (area.width - U(8)) / 2;
+        int bots = BombDevBots.Count;
+        if (BombUi.Button(new Rect(area.x, area.y, half, area.height), $"+ BOT  ({bots})", QuietFace, BombUi.Text,
+                quietButtonStyle, hasSeat, "Chỉ có trong Unity Editor. Bot chạy bằng scripts/bots.py"))
+            BombDevBots.Add(host, port, room.code);
+        if (BombUi.Button(new Rect(area.xMax - half, area.y, half, area.height), "XÓA BOT", QuietFace, BombUi.Text,
+                quietButtonStyle, bots > 0))
+            BombDevBots.StopAll();
+    }
+#endif
 
     /// Small rounded label tinted with its accent, sized to the text and right-aligned at xMax.
     /// Returns the chip width so callers can keep text clear of it.
@@ -1247,7 +1244,7 @@ public sealed class BombGame : MonoBehaviour {
                     a.state.reconnectRemaining,
                     objective != null && objective.carrierId == entry.Key,
                     objective != null ? objective.fireLock : 0,
-                    objective != null ? objective.fireLockMax : 2);
+                    objective != null ? objective.fireLockMax : 0);
         }
         DrawStoryNotice();
     }
@@ -1299,7 +1296,8 @@ public sealed class BombGame : MonoBehaviour {
                 : NameOf(winnerId) + " đã giành Mảnh Tim Lửa của chương này.";
         else body = outcome == MatchOutcome.SharedWin ? "Bạn cùng đứng đầu bảng Hành trình."
             : draw ? "Trận đấu kết thúc mà không có người chiến thắng." : won ? "Bạn là người chiến thắng chung cuộc." : WinnerText();
-        string detail = nextChapter ? $"Tiếp theo: Chương {room.chapterIndex + 2}/3. Điểm và số mảnh được giữ lại." : "";
+        string detail = nextChapter ? $"Tiếp theo: Chương {room.chapterIndex + 2}/3. Điểm và số mảnh được giữ lại."
+            : completedJourney ? TiebreakText() : "";
         int count = room?.players == null ? 0 : room.players.Length;
         string readyLine = completedJourney ? "Rời phòng để bắt đầu một hành trình mới."
             : ready ? $"Đã sẵn sàng  •  {ReadyCount()}/{count} người"
@@ -1348,7 +1346,7 @@ public sealed class BombGame : MonoBehaviour {
 
     static readonly string[] JourneySteps = {
         "Mảnh Tim Lửa xuất hiện sau 10 giây — tìm viên pha lê hồng trên minimap.",
-        "Chạm để mang mảnh về bệ đá giữa bản đồ. Nổ trúng người giữ 2 lần bằng cú nạp đủ mạnh để làm rơi mảnh.",
+        "Chạm để mang mảnh về bệ đá giữa bản đồ. Người cầm mảnh có thanh Khóa Lửa: nổ trúng để bào mòn, hết thanh thì mảnh văng ra. Không bị trúng 3 giây thì thanh hồi dần.",
         "Chờ bảo hộ bệ hết rồi đứng trong vòng để phá ấn: 3 giây, hoặc 6 giây nếu chủ mảnh đang thủ bệ. Giữ mảnh đến hết giờ để thắng chương.",
         "Khi cầm mảnh, bạn không thể nổ bom; nhấn Q để thả mảnh. E dùng Khiên • Shift Tăng tốc."
     };
@@ -1389,6 +1387,28 @@ public sealed class BombGame : MonoBehaviour {
         sectionRightStyle.normal.textColor = BombUi.TextMuted;
         GUI.Label(new Rect(button.xMax + U(12), button.y, w - button.width - U(12), button.height), "NHẤN H ĐỂ MỞ LẠI", sectionRightStyle);
         sectionRightStyle.normal.textColor = BombUi.TextFaint;
+    }
+
+    /// Why the journey winner ranks first when the score table looks level. Shards decide, then
+    /// eliminations, then the final chapter's winner; points are only statistics (docs/PROTOCOL.md).
+    string TiebreakText() {
+        if (string.IsNullOrEmpty(winnerId) || room?.scores == null) return "";
+        ScoreData best = Array.Find(room.scores, score => score.playerId == winnerId);
+        if (best == null) return "";
+        string who = winnerId == myId ? "Bạn" : best.name;
+        bool sameShards = false, samePoints = false, sameEliminations = false;
+        foreach (ScoreData other in room.scores) {
+            if (other == best) continue;
+            samePoints |= other.points >= best.points;
+            if (other.roundWins != best.roundWins) continue;
+            sameShards = true;
+            sameEliminations |= other.eliminations == best.eliminations;
+        }
+        if (sameShards && sameEliminations)
+            return $"Bằng số mảnh và số lần hạ — {who} thắng chương cuối nên đứng đầu.";
+        if (sameShards) return $"Bằng số mảnh — {who} hạ nhiều đối thủ hơn nên đứng đầu.";
+        if (samePoints) return $"Điểm bằng nhau nhưng {who} có nhiều mảnh hơn. Số mảnh quyết định người thắng; điểm chỉ để thống kê.";
+        return "";
     }
 
     string WinnerText() {

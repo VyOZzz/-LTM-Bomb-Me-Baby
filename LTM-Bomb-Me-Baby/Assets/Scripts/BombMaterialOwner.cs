@@ -3,6 +3,8 @@ using UnityEngine;
 
 /// Releases only explicitly tagged, per-object materials. Imported assets and shared caches
 /// are never tagged. Destroying a renderer alone does not release its runtime materials.
+/// Runs in edit mode too, for the scene's map preview.
+[ExecuteAlways]
 public sealed class BombMaterialOwner : MonoBehaviour {
     public const string Prefix = "Bomb runtime: ";
     readonly HashSet<Material> owned = new HashSet<Material>();
@@ -16,7 +18,7 @@ public sealed class BombMaterialOwner : MonoBehaviour {
     }
 
     void OnDestroy() {
-        foreach (Material material in owned) if (material != null) Destroy(material);
+        foreach (Material material in owned) if (material != null) BombArt.Discard(material);
         owned.Clear();
     }
 }
