@@ -57,6 +57,7 @@ final class GameRoom {
     String journeyEndReason = "";
     private long roundStartedAt;
     int roundIndex;
+    private List<String> roundParticipantIds = List.of();
     private int nextPickupId = 1;
     private long lastOrbAt;
     private boolean hasStarted;
@@ -127,6 +128,7 @@ final class GameRoom {
         phase = Phase.PLAYING;
         roundStartedAt = now;
         roundIndex++;
+        roundParticipantIds = players.stream().map(p -> p.id).toList();
         roundWinnerId = "";
         roundEndReason = "";
         tick = 0;
@@ -151,7 +153,8 @@ final class GameRoom {
         // has the full layout even when optimized STATE_UPDATEs omit it.
         broadcast(data("type", "GAME_START", "room", code,
             "mapId", map.id, "mapName", map.name, "arenaSize", map.halfSize,
-            "mode",mode.name(),"roundIndex",roundIndex,"chapterIndex",protocolChapterIndex(),"scores",scores(),
+            "mode",mode.name(),"roundIndex",roundIndex,"roundParticipantIds",roundParticipantIds,
+            "chapterIndex",protocolChapterIndex(),"scores",scores(),
             "obstacles", obstacles, "bushes", bushes));
         broadcastSnapshots(now);
     }
@@ -669,11 +672,14 @@ final class GameRoom {
         return journeyScores.values().stream().map(ScoreState::data).toList();
     }
 
+    synchronized boolean participatedInRound(PlayerState player) { return roundParticipantIds.contains(player.id); }
+
     synchronized Map<String,Object> roomInfo() {
         return data("code",code,"phase",phase.name(),"mapId",map.id,"mapName",map.name,
             "arenaSize",map.halfSize,"minPlayers",GameRules.MIN_PLAYERS,"maxPlayers",GameRules.MAX_PLAYERS,
             "mode",mode.name(),"chapterIndex",protocolChapterIndex(),"scores",scores(),
-            "roundIndex",roundIndex,"roundWinnerId",roundWinnerId,"roundEndReason",roundEndReason,
+            "roundIndex",roundIndex,"roundParticipantIds",roundParticipantIds,
+            "roundWinnerId",roundWinnerId,"roundEndReason",roundEndReason,
             "winnerIds",journeyWinnerIds,"journeyComplete",journeyComplete,"journeyEndReason",journeyEndReason,"players",players.stream().map(p -> data(
             "id",p.id,"name",p.name,"ready",p.ready,"connected",p.connected,
             "reconnectRemaining",p.connected ? 0 : Math.max(0,p.disconnectedAt + GameRules.RECONNECT_MS - System.currentTimeMillis()) / 1000.0)).toList());

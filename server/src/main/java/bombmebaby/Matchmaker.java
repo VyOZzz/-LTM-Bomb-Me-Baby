@@ -2,6 +2,7 @@ package bombmebaby;
 
 import java.util.ArrayList;
 import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -10,38 +11,58 @@ import java.util.Map;
  * while holding it, so it adds no edge to the player -> room lock order.
  */
 final class Matchmaker {
-    record Match(GameMode mode, List<PlayerState> players) {}
+    record Ticket(PlayerState player, GameMode mode, long generation) {}
+    record Match(GameMode mode, List<Ticket> tickets) {
+        List<PlayerState> players() { return tickets.stream().map(Ticket::player).toList(); }
+    }
 
-    private final Map<GameMode,List<PlayerState>> queues = new EnumMap<>(GameMode.class);
+    private final Map<GameMode,List<Ticket>> queues = new EnumMap<>(GameMode.class);
+    // Includes tickets selected for a match but not yet committed to a room.
+    private final Map<PlayerState,Ticket> requests = new HashMap<>();
+    private long generation;
 
     /** Queues the player; returns everyone now waiting for that mode, or null if already queued. */
     synchronized List<PlayerState> enqueue(PlayerState player, GameMode mode) {
         if (modeOf(player) != null) return null;
-        List<PlayerState> queue = queues.computeIfAbsent(mode, m -> new ArrayList<>());
-        queue.add(player);
-        return List.copyOf(queue);
+        Ticket ticket = new Ticket(player, mode, ++generation);
+        requests.put(player, ticket);
+        queues.computeIfAbsent(mode, m -> new ArrayList<>()).add(ticket);
+        return waiting(mode);
     }
 
     /** Puts the players of a match that fell apart back at the head of their queue. */
-    synchronized List<PlayerState> requeue(GameMode mode, List<PlayerState> players) {
-        List<PlayerState> queue = queues.computeIfAbsent(mode, m -> new ArrayList<>());
-        queue.addAll(0, players);
-        return List.copyOf(queue);
+    synchronized List<PlayerState> requeue(Match match) {
+        List<Ticket> rest = new ArrayList<>();
+        for (Ticket ticket : match.tickets()) {
+            if (!isCurrent(ticket)) continue;
+            PlayerState player = ticket.player();
+            if (player.connected && player.room == null) rest.add(ticket);
+            else complete(ticket);
+        }
+        queues.computeIfAbsent(match.mode(), m -> new ArrayList<>()).addAll(0, rest);
+        return waiting(match.mode());
     }
+
+    synchronized boolean isCurrent(Ticket ticket) { return ticket.equals(requests.get(ticket.player())); }
+
+    synchronized void complete(Ticket ticket) { requests.remove(ticket.player(), ticket); }
 
     /** Mode the player is waiting for, or null. */
     synchronized GameMode modeOf(PlayerState player) {
-        for (var entry : queues.entrySet()) if (entry.getValue().contains(player)) return entry.getKey();
-        return null;
+        Ticket ticket = requests.get(player);
+        return ticket == null ? null : ticket.mode();
     }
 
     /** Removes the player; returns who is left waiting for that mode, or null if not queued. */
     synchronized List<PlayerState> remove(PlayerState player) {
-        GameMode mode = modeOf(player);
-        if (mode == null) return null;
-        List<PlayerState> queue = queues.get(mode);
-        queue.remove(player);
-        return List.copyOf(queue);
+        Ticket ticket = requests.remove(player);
+        if (ticket == null) return null;
+        queues.get(ticket.mode()).remove(ticket);
+        return waiting(ticket.mode());
+    }
+
+    private List<PlayerState> waiting(GameMode mode) {
+        return queues.get(mode).stream().map(Ticket::player).toList();
     }
 
     /** Start as soon as the minimum group exists; finding a match must never look stuck. */
@@ -49,8 +70,13 @@ final class Matchmaker {
         List<Match> matches = new ArrayList<>();
         for (var entry : queues.entrySet()) {
             GameMode mode = entry.getKey();
-            List<PlayerState> queue = entry.getValue();
-            queue.removeIf(p -> !p.connected || p.room != null);
+            List<Ticket> queue = entry.getValue();
+            queue.removeIf(ticket -> {
+                PlayerState p = ticket.player();
+                if (p.connected && p.room == null) return false;
+                complete(ticket);
+                return true;
+            });
             while (queue.size() >= GameRules.MIN_PLAYERS) {
                 int count = Math.min(GameRules.MATCH_MAX_PLAYERS, queue.size());
                 matches.add(take(mode, queue, count));
@@ -59,9 +85,9 @@ final class Matchmaker {
         return matches;
     }
 
-    private Match take(GameMode mode, List<PlayerState> queue, int count) {
-        List<PlayerState> players = List.copyOf(queue.subList(0, count));
+    private Match take(GameMode mode, List<Ticket> queue, int count) {
+        List<Ticket> tickets = List.copyOf(queue.subList(0, count));
         queue.subList(0, count).clear();
-        return new Match(mode, players);
+        return new Match(mode, tickets);
     }
 }

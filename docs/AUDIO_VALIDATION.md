@@ -1,5 +1,9 @@
 # Kiểm tra âm thanh
 
+## Sửa vị trí âm thanh ngày 24/10/2026
+
+`BombGame` chỉ phát SFX gắn player khi có avatar đang hiển thị, rồi áp khoảng cách nghe. Đối thủ chưa từng thấy hoặc đã khuất tầm nhìn không phát tiếng tại `(0,0,0)`/vị trí cũ. Không thay file audio, mức mix hoặc nhạc. `BombValidation` có thêm 23 kiểm tra: bảy loại event với người chưa thấy/đã ẩn/ở gần, thêm kiểm tra ngoài tầm nghe và âm local. Tổng bộ Unity hiện tại là 111; chi tiết build và kết quả tại [FINAL_VALIDATION.md](FINAL_VALIDATION.md). Đây là kiểm tra tham số phát trong Unity, chưa thay thế nghe thử loa/tai nghe.
+
 ## Bản sửa ngày 23/10/2026
 
 Lượt tinh chỉnh tiếp theo: người dùng xác nhận âm thanh đã ổn nhưng tiếng bom còn nhẹ. Chỉ xử lý lại ba clip bom: mở dải 65–80 Hz đến 2–2,4 kHz, attack 6 ms, RMS mục tiêu −23 dBFS; gain gameplay 0,64–0,86. Độ lớn khi phát riêng tăng khoảng 3,7–4,6 dB so với lượt trước; giới hạn tổng gain 0,9 vẫn áp dụng khi nhiều tiếng chồng nhau. Hash của toàn bộ file audio/meta ngoài ba tiếng nổ không đổi. Chạy lại audit **142 kiểm tra qua**, build Windows **exit 0**, kiểm tra peak ngoại tuyến và cập nhật WAV nghe thử đều hoàn tất.

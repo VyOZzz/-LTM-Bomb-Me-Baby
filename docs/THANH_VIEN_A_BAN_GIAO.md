@@ -1,6 +1,6 @@
 # Bàn giao phần A cho T và B
 
-Cập nhật 23/10/2026, đối chiếu working tree hiện tại; các sửa đổi mới chưa commit/merge. Dùng client/server cùng phiên bản [PROTOCOL.md](PROTOCOL.md).
+Cập nhật 24/10/2026, đối chiếu working tree hiện tại; các sửa đổi mới chưa commit/merge. Dùng client/server cùng phiên bản [PROTOCOL.md](PROTOCOL.md).
 
 ## Trạng thái
 
@@ -9,7 +9,8 @@ Cập nhật 23/10/2026, đối chiếu working tree hiện tại; các sửa đ
 - Novelty selective sync hoạt động ở server; Unity đã dựng/cache geometry từ GAME_START và hiểu tọa độ ẩn.
 - Reconnect, sequence trùng, tranh Core và Hành trình có test tự động.
 - 107 test Java qua ở mỗi lần chạy baseline/optimized; xem [kết quả hiện tại](FINAL_VALIDATION.md), [mốc lịch sử 21/10](THANH_VIEN_A_KIEM_THU.md).
-- Unity `6000.3.6f1`: 81 kiểm tra Play Mode và 12 kiểm tra C# qua; 20 clip (16 SFX, 4 nhạc). Benchmark 22/10 có 18 lượt loopback, chưa đo lại sau sửa 23/10.
+- Unity `6000.3.6f1`: 111 kiểm tra Play Mode và 12 kiểm tra C# qua; 20 clip (16 SFX, 4 nhạc). Benchmark 22/10 có 18 lượt loopback, chưa đo lại sau sửa 23–24/10.
+- Ghép trận giữ ticket đến khi chốt phòng; hủy/tìm lại không dùng lượt ghép cũ. `roundParticipantIds` trong ROOM_STATE/GAME_START giúp người mới vào QUICK FINISHED thấy lobby chờ lượt sau; resume không phát GAME_OVER của vòng chưa chơi. SFX player ẩn không phát ở vị trí cũ/mặc định.
 - Đã build Windows và server JAR; chưa playtest end-to-end 2–4 Windows client trên commit/tag phát hành.
 
 ## Protocol cần cả nhóm dùng

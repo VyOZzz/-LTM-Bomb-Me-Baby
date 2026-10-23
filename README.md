@@ -100,26 +100,7 @@ Khi người chơi tạo hoặc vào phòng **Hành trình Ba Mảnh** lần đ�
 
 Game có nhạc riêng cho menu và ba map. Nhạc tự hạ khi có tiếng nổ/kết quả; dùng pool 20 giọng SFX với âm lượng/kênh trái phải theo vị trí người chơi để hạn chế chồng âm. Khi mất kết nối trong trận, client hiện cửa sổ reconnect 10 giây và số lần thử lại. Người còn trong phòng thấy tên người mất kết nối và thời gian giữ chỗ; vị trí đang ẩn trong bụi không bị lộ.
 
-## Chơi thử một mình với bot
-
 **Phòng riêng và tìm nhanh:** người khác bấm Tìm trận **không vào phòng riêng bạn đã tạo**. Gửi mã phòng cho họ; hoặc cả hai cùng bấm Tìm trận ở cùng mode. Server ghép ở tick kế tiếp khi có ít nhất 2 người đang tìm.
-
-Cần Java server đang chạy và một Unity client. Bot là client TCP riêng, dùng cùng luật chơi và dữ liệu nhìn thấy như người chơi; hỗ trợ cả Đấu nhanh và Hành trình. Dùng JDK/Maven sẵn có, không cần Python hay mở thêm Unity.
-
-1. Chạy server như hướng dẫn trên. Trong Unity, chọn chế độ → **Tạo phòng riêng**, lấy mã phòng 6 ký tự.
-2. Mở PowerShell tại thư mục gốc repository, chạy:
-
-   ```powershell
-   powershell -ExecutionPolicy Bypass -File scripts/run_bots.ps1 -RoomCode ABC123 -Count 3
-   ```
-
-   Thay `ABC123` bằng mã phòng của bạn. `-Count` từ 1 đến 9, mặc định 1; tổng người và bot không quá 10. Bỏ `-RoomCode` thì script sẽ hỏi mã. Bot vào đủ rồi tự sẵn sàng.
-3. Trong Unity bấm **Sẵn sàng** để chơi. Kết thúc vòng, bạn bấm sẵn sàng/chơi tiếp; bot tự sẵn sàng cho vòng kế tiếp. Hành trình chuyển đủ ba map; hết hành trình thì tạo phòng mới và chạy lại lệnh với mã mới.
-4. Nhấn **Ctrl+C** trong cửa sổ bot để dừng và cho bot rời phòng.
-
-Bot biết tìm vật phẩm, đuổi đối thủ nhìn thấy, tránh đá đơn giản, nạp/nổ bom, dùng khiên/tăng tốc và mang Tim Lửa về bệ. Đây là đối thủ cơ bản phục vụ kiểm thử, không phải AI thi đấu. Thêm `-Passive` nếu muốn bot di chuyển/nhặt đồ nhưng không tấn công, thuận tiện thử âm thanh/VFX. Với server ở máy khác, thêm `-ServerHost 192.168.1.20 -Port 7777` theo địa chỉ thực tế.
-
-Nếu báo `ROOM_NOT_FOUND`, kiểm tra mã và địa chỉ server; `ROOM_UNAVAILABLE` nghĩa là phòng đã bắt đầu, đã đầy hoặc Hành trình đã chơi vòng đầu. Thêm bot trước khi vào trận. Bot giữ kết nối đến khi bạn dừng script; sau khi rời phòng trong Unity, hãy dừng bot trước khi tạo lượt thử mới.
 
 ## Build Windows
 
@@ -178,17 +159,17 @@ Contribution kỹ thuật chính là **selective state synchronization**:
 
 Phép đo mới ngày 22/10 gồm 18 lượt × 30 giây, cố định map meadow, 2/4/8 client giả lập: `optimized` giảm khoảng **62–78% byte nhận/client/s**, không có lỗi kết nối. Xem [EXPERIMENTS_FINAL.md](docs/EXPERIMENTS_FINAL.md). Đây là bản đo ngày 22/10 theo fingerprint trong báo cáo, không phải phép đo lại source 23/10. Kết quả chưa chứng minh giảm RTT hoặc hiệu năng LAN/Internet. Mốc cũ 19/10 (66–79%, map ngẫu nhiên) vẫn được giữ riêng trong [EXPERIMENTS.md](docs/EXPERIMENTS.md).
 
-Trạng thái kiểm tra ngày 23/10/2026:
+Trạng thái kiểm tra ngày 24/10/2026:
 
 - Windows player đã build bằng Unity `6000.3.6f1`; 16 clip SFX và 4 track nhạc đang dùng, nhạc sảnh giữ nguyên;
-- 12 kiểm tra C# và 81 kiểm tra Unity Play Mode đã qua, gồm một client Unity kết nối Java thật cùng một peer TCP;
+- 12 kiểm tra C# và 111 kiểm tra Unity Play Mode đã qua, gồm một client Unity kết nối Java thật cùng một peer TCP;
 - test Java, lỗi đã sửa và phạm vi kiểm chứng xem [FINAL_VALIDATION.md](docs/FINAL_VALIDATION.md);
-- 107 test Java đã qua ở cả hai chế độ; kiểm tra staging qua. Benchmark 18 lượt thuộc bản ngày 22/10, chưa đo lại sau thay đổi gameplay/protocol 23/10.
+- 107 test Java đã qua ở cả hai chế độ; kiểm tra staging qua. Đã sửa hủy/tìm lại lúc ghép trận, người mới vào chờ lượt sau và audio đối thủ ẩn. Benchmark 18 lượt thuộc bản ngày 22/10, chưa đo lại sau thay đổi gameplay/protocol 23–24/10.
 
 ## Giới hạn hiện tại
 
 - `builds/` bị Git ignore; clone source cần chạy script build. Vẫn cần kiểm tra máy sạch và nghe/chơi bằng người thật trước khi nộp.
-- Có bot thử nghiệm và matchmaking. Chưa có lưu lịch sử trận, skin hoặc TLS; server dùng TCP thuần cho demo/mạng tin cậy.
+- Có matchmaking. Chưa có lưu lịch sử trận, skin hoặc TLS; server dùng TCP thuần cho demo/mạng tin cậy.
 - Benchmark mới vẫn dùng loopback và client giả lập; không thay thế đo LAN, FPS/GC hoặc đánh giá trải nghiệm người chơi.
 - Không có cơ chế chống gian lận toàn diện; server đã giới hạn movement và bỏ qua sequence trùng/cũ.
 

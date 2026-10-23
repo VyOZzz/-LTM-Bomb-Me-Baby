@@ -39,14 +39,19 @@ class ShardCarrierActionTest {
         PlayerState other = new PlayerState("Other", null);
         room.join(carrier);
         room.join(other);
+        room.random.setSeed(42);
         room.ready(carrier, true);
         room.ready(other, true);
+        room.orbs.clear();
         ShardObjective shard = room.objective;
         long now = shard.startedAt + ShardObjective.SPAWN_DELAY_MS;
         other.x = 40; other.z = 40;
         room.update(now, 0);
-        carrier.charging = true;
         carrier.x = shard.x; carrier.z = shard.z;
+        // A real, recent charge: leaving chargeSince at zero auto-explodes before
+        // pickup and can randomly damage the other player during fixture setup.
+        room.action(carrier, "CHARGE_START", 0, 0, now);
+        assertTrue(carrier.charging);
         room.update(now += 100, 0);
         assertSame(carrier, shard.carrier);
         return new Fixture(room, shard, carrier, other, now);

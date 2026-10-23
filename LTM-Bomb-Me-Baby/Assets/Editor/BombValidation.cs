@@ -14,6 +14,7 @@ public static class BombValidation {
     static IEnumerator checks;
     static double deadline;
     static int passed;
+    static int lastPlayerFrame = -1;
     static BombNetwork peer;
     static BombGame game;
     static double nextPeerPing;
@@ -34,6 +35,10 @@ public static class BombValidation {
         try {
             if (checks == null) { deadline = EditorApplication.timeSinceStartup + 90; checks = Verify(); }
             if (EditorApplication.timeSinceStartup > deadline) throw new Exception("Unity validation timed out");
+            // Editor updates can outnumber player frames. Each yield must allow a real
+            // frame, including deferred GameObject/material destruction, to complete.
+            if (Time.frameCount == lastPlayerFrame) return;
+            lastPlayerFrame = Time.frameCount;
             if (checks.MoveNext()) return;
             Debug.Log("BOMB_VALIDATION_PASS checks=" + passed);
             Finish(0);
@@ -93,6 +98,8 @@ public static class BombValidation {
             Assert(Resources.Load<AudioClip>("Audio/" + clip) != null, "Audio imports: " + clip);
 
         VerifyDeadInputAndSpectating();
+        VerifyNewcomerResult(fixtures);
+        VerifyHiddenPlayerAudio();
 
         // Two ordinary TCP clients talking to the packaged Java server.
         int port = int.Parse(BombBuild.Argument("-bombTestPort", "17778"));
@@ -179,6 +186,73 @@ public static class BombValidation {
             local.Dispose();
             Call("ResetRoomState");
             Set("nextPingAt", 0f); Set("nextMoveAt", 0f);
+        }
+    }
+
+    static void VerifyNewcomerResult(string fixtures) {
+        try {
+            string path = Path.Combine(Path.GetDirectoryName(fixtures), "newcomer-fixtures.jsonl");
+            Assert(File.Exists(path), "Newcomer packets from real TCP test exist");
+            foreach (string packet in File.ReadAllLines(path)) {
+                Deliver(packet);
+                var message = JsonUtility.FromJson<ServerMessage>(packet);
+                if (message.type == "ROOM_STATE" || (message.type == "STATE_UPDATE" && message.phase == "FINISHED")) {
+                    Assert((bool)Call("WaitingForNextRound"), "Newcomer and resumed newcomer see waiting lobby");
+                    string resultSound = Field<string>("lastResultSound");
+                    Deliver("{\"type\":\"GAME_OVER\",\"winnerId\":\"previous-winner\",\"mode\":\"QUICK\"}");
+                    Assert(Field<string>("lastResultSound") == resultSound, "Previous round cannot play defeat for newcomer");
+                }
+                if (message.type == "GAME_START")
+                    Assert(!(bool)Call("WaitingForNextRound") && Field<string>("phase") == "PLAYING", "Ready newcomer becomes next-round participant");
+            }
+            Deliver("{\"type\":\"GAME_OVER\",\"winnerId\":\"" + Field<string>("myId") + "\",\"mode\":\"QUICK\"}");
+            Assert(!(bool)Call("WaitingForNextRound") && !string.IsNullOrEmpty(Field<string>("lastResultSound")),
+                "Participant still receives own result and result sound");
+        } finally { Call("ResetRoomState"); }
+    }
+
+    static void VerifyHiddenPlayerAudio() {
+        BombAudio audio = Field<BombAudio>("gameAudio");
+        var settings = typeof(BombAudio).Assembly.GetType("BombSettings").GetField("Sfx", BindingFlags.Public | BindingFlags.Static);
+        float previousSfx = (float)settings.GetValue(null);
+        var voices = ((Array)typeof(BombAudio).GetField("voices", Private).GetValue(audio)).Cast<object>()
+            .Select(v => (AudioSource)v.GetType().GetField("source").GetValue(v)).ToArray();
+        float[] cueTimes = (float[])typeof(BombAudio).GetField("nextCue", Private).GetValue(audio);
+        try {
+            settings.SetValue(null, 1f);
+            Deliver("{\"type\":\"WELCOME\",\"playerId\":\"audio-local\",\"hasRoom\":false}");
+            Deliver("{\"type\":\"ROOM_STATE\",\"room\":{\"code\":\"AUDIO\",\"mode\":\"QUICK\",\"phase\":\"PLAYING\",\"roundIndex\":1}}");
+            var remote = new PlayerData { id = "audio-remote", name = "Remote", alive = true, connected = true, visible = true, size = 1, hp = 100, x = 1 };
+            var snapshot = new ServerMessage {
+                type = "STATE_UPDATE", phase = "PLAYING", roomCode = "AUDIO", roundIndex = 1,
+                mapId = "meadow", mode = "QUICK", arenaSize = 48, players = new[] {
+                    new PlayerData { id = "audio-local", name = "Local", alive = true, connected = true, visible = true, size = 1, hp = 100 }, remote
+                }, orbs = Array.Empty<PickupData>(), cores = Array.Empty<PickupData>()
+            };
+            Deliver(JsonUtility.ToJson(snapshot));
+            audio.SetListeningPoint(Vector3.zero, Vector3.right);
+            foreach (string kind in new[] { "ENERGY_PICKED", "CORE_PICKED", "PLAYER_DAMAGED", "DAMAGE_REFLECTED", "SHIELD_ACTIVATED", "BOOST_ACTIVATED", "PLAYER_ELIMINATED" }) {
+                foreach (string state in new[] { "never-seen", "hidden", "near" }) {
+                    remote.visible = state != "hidden";
+                    Deliver(JsonUtility.ToJson(snapshot));
+                    foreach (AudioSource source in voices) { source.Stop(); source.clip = null; }
+                    Array.Clear(cueTimes, 0, cueTimes.Length);
+                    string id = state == "never-seen" ? "unknown-player" : remote.id;
+                    Deliver(JsonUtility.ToJson(new ServerMessage { type = kind, playerId = id, to = id }));
+                    bool audible = voices.Any(source => source.clip != null && source.volume > 0);
+                    Assert(audible == (state == "near"), kind + " audio policy: " + state);
+                }
+            }
+            foreach (AudioSource source in voices) { source.Stop(); source.clip = null; }
+            Array.Clear(cueTimes, 0, cueTimes.Length);
+            audio.SetListeningPoint(new Vector3(45, 0, 45), Vector3.right);
+            Deliver("{\"type\":\"SHIELD_ACTIVATED\",\"playerId\":\"audio-remote\"}");
+            Assert(!voices.Any(source => source.clip != null), "Visible player beyond audio range stays silent");
+            Deliver("{\"type\":\"SHIELD_ACTIVATED\",\"playerId\":\"audio-local\"}");
+            Assert(voices.Any(source => source.clip != null), "Local feedback remains audible");
+        } finally {
+            settings.SetValue(null, previousSfx);
+            Call("ResetRoomState");
         }
     }
 

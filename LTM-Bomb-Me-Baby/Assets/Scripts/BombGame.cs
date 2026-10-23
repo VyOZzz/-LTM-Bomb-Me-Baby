@@ -383,6 +383,7 @@ public sealed class BombGame : MonoBehaviour {
                         journeyCompleteReceived = room.journeyComplete;
                         winnerIds = room.journeyComplete ? room.winnerIds ?? Array.Empty<string>() : Array.Empty<string>();
                         winnerId = room.journeyComplete ? (winnerIds.Length == 1 ? winnerIds[0] : "") : room.roundWinnerId;
+                        if (WaitingForNextRound()) status = "Đang chờ lượt tiếp theo — bấm Sẵn sàng để tham gia.";
                     }
                     if (phase == "WAITING") {
                         gameAudio.SetMenuMusic();
@@ -447,12 +448,12 @@ public sealed class BombGame : MonoBehaviour {
                 }
                 break;
             case "ENERGY_PICKED":
-                gameAudio.PlayEnergyPickup(msg.playerId == myId, PositionOf(msg.playerId));
+                PlayPlayerSound(msg.type, msg.playerId);
                 EventEffect(msg.type, msg.playerId);
                 ShowStoryEvent(msg);
                 break;
             case "CORE_PICKED":
-                gameAudio.PlayCorePickup(msg.playerId == myId, PositionOf(msg.playerId));
+                PlayPlayerSound(msg.type, msg.playerId);
                 EventEffect(msg.type, msg.playerId);
                 ShowStoryEvent(msg);
                 break;
@@ -460,22 +461,22 @@ public sealed class BombGame : MonoBehaviour {
                 gameAudio.PlayDrop(false, new Vector3(msg.x, 0, msg.z));
                 break;
             case "PLAYER_DAMAGED":
-                gameAudio.PlayDamage(msg.playerId == myId, PositionOf(msg.playerId));
+                PlayPlayerSound(msg.type, msg.playerId);
                 EventEffect(msg.type, msg.playerId);
                 ShowStoryEvent(msg);
                 break;
             case "DAMAGE_REFLECTED":
-                gameAudio.PlayDamage(msg.to == myId, PositionOf(msg.to));
+                PlayPlayerSound(msg.type, msg.to);
                 EventEffect(msg.type, msg.to);
                 ShowStoryEvent(msg);
                 break;
             case "SHIELD_ACTIVATED":
-                gameAudio.PlayShield(msg.playerId == myId, PositionOf(msg.playerId));
+                PlayPlayerSound(msg.type, msg.playerId);
                 EventEffect(msg.type, msg.playerId);
                 ShowStoryEvent(msg);
                 break;
             case "BOOST_ACTIVATED":
-                gameAudio.PlayBoost(msg.playerId == myId, PositionOf(msg.playerId));
+                PlayPlayerSound(msg.type, msg.playerId);
                 EventEffect(msg.type, msg.playerId);
                 ShowStoryEvent(msg);
                 break;
@@ -488,10 +489,11 @@ public sealed class BombGame : MonoBehaviour {
                     if (local?.state != null) local.state.alive = false;
                     gameAudio.StopGameplayLoops();
                 }
-                else gameAudio.PlayDamage(false, PositionOf(msg.playerId));
+                else PlayPlayerSound(msg.type, msg.playerId);
                 ShowStoryEvent(msg);
                 break;
             case "GAME_OVER":
+                if (WaitingForNextRound()) break;
                 phase = "FINISHED";
                 winnerId = msg.winnerId;
                 winnerIds = Array.Empty<string>();
@@ -795,9 +797,18 @@ public sealed class BombGame : MonoBehaviour {
 
     Avatar AvatarOf(string id) => !string.IsNullOrEmpty(id) && avatars.TryGetValue(id, out Avatar a) ? a : null;
 
-    Vector3 PositionOf(string id) {
-        Avatar avatar = AvatarOf(id);
-        return avatar?.body != null ? avatar.body.transform.position : Vector3.zero;
+    void PlayPlayerSound(string kind, string id) {
+        // Metadata events also arrive for hidden opponents. Never invent an audio
+        // origin or use a hidden avatar's last visible position.
+        if (!TryEffectPosition(id, out Vector3 at)) return;
+        bool local = id == myId;
+        switch (kind) {
+            case "ENERGY_PICKED": gameAudio.PlayEnergyPickup(local, at); break;
+            case "CORE_PICKED": gameAudio.PlayCorePickup(local, at); break;
+            case "SHIELD_ACTIVATED": gameAudio.PlayShield(local, at); break;
+            case "BOOST_ACTIVATED": gameAudio.PlayBoost(local, at); break;
+            default: gameAudio.PlayDamage(local, at); break;
+        }
     }
 
     string NameOf(string id) =>
@@ -808,6 +819,7 @@ public sealed class BombGame : MonoBehaviour {
     void ApplyMap(ServerMessage snapshot) {
         // GAME_START and snapshots advance chapter/map even when ROOM_STATE has not arrived.
         if (room != null) {
+            if (snapshot.roundParticipantIds != null) room.roundParticipantIds = snapshot.roundParticipantIds;
             room.phase = phase;
             room.roundIndex = snapshot.roundIndex;
             room.chapterIndex = snapshot.chapterIndex;
@@ -1018,7 +1030,7 @@ public sealed class BombGame : MonoBehaviour {
             return;
         }
         // The result card carries the outcome text itself, so the lobby stays hidden behind it.
-        if (phase == "FINISHED") DrawResultPopup();
+        if (phase == "FINISHED" && !WaitingForNextRound()) DrawResultPopup();
         else DrawLobby();
     }
 
@@ -1306,6 +1318,9 @@ public sealed class BombGame : MonoBehaviour {
     }
 
     /// End-of-round card: outcome, why it ended, journey standings, then ready-up and leave.
+    bool WaitingForNextRound() => phase == "FINISHED" && room?.mode == "QUICK"
+        && room.roundParticipantIds != null && Array.IndexOf(room.roundParticipantIds, myId) < 0;
+
     void DrawResultPopup() {
         MatchOutcome outcome = BombResult.Resolve(myId, winnerId, winnerIds);
         bool won = outcome == MatchOutcome.Win || outcome == MatchOutcome.SharedWin;

@@ -100,28 +100,37 @@ public final class BombServer {
 
     /** Game-loop thread: turns queued players into rooms that start right away. */
     void matchmake(long now) {
-        for (Matchmaker.Match match : matchmaker.takeMatches(now)) {
+        for (Matchmaker.Match match : matchmaker.takeMatches(now)) formMatch(match, now);
+    }
+
+    void formMatch(Matchmaker.Match match, long now) {
+        List<PlayerState> ordered = match.players().stream()
+            .sorted(java.util.Comparator.comparing(p -> p.id)).toList();
+        // Lock the whole group (at most four), always by id, before deciding whether
+        // it can start. Cancellation/disconnect cannot race seating or fallback.
+        withPlayers(ordered, 0, () -> {
+            List<PlayerState> eligible = match.tickets().stream()
+                .filter(matchmaker::isCurrent).map(Matchmaker.Ticket::player)
+                .filter(p -> p.room == null && p.connected).toList();
+            if (eligible.size() < GameRules.MIN_PLAYERS) {
+                announceQueue(match.mode(), matchmaker.requeue(match));
+                return;
+            }
+            match.tickets().forEach(matchmaker::complete);
             GameRoom room = createRoom(match.mode());
-            for (PlayerState p : match.players()) {
-                // Same player -> room order as Connection: a CREATE/JOIN racing us wins or loses cleanly.
-                synchronized (p) {
-                    if (p.room != null || !p.connected) continue;
+            synchronized (room) {
+                for (PlayerState p : eligible) {
                     p.send(GameRoom.data("type","MATCH_FOUND","room",room.code,"mode",match.mode().name()));
                     room.join(p);
                 }
+                room.startMatched(now);
             }
-            synchronized (room) {
-                if (room.startMatched(now)) continue;
-                // Someone vanished between queueing and joining: the rest keep their place.
-                List<PlayerState> rest = List.copyOf(room.players);
-                for (PlayerState p : rest) {
-                    room.leave(p);
-                    p.send(GameRoom.data("type","LEFT_ROOM"));
-                }
-                rooms.remove(room.code, room);
-                announceQueue(match.mode(), matchmaker.requeue(match.mode(), rest));
-            }
-        }
+        });
+    }
+
+    private static void withPlayers(List<PlayerState> players, int index, Runnable action) {
+        if (index == players.size()) { action.run(); return; }
+        synchronized (players.get(index)) { withPlayers(players, index + 1, action); }
     }
 
     static void announceQueue(GameMode mode, List<PlayerState> waiting) {
@@ -247,9 +256,9 @@ public final class BombServer {
 
         void disconnect() {
             if (player == null) return;
-            if (player.connection == this) leaveQueue(player);
             withSessionState(player, () -> {
                 if (player.connection != this) return;
+                leaveQueue(player);
                 player.disconnectedAt = System.currentTimeMillis();
                 player.connection = null;
                 player.connected = false;
@@ -289,7 +298,7 @@ public final class BombServer {
                         send(room.snapshot(System.currentTimeMillis(), player, true));
                     if (room.phase == GameRoom.Phase.FINISHED) {
                         send(room.snapshot(System.currentTimeMillis(), player, true));
-                        send(room.roundResult());
+                        if (room.participatedInRound(player)) send(room.roundResult());
                         if (room.journeyComplete) send(room.journeyCompleteEvent());
                     }
                     room.players.forEach(p -> p.send(GameRoom.data("type","PLAYER_RECONNECTED","playerId",player.id)));
@@ -359,8 +368,10 @@ public final class BombServer {
                     }
                 }
                 case "CANCEL_MATCH" -> {
-                    if (!leaveQueue(player)) { error("NOT_SEARCHING"); return; }
-                    send(GameRoom.data("type","MATCHMAKING","status","CANCELLED"));
+                    synchronized (player) {
+                        if (!leaveQueue(player)) { error("NOT_SEARCHING"); return; }
+                        send(GameRoom.data("type","MATCHMAKING","status","CANCELLED"));
+                    }
                 }
                 case "LEAVE_ROOM" -> {
                     withSessionState(player, () -> {

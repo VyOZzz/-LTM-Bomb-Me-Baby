@@ -1,6 +1,6 @@
 # Runbook demo — Bomb Me Baby
 
-Cập nhật 23/10/2026. Bản Windows và server JAR đã build; [FINAL_VALIDATION.md](FINAL_VALIDATION.md) ghi phạm vi kiểm tra tự động. Cần chạy checklist bằng người thật trên build này trước nộp; mốc 13/10 bên dưới chỉ là lịch sử.
+Cập nhật 24/10/2026. Bản Windows và server JAR đã build; [FINAL_VALIDATION.md](FINAL_VALIDATION.md) ghi phạm vi kiểm tra tự động. Cần chạy checklist bằng người thật trên build này trước nộp; mốc 13/10 bên dưới chỉ là lịch sử.
 
 ## Chuẩn bị
 
@@ -33,7 +33,7 @@ Muốn demo lặp lại một map Đấu nhanh, thêm `"-Ddemo.map=meadow"` vào
 ### Source hiện tại — 23/10/2026
 
 - Java: 107 test, 0 failure/error ở cả baseline và optimized; JAR kèm dependency chạy bằng Java 17+.
-- Unity `6000.3.6f1`: Windows build thành công; 12 kiểm tra C# và 81 kiểm tra Play Mode tự động qua. Audio hiện có 16 SFX và 4 track nhạc; nhạc sảnh giữ nguyên.
+- Unity `6000.3.6f1`: Windows build thành công; 12 kiểm tra C# và 111 kiểm tra Play Mode tự động qua. Audio hiện có 16 SFX và 4 track nhạc; nhạc sảnh giữ nguyên.
 - Chưa đánh dấu hoàn thành demo cuối cho đến khi chạy lại 2–4 Windows client trên cùng commit/tag phát hành.
 
 ### Mốc client thật — 13/10/2026

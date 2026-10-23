@@ -4,10 +4,40 @@ Does not commit, publish or submit the project. Requires the build scripts to ha
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
+from urllib.parse import quote, unquote, urlsplit, urlunsplit
 import zipfile
+
+
+MARKDOWN_LINK = re.compile(r'(\[[^\]\n]*\]\()([^\s)]+)(\))')
+
+
+def repair_report_links(report):
+    """Keep Report links local when copied; resolve other docs via packaged Source."""
+    for document in report.glob('*.md'):
+        def repair(match):
+            url = urlsplit(match[2])
+            if url.scheme or url.netloc or not url.path:
+                return match[0]
+            if (document.parent / unquote(url.path)).exists():
+                return match[0]
+            source_target = report.parent / 'Source/docs' / unquote(url.path)
+            if not source_target.exists():
+                raise RuntimeError(f'Broken Report link in {document.name}: {match[2]}')
+            relative = Path(os.path.relpath(source_target, document.parent)).as_posix()
+            href = urlunsplit(('', '', quote(relative, safe='/'), url.query, url.fragment))
+            return match[1] + href + match[3]
+        document.write_text(MARKDOWN_LINK.sub(repair, document.read_text(encoding='utf-8')), encoding='utf-8')
+    # Verify the final layout, not just the source documents.
+    for document in report.glob('*.md'):
+        for match in MARKDOWN_LINK.finditer(document.read_text(encoding='utf-8')):
+            url = urlsplit(match[2])
+            if not url.scheme and not url.netloc and url.path and not (document.parent / unquote(url.path)).exists():
+                raise RuntimeError(f'Broken packaged link in {document.name}: {match[2]}')
 
 
 def main():
@@ -42,8 +72,6 @@ def main():
     server.mkdir(parents=True)
     shutil.copy2(jar, server / jar.name)
     (server / 'StartServer.cmd').write_text('@echo off\ncd /d "%~dp0"\njava -Dsync.mode=optimized -jar bomb-me-baby-server-1.0.0.jar 7777\npause\n', encoding='ascii')
-    (server / 'StartBots.cmd').write_text('@echo off\npowershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0StartBots.ps1"\npause\n', encoding='ascii')
-    (server / 'StartBots.ps1').write_text("$roomCode = Read-Host 'Room code'\nif ($roomCode -notmatch '^[A-Fa-f0-9]{6}$') { throw 'Enter the 6-character room code.' }\n& java -cp (Join-Path $PSScriptRoot 'bomb-me-baby-server-1.0.0.jar') bombmebaby.PracticeBots 127.0.0.1 7777 $roomCode 3\n", encoding='ascii')
     (output / 'Playable/Client/server.txt').write_text('127.0.0.1:7777\n', encoding='ascii')
     report = output / 'Report'
     report.mkdir()
@@ -55,13 +83,13 @@ def main():
         .replace('../experiments/final-2026-10-22-v2/', 'measurements/')
         .replace('../experiments/final-2026-10-22/', '../Source/experiments/final-2026-10-22/'), encoding='utf-8')
     shutil.copytree(root / 'experiments/final-2026-10-22-v2', report / 'measurements')
+    repair_report_links(report)
     (output / 'START_HERE.md').write_text('''# Bomb Me Baby — bản review để nhóm kiểm tra
 
 1. Máy chạy server cần Java 17+. Mở `Playable/Server/StartServer.cmd` và giữ cửa sổ này.
 2. Mở `Playable/Client/BombMeBaby.exe`. Chọn chế độ, tạo phòng và gửi mã cho người khác.
 3. Người khác nhập IP máy server trong cài đặt mạng (hoặc sửa server.txt cạnh game), rồi nhập mã phòng. Cùng mode tìm trận sẽ được ghép vào phòng riêng của hàng chờ.
-4. Khi chỉ có một người, mở `Playable/Server/StartBots.cmd`, nhập mã trước khi sẵn sàng. Bot là client TCP và vẫn cần server.
-5. Điều khiển: WASD, giữ/thả Space nạp/nổ, E khiên, Shift tăng tốc, Q thả mảnh, F3 mạng. Nhạc sảnh giữ nguyên.
+4. Điều khiển: WASD, giữ/thả Space nạp/nổ, E khiên, Shift tăng tốc, Q thả mảnh, F3 mạng. Nhạc sảnh giữ nguyên.
 
 `Source/README.md` có lệnh build/test và cách kết nối LAN. Gửi nguyên thư mục Client, không chỉ EXE.
 

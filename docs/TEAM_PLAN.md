@@ -1,8 +1,14 @@
 # Phân công nhóm — Bomb Me Baby
 
+## Rà soát bổ sung 24/10/2026
+
+Đã sửa toàn bộ các điểm trong lượt rà lại: ticket có generation và chốt ghép dưới khóa player; người mới vào QUICK FINISHED thấy lobby chờ lượt sau, reconnect không nhận kết quả cũ; audio đối thủ ẩn không dùng gốc bản đồ/vị trí cũ; link Report được trỏ tới Source/docs và kiểm tra trước đóng ZIP. **107 test Java ở mỗi mode, 12 kiểm tra C# và 111 kiểm tra Unity**; chi tiết hồi quy, build và giới hạn tại [FINAL_VALIDATION.md](FINAL_VALIDATION.md).
+
+Các sửa lỗi 23/10 có trong `e1382fd`; thay đổi 24/10 chưa commit/merge. Client/server cần cùng protocol mới có `roundParticipantIds`. Kiểm thử tự động không thay thế playtest người thật/LAN.
+
 ## Rà soát kỹ thuật và luồng chơi 23/10/2026
 
-Đã sửa cả 5 lỗi trong đợt rà soát 23/10: Hành trình thiếu người kết thúc sớm có kết quả; không cộng sai thời gian phá ấn khi khựng; phản khiên reset phá ấn; client chết ngừng gửi gameplay input; bản sao build loại asset đã xóa. Bổ sung Đấu nhanh tối đa 3 phút (hết giờ nhiều người thì hòa) và camera/audio tự theo người sống với phạm vi nhìn do server quyết định. **107 test Java qua ở cả baseline/optimized, 12 kiểm tra C#, 81 kiểm tra Unity và fixture staging qua.** Chi tiết luật, kiểm chứng và giới hạn tại [FINAL_VALIDATION.md](FINAL_VALIDATION.md). Source chưa commit/merge; cần dùng client/server cùng phiên bản protocol.
+Đã sửa cả 5 lỗi trong đợt rà soát 23/10: Hành trình thiếu người kết thúc sớm có kết quả; không cộng sai thời gian phá ấn khi khựng; phản khiên reset phá ấn; client chết ngừng gửi gameplay input; bản sao build loại asset đã xóa. Bổ sung Đấu nhanh tối đa 3 phút (hết giờ nhiều người thì hòa) và camera/audio tự theo người sống với phạm vi nhìn do server quyết định. **101 test Java thuộc source bàn giao qua ở cả baseline/optimized, 12 kiểm tra C#, 81 kiểm tra Unity và fixture staging qua.** Chi tiết luật, kiểm chứng và giới hạn tại [FINAL_VALIDATION.md](FINAL_VALIDATION.md). Cần dùng client/server cùng phiên bản protocol; trạng thái commit hiện tại xem mục 24/10 ở trên.
 
 ## Điều chỉnh âm thanh 23/10/2026
 
@@ -39,9 +45,9 @@ Thông tin nhóm và lịch sử đóng góp bên dưới giữ theo mốc 21/10
 
 Trạng thái kiểm chứng ngày 21/10: Unity đã có HUD, VFX cơ bản, lời dẫn, bảng điểm/kết quả, 11 SFX và 4 track nhạc menu/map; source Unity compile thành công với `6000.3.6f1`. Client có writer nền, inbox giới hạn/gộp snapshot, heartbeat, banner reconnect/hết hạn, trạng thái người mất kết nối và bảng F3. Server có writer queue riêng từng connection, timeout client im lặng/write treo, dừng input cũ, dọn phòng offline và **71 test** đều qua ở `baseline` và `optimized`; smoke TCP toàn tiến trình đã qua ở optimized. Benchmark cũ có 18 lượt 2/4/8 client giả lập. Chưa điền playtest ba map, chưa đo lại bằng 2–4 Unity client thật/LAN và các thay đổi trải nghiệm demo chưa nằm trên `origin/main`.
 
-## Mốc bàn giao còn lại (cập nhật 23/10)
+## Mốc bàn giao còn lại (cập nhật 24/10)
 
-- **Đã có bản build 23/10:** Windows và server JAR; kiểm tra tự động qua. Còn review/commit các thay đổi hiện tại, playtest 2–4 client và điền kết quả ba map.
+- **Đã có bản build 24/10:** Windows và server JAR từ source đã sửa; kiểm tra tự động qua. Còn review/commit các thay đổi hiện tại, playtest 2–4 client và điền kết quả ba map.
 - **24/10:** nghe thử/cân bằng nhạc và SFX trên build 2–4 client; chốt runbook demo và cấu hình server/map.
 - **25/10:** kiểm chứng HUD, VFX, âm thanh, lời dẫn, bảng điểm và màn kết trên build; chạy `optimized` end-to-end; deploy server thử nghiệm và đo lại trên bản cuối.
 - **28/10:** đủ các phần báo cáo; README build/run/test chạy đúng trên máy sạch; `main` chứa bản cuối.

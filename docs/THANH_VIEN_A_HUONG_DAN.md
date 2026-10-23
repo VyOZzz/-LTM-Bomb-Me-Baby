@@ -1,6 +1,6 @@
 # Thành viên A — Học và hiểu phần Java server từ đầu
 
-Cập nhật ngày 23/10/2026. Đọc cùng [README](../README.md), [bàn giao cho T và B](THANH_VIEN_A_BAN_GIAO.md), [kiểm chứng hiện tại](FINAL_VALIDATION.md) và [mốc kiểm thử 21/10](THANH_VIEN_A_KIEM_THU.md).
+Cập nhật ngày 24/10/2026. Đọc cùng [README](../README.md), [bàn giao cho T và B](THANH_VIEN_A_BAN_GIAO.md), [kiểm chứng hiện tại](FINAL_VALIDATION.md) và [mốc kiểm thử 21/10](THANH_VIEN_A_KIEM_THU.md).
 
 Tài liệu này giải thích code thực tế trong thư mục `server/`. Nó thay thế bản hướng dẫn cũ có một số mô tả chưa đúng với code. Không cần hiểu toàn bộ Java trước khi đọc; hãy đi lần lượt từ mục 1 đến mục 6, chạy test, rồi đọc sâu phần khóa và đồng bộ.
 
@@ -54,6 +54,7 @@ PlayerState p = new PlayerState("An", null);
 | [GameRoom.java](../server/src/main/java/bombmebaby/GameRoom.java) | `join`, `leave`, `ready`, `start`, `action`, `update`, `pickupCores`, `snapshot` | Phòng, luật diễn biến trận, bản tin trạng thái |
 | [GameRules.java](../server/src/main/java/bombmebaby/GameRules.java) | `RECONNECT_MS`, `MIN_SPAWN_DISTANCE`, `damage` | Hằng số và công thức game |
 | [GameMode.java](../server/src/main/java/bombmebaby/GameMode.java) | `QUICK`, `JOURNEY`, `fromProtocol` | Chế độ phòng và cách đọc trường mode |
+| [Matchmaker.java](../server/src/main/java/bombmebaby/Matchmaker.java) | `Ticket`, `takeMatches`, `isCurrent`, `remove`, `requeue` | Hàng chờ và yêu cầu đang ghép; chống dùng lại yêu cầu đã hủy |
 | [SyncMode.java](../server/src/main/java/bombmebaby/SyncMode.java) | `BASELINE`, `OPTIMIZED`, `active` | Chọn cách đồng bộ |
 | [ConnectionTest.java](../server/src/test/java/bombmebaby/ConnectionTest.java) | Các hàm có `@Test` | Kiểm tra bằng socket TCP thật trên máy |
 | [ServerFixesTest.java](../server/src/test/java/bombmebaby/ServerFixesTest.java) | Core, timeout, snapshot | Kiểm tra trạng thái phòng và hai chế độ |
@@ -101,6 +102,12 @@ Luồng ví dụ:
 8. Người cuối cùng còn sống thắng sớm. Phòng một người không thể bắt đầu. Đấu nhanh hòa sau 180 giây nếu còn nhiều người; Hành trình xét chủ bệ/người cầm mảnh khi hết 180 giây.
 
 Ba giai đoạn phòng là `WAITING` (chờ), `PLAYING` (đang chơi), `FINISHED` (đã kết thúc vòng). Với Đấu nhanh, sẵn sàng lại bắt đầu vòng ngẫu nhiên mới. Với Hành trình, sẵn sàng lại sau chương 1/2 chuyển sang chương kế tiếp; sau chương 3 server không cho bắt đầu vòng thứ tư.
+
+**Người mới vào sau khi trận Đấu nhanh kết thúc:** A/B vừa chơi xong, C nhập mã phòng để chờ lượt sau. Phòng vẫn FINISHED nhưng C chưa tham gia vòng đó. `GameRoom` giữ `roundParticipantIds` riêng, gửi trong `ROOM_STATE` và `GAME_START`. Unity thấy C không có trong danh sách thì hiện lobby “Đang chờ lượt tiếp theo”, vẫn cho READY; A/B tiếp tục thấy kết quả của họ. Khi vòng sau bắt đầu, danh sách được thay mới và có C. Nếu C reconnect trong lúc chờ, server không gửi kết quả thua/hòa của vòng C chưa chơi. Đây không phải cho người mới vào trận đang PLAYING.
+
+**Tìm trận và hủy đúng lúc đang ghép:** mỗi `FIND_MATCH` tạo một `Ticket` gồm player, mode và generation tăng dần. `takeMatches()` lấy ticket khỏi hàng chờ nhưng vẫn giữ nó trong `requests` cho đến khi chốt phòng. Vì vậy `modeOf()` vẫn báo đang tìm, và `CANCEL_MATCH` còn hủy được ticket đã chọn. Tìm lại tạo ticket mới; `isCurrent()` ngăn lượt ghép cũ sử dụng ticket mới dù chọn cùng mode.
+
+`BombServer.formMatch()` khóa nhóm tối đa bốn player theo thứ tự ID cố định, kiểm tra ticket/kết nối/phòng rồi mới tạo và bắt đầu trận. Nếu còn dưới hai người, chỉ ticket còn hiệu lực được đưa lại đầu hàng, không phát phòng tạm. Hủy và disconnect cũng dùng khóa player: hoặc hủy thắng và nhận `CANCELLED`, hoặc chốt phòng thắng và hủy nhận `NOT_SEARCHING`; khi đó phải `LEAVE_ROOM` nếu muốn ra. Các ca này nằm trong `ConnectionTest`, gồm cả chạy đồng thời và nối lại của người mới vào chờ.
 
 **Điểm phải nhớ:** game loop là 20 Hz, snapshot định kỳ là 10 Hz. Ngoài lịch định kỳ, server còn gửi snapshot ngay lúc bắt đầu và khi reconnect. Không viết trong báo cáo rằng mọi snapshot được gửi mỗi 50 ms.
 
@@ -213,6 +220,8 @@ if (player.connection != this) return;
 
 `this` ở đây là đối tượng Connection đang chạy. Nếu session đã có Connection mới, dọn dẹp muộn của Connection cũ không được thay đổi nó.
 
+Riêng ghép trận, trước khóa room có thể giữ tối đa bốn khóa player, luôn sắp theo ID. `Matchmaker` chỉ giữ khóa nội bộ khi sửa queue/ticket, không gọi sang player/room khi giữ khóa đó. Không thêm đường lấy khóa ngược từ room về player. Việc xóa ticket khi disconnect nằm trong khóa player, cùng thứ tự với hủy và chốt ghép.
+
 Ở lobby chưa bắt đầu, disconnect rời phòng. Phòng đã bắt đầu giữ chỗ 10 giây cả khi PLAYING/FINISHED hoặc Hành trình hoàn tất; hết hạn được dọn, phòng rỗng bị xóa. Khi mất kết nối, hướng đi/nạp về trạng thái dừng và phòng nhận PLAYER_DISCONNECTED.
 
 Khi resume, khóa phòng được giữ đến lúc xếp `WELCOME`, `ROOM_STATE` và snapshot khôi phục vào hàng đợi; writer thực hiện socket I/O ngoài khóa phòng. Nhờ vậy game loop không gửi snapshot định kỳ trước `WELCOME`. Hai socket tranh cùng token chỉ có một socket thành công.
@@ -289,7 +298,7 @@ Trong optimized, `PLAYER_EXPLODE` được tạo riêng cho từng viewer: ngư�
 | Spawn | Chọn vị trí bằng greedy farthest-point | Thử lại tối đa 96 điểm bắt đầu nếu bố trí bị kẹt; giữ khoảng cách tối thiểu 28 |
 | Hành trình | Chưa có | QUICK/JOURNEY, ba map cố định, điểm loại/thắng vòng, tie-break và `JOURNEY_COMPLETE` |
 | Unity protocol/UI | Chưa nhận mode/điểm; chưa dựng map từ GAME_START | DTO mới, nút tạo hai mode, bảng điểm, event cuối và cache geometry từ GAME_START |
-| Test | 27 test; vài test chỉ tự lặp điều kiện | 107 test ở bộ hiện tại, gồm 30 test Connection, luật trận/objective, bot và hồi quy; xem FINAL_VALIDATION.md |
+| Test | 27 test; vài test chỉ tự lặp điều kiện | 107 test ở bộ hiện tại, gồm 36 test Connection, luật trận/objective và hồi quy; xem FINAL_VALIDATION.md |
 | Hướng dẫn | Có mô tả chưa khớp code | Viết lại theo code, thêm cách học, lệnh chạy, bằng chứng và giới hạn |
 
 Lỗi spawn xuất hiện khi chạy test: `Cannot separate 10 spawns on map meadow`. Một lựa chọn đầu tiên không tốt có thể làm thuật toán tham lam không xếp đủ người dù map còn cách bố trí hợp lệ. Thử lại giúp xử lý trường hợp đó mà không hạ khoảng cách; test kiểm tra 20 seed × 3 map. Đây là kiểm tra hữu hạn, không phải chứng minh toán học cho mọi seed.
@@ -384,6 +393,6 @@ Trong IntelliJ, bạn có thể đặt breakpoint ở `Connection.handle`, `resu
 
 **processingMicros là gì?** Thời gian trong luồng xử lý request đến trước khi gửi ACK; có thể gồm thời gian chờ khóa và gửi phản hồi trước đó. Nó không phải RTT, cũng không phải số đo riêng cho serialize snapshot định kỳ.
 
-**Đã hoàn thành toàn bộ game chưa?** Bộ hiện tại có 107 test Java, 12 kiểm tra C# và 81 kiểm tra Unity qua; Windows build và server JAR đã tạo. Benchmark loopback thuộc bản 22/10, chưa đo lại source 23/10. Vẫn cần commit/tag phát hành, playtest đủ ba map và kiểm chứng 2–4 client thật trên LAN/Internet; chỉ báo cáo hoàn thành toàn bộ sau khi có các bằng chứng này.
+**Đã hoàn thành toàn bộ game chưa?** Bộ hiện tại có 107 test Java, 12 kiểm tra C# và 111 kiểm tra Unity; trạng thái build mới nhất xem FINAL_VALIDATION.md. Benchmark loopback thuộc bản 22/10, chưa đo lại source 23–24/10. Vẫn cần commit/tag phát hành, playtest đủ ba map và kiểm chứng 2–4 client thật trên LAN/Internet; chỉ báo cáo hoàn thành toàn bộ sau khi có các bằng chứng này.
 
 Hãy tập trả lời bằng cách chỉ vào hàm và chạy test minh họa, thay vì học thuộc nguyên đoạn. Tài liệu có AI hỗ trợ biên soạn; người nộp cần tự kiểm chứng và trình bày đúng phần mình hiểu.

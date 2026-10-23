@@ -509,6 +509,140 @@ class ConnectionTest {
         resumed.until("ACK");
     }
 
+    @Test void selectedMatchCanBeCancelledAndCannotOverrideNewMode() throws Exception {
+        Peer a = searching("QUICK"), b = searching("QUICK"), c = searching("QUICK");
+        var selected = server.matchmaker.takeMatches(1000).get(0);
+        a.send("type", "FIND_MATCH", "seq", 2, "mode", "JOURNEY");
+        assertEquals("ALREADY_SEARCHING", a.until("ERROR").get("code").getAsString());
+        a.until("ACK");
+        a.send("type", "CANCEL_MATCH", "seq", 3);
+        assertEquals("CANCELLED", a.until("MATCHMAKING").get("status").getAsString());
+        a.until("ACK");
+        a.request("type", "FIND_MATCH", "seq", 4, "mode", "JOURNEY");
+        server.formMatch(selected, System.currentTimeMillis());
+        assertNull(a.player.room);
+        assertEquals(GameMode.JOURNEY, server.matchmaker.modeOf(a.player));
+        assertSame(b.player.room, c.player.room);
+        assertEquals(GameRoom.Phase.PLAYING, b.player.room.phase);
+        assertEquals(GameMode.QUICK, b.player.room.mode);
+        Peer d = searching("JOURNEY");
+        server.matchmake(System.currentTimeMillis());
+        assertSame(a.player.room, d.player.room);
+        assertEquals(GameMode.JOURNEY, a.player.room.mode);
+    }
+
+    @Test void cancelledReplacementDoesNotGetSeatedOrRequeuedByOldMatch() throws Exception {
+        Peer a = searching("QUICK"), b = searching("QUICK");
+        var selected = server.matchmaker.takeMatches(1000).get(0);
+        a.request("type", "CANCEL_MATCH", "seq", 2);
+        a.request("type", "FIND_MATCH", "seq", 3, "mode", "JOURNEY");
+        a.request("type", "CANCEL_MATCH", "seq", 4);
+        server.formMatch(selected, 1000);
+        assertNull(a.player.room);
+        assertNull(server.matchmaker.modeOf(a.player));
+        assertNull(b.player.room);
+        assertEquals(GameMode.QUICK, server.matchmaker.modeOf(b.player));
+        assertTrue(server.rooms.isEmpty(), "Incomplete group must not publish a temporary room");
+        Peer c = searching("QUICK");
+        server.matchmake(System.currentTimeMillis());
+        assertSame(b.player.room, c.player.room);
+        assertNull(a.player.room);
+    }
+
+    @Test void sameModeReplacementHasANewTicketAndFallbackKeepsFifo() throws Exception {
+        Peer a = searching("QUICK"), b = searching("QUICK");
+        var selected = server.matchmaker.takeMatches(1000).get(0);
+        a.request("type", "CANCEL_MATCH", "seq", 2);
+        a.request("type", "FIND_MATCH", "seq", 3, "mode", "QUICK");
+        server.formMatch(selected, 1000);
+        assertTrue(server.rooms.isEmpty());
+        var replacement = server.matchmaker.takeMatches(1000).get(0);
+        assertEquals(List.of(b.player, a.player), replacement.players());
+        server.formMatch(replacement, System.currentTimeMillis());
+        assertSame(a.player.room, b.player.room);
+        assertNull(server.matchmaker.modeOf(a.player));
+    }
+
+    @Test void disconnectDuringSelectionDoesNotRequeueExpiredTicket() throws Exception {
+        Peer a = searching("QUICK"), b = searching("QUICK");
+        var selected = server.matchmaker.takeMatches(1000).get(0);
+        a.disconnect();
+        server.formMatch(selected, 1000);
+        assertNull(server.matchmaker.modeOf(a.player));
+        assertEquals(GameMode.QUICK, server.matchmaker.modeOf(b.player));
+        assertTrue(server.rooms.isEmpty());
+    }
+
+    @Test void concurrentCancelAndCommitHaveOneOutcomeWithoutDeadlock() throws Exception {
+        for (int attempt = 0; attempt < 12; attempt++) {
+            Peer a = searching("QUICK"), b = searching("QUICK");
+            var selected = server.matchmaker.takeMatches(1000).get(0);
+            var forming = server.gameLoop.submit(() -> server.formMatch(selected, System.currentTimeMillis()));
+            a.send("type", "CANCEL_MATCH", "seq", 2);
+            forming.get(5, TimeUnit.SECONDS);
+            boolean cancelled = false, found = false;
+            for (;;) {
+                JsonObject message = a.read();
+                String type = message.get("type").getAsString();
+                if (type.equals("MATCHMAKING") && message.get("status").getAsString().equals("CANCELLED")) cancelled = true;
+                if (type.equals("MATCH_FOUND")) found = true;
+                if (type.equals("ERROR")) assertEquals("NOT_SEARCHING", message.get("code").getAsString());
+                if (type.equals("ACK")) break;
+            }
+            assertNotEquals(cancelled, found, "Either cancellation wins or room commit wins, never both");
+            assertEquals(found, a.player.room != null);
+            a.request("type", "LEAVE_ROOM", "seq", 3);
+            b.request("type", "LEAVE_ROOM", "seq", 2);
+            a.disconnect(); b.disconnect();
+            assertTrue(server.rooms.isEmpty());
+        }
+    }
+
+    @Test void quickNewcomerWaitsForNextRoundAndResumeDoesNotReplaySomeoneElsesResult() throws Exception {
+        Peer host = playing();
+        GameRoom room = host.player.room;
+        synchronized (room) {
+            PlayerState opponent = room.players.stream().filter(p -> p != host.player).findFirst().orElseThrow();
+            opponent.alive = false;
+            room.update(System.currentTimeMillis(), 0);
+        }
+        Peer newcomer = hello();
+        newcomer.send("type", "JOIN_ROOM", "seq", 1, "code", room.code);
+        JsonObject joined = newcomer.until("ROOM_STATE").getAsJsonObject("room");
+        assertEquals("FINISHED", joined.get("phase").getAsString());
+        assertTrue(room.participatedInRound(host.player));
+        assertFalse(room.participatedInRound(newcomer.player));
+        assertFalse(joined.getAsJsonArray("roundParticipantIds").contains(BombServer.JSON.toJsonTree(newcomer.player.id)));
+        newcomer.until("ACK");
+        newcomer.disconnect();
+        Peer resumed = connect();
+        resumed.send("type", "HELLO", "resumeToken", newcomer.player.resumeToken);
+        resumed.until("WELCOME");
+        boolean sawRoom = false, sawSnapshot = false;
+        for (;;) {
+            JsonObject message = resumed.read();
+            String type = message.get("type").getAsString();
+            assertNotEquals("GAME_OVER", type, "Newcomer never played this round");
+            assertNotEquals("ERROR", type);
+            if (type.equals("ROOM_STATE")) sawRoom = true;
+            if (type.equals("STATE_UPDATE")) sawSnapshot = true;
+            if (type.equals("ACK")) break;
+        }
+        assertTrue(sawRoom && sawSnapshot);
+        var fixture = new ArrayList<String>();
+        fixture.add(BombServer.JSON.toJson(GameRoom.data("type", "WELCOME", "playerId", newcomer.player.id, "hasRoom", false)));
+        fixture.add(BombServer.JSON.toJson(GameRoom.data("type", "ROOM_STATE", "room", joined)));
+        fixture.add(BombServer.JSON.toJson(room.snapshot(System.currentTimeMillis(), newcomer.player, true)));
+        synchronized (room) {
+            for (PlayerState player : List.copyOf(room.players)) room.ready(player, true);
+            assertEquals(GameRoom.Phase.PLAYING, room.phase);
+            assertTrue(room.participatedInRound(newcomer.player));
+        }
+        fixture.add(resumed.until("GAME_START").toString());
+        fixture.add(resumed.until("STATE_UPDATE").toString());
+        java.nio.file.Files.write(java.nio.file.Path.of("target/newcomer-fixtures.jsonl"), fixture);
+    }
+
     private Peer hello() throws Exception {
         Peer peer = connect();
         peer.send("type", "HELLO", "name", "A");

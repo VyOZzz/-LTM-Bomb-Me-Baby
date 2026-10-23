@@ -1,6 +1,25 @@
-# Trạng thái và kiểm chứng — 23/10/2026
+# Trạng thái và kiểm chứng — cập nhật 24/10/2026
 
-Tài liệu này mô tả working tree hiện tại, gồm sửa đổi sau commit `88bf7be`; chưa khẳng định chúng đã commit/merge hoặc phát hành lên remote. Luật và JSON đầy đủ nằm trong [PROTOCOL.md](PROTOCOL.md).
+Các sửa lỗi bổ sung 24/10 nằm trong working tree trên HEAD `e1382fd`, chưa tạo commit hoặc phát hành remote. Luật và JSON đầy đủ nằm trong [PROTOCOL.md](PROTOCOL.md).
+
+## Sửa lỗi sau rà soát 24/10
+
+Đã sửa ba lỗi runtime và lỗi link Report phát hiện trong lượt rà soát. Java hiện có **107 test qua ở mỗi mode baseline/optimized**, gồm **36 test Connection**; C# ngoài Unity có **12 kiểm tra qua**. Bộ Unity mở rộng lên **111 kiểm tra**, gồm packet người mới vào chờ từ server thật và 23 kiểm tra audio chưa thấy/ẩn/gần/xa/local. Các test mới được giữ trong bộ hồi quy chính.
+
+| Nhóm lỗi | Cách sửa | Kiểm chứng |
+| --- | --- | --- |
+| Hủy/tìm lại bị lượt ghép cũ kéo vào sai mode | Ticket có generation, vẫn được giữ khi đã chọn nhưng chưa chốt phòng. Chốt ghép khóa tối đa bốn player theo ID rồi kiểm tra ticket còn hiệu lực. Hủy/disconnect dùng khóa player; thiếu người thì trả ticket hợp lệ về đầu hàng, không tạo phòng tạm. | Test TCP hủy/tìm khác mode, tìm lại cùng mode, hủy cả yêu cầu mới, disconnect, FIFO khi thiếu người; 12 lần tranh giữa hủy và chốt ghép trong test đồng thời, không có cả CANCELLED lẫn MATCH_FOUND cho cùng yêu cầu. |
+| Người mới vào QUICK FINISHED bị báo thua | `roundParticipantIds` phân biệt người chơi vòng vừa qua với người chỉ vào chờ vòng sau. Unity hiện lobby/READY cho người mới; resume không phát GAME_OVER của vòng chưa chơi. | TCP join → resume → READY sang vòng mới; Unity đọc packet thật, kiểm tra lobby, bỏ âm thua cũ và vẫn nhận kết quả vòng đã tham gia. |
+| Audio đối thủ ẩn phát tại gốc bản đồ/vị trí cũ | SFX gắn player chỉ phát khi avatar đang hiển thị, sau đó áp khoảng cách nghe. Không dùng tọa độ mặc định; giữ audio local và event có tọa độ riêng. | Bảy loại event × ba trường hợp chưa thấy/đã ẩn/ở gần, thêm âm xa và local trong Unity. Không thay file audio hoặc mức mix. |
+| Link Report thiếu file đích | Link còn thiếu trong Report được trỏ tới file tương ứng trong Source/docs của gói. Script kiểm tra lại đích local trước khi tạo manifest/ZIP. | Kiểm tra layout gói bàn giao; không cần copy trùng toàn bộ tài liệu sang Report. |
+
+**Bàn giao bằng Git:** Cần commit các thay đổi hiện tại để clone có đầy đủ bản đã kiểm thử; không gán kết quả working tree này cho HEAD cũ.
+
+Trong lúc chạy lại, test cũ `ShardCarrierActionTest` có lần thất bại do fixture gán `charging=true` nhưng để `chargeSince=0`: bom tự nổ trước lúc nhặt mảnh và có thể đánh trúng người khác tùy vị trí ngẫu nhiên. Fixture đã dùng action CHARGE_START thật, seed cố định và bỏ orb không liên quan; không đổi luật chiến đấu để làm test qua. Log/tổng Java ở `builds/audit-2026-10-24/public-*.json`, log Unity ở `builds/unity-validation.log`, packet TCP người mới ở `server/target/newcomer-fixtures.jsonl` (Git bỏ qua). Chưa thực hiện playtest người thật/LAN, đo FPS/GC hoặc độ trễ thực tế; không suy ra “không còn lỗi” từ kết quả tự động.
+
+Harness Unity cũng được sửa để mỗi bước coroutine chờ một frame Play Mode thật: callback `EditorApplication.update` có thể chạy nhiều lần trong một frame, khiến kiểm tra vật liệu trước đây đôi khi đếm trước khi `Destroy` được xử lý. Sau sửa, ba chu kỳ đều còn đúng hai vật liệu ground của map đang giữ ở menu; 111 kiểm tra qua trên JAR mới. Không nới điều kiện kiểm tra vật liệu hoặc sửa production renderer để bỏ qua lỗi test.
+
+Build 24/10: `builds/windows/BombMeBaby.exe` tạo thành công (`BOMB_BUILD_PASS`, exit 0) bằng Unity 6000.3.6f1; server tại `server/target/bomb-me-baby-server-1.0.0.jar`. Cần gửi cả thư mục Windows. Lệnh đóng gói bản này: `python scripts/package_project.py --name BombMeBaby-Review-2026-10-24-Public`; script kiểm tra link Report, ghi manifest SHA-256 và kiểm tra CRC ZIP trước khi báo thành công. Build/ZIP là bản working tree để review, chưa phải commit/tag phát hành.
 
 ## Chức năng hiện tại
 
@@ -29,18 +48,18 @@ Tài liệu này mô tả working tree hiện tại, gồm sửa đổi sau comm
 
 Các harness tái hiện lỗi cũ và báo cáo review trùng đã được bỏ sau khi gộp nội dung cần thiết vào đây. Test hồi quy được giữ trong `server/src/test`, `scripts/validation`, `scripts/test_unity_staging.ps1` và `Assets/Editor/BombValidation.cs`.
 
-## Kết quả mới nhất
+## Kết quả kiểm chứng 23/10
 
 | Kiểm tra | Kết quả ngày 23/10 |
 | --- | --- |
-| Java/JUnit | 107 test qua ở mỗi lần chạy baseline/optimized, không failure/error. Cùng bộ test chạy hai cấu hình; một số fixture chủ động chọn sync mode để kiểm tra từng nhánh. |
+| Java/JUnit | 101 test trong source bàn giao qua ở mỗi lần chạy baseline/optimized, không failure/error. Cùng bộ test chạy hai cấu hình; một số fixture chủ động chọn sync mode để kiểm tra từng nhánh. |
 | C# ngoài Unity | 12 kiểm tra hàng đợi/kết quả qua trên BombNetwork/BombProtocol thật. |
 | Unity Play Mode | 81 kiểm tra headless qua: ba map × ba chu kỳ, actor/kết quả, import audio, vật liệu, input chết/quan sát, một Unity client + một peer TCP trên server JAR thật. |
 | Staging | Fixture mirror, cache Library và giới hạn đường dẫn qua. |
 | Build Windows | exit 0, BOMB_BUILD_PASS; `builds/windows/BombMeBaby.exe`. Gửi cả thư mục Windows. |
 | Server JAR | `server/target/bomb-me-baby-server-1.0.0.jar`, kèm Gson, chạy bằng Java 17+. |
 
-Bằng chứng: [Java](validation/review-fixes-2026-10-23/java-tests.json), [Unity](validation/review-fixes-2026-10-23/unity-checks.txt). Log đầy đủ ở `server/target/surefire-reports/`, `builds/unity-validation.log`, `builds/unity-build.log`; build/target không được Git theo dõi. Lượt Unity đầu gặp lỗi thứ tự khởi tạo transport trong fixture; đã sửa fixture và chạy lại đầy đủ thành công, không sửa production network để làm test qua.
+Bằng chứng Java lịch sử dưới đây chỉ trích các suite thuộc source bàn giao; kết quả từng suite giữ nguyên từ lượt chạy 23/10. Bằng chứng: [Java](validation/review-fixes-2026-10-23/java-tests.json), [Unity](validation/review-fixes-2026-10-23/unity-checks.txt). Log đầy đủ ở `server/target/surefire-reports/`, `builds/unity-validation.log`, `builds/unity-build.log`; build/target không được Git theo dõi. Lượt Unity đầu gặp lỗi thứ tự khởi tạo transport trong fixture; đã sửa fixture và chạy lại đầy đủ thành công, không sửa production network để làm test qua.
 
 ## Chạy lại
 

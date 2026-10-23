@@ -1,6 +1,13 @@
 # TCP JSON protocol
 
-Cập nhật 23/10/2026. Mỗi message là một JSON object trên một dòng UTF-8. TCP được giữ xuyên suốt phiên chơi. Client phải gửi `HELLO` đầu tiên. Server đọc tối đa 2048 ký tự UTF-16 mỗi frame; vượt giới hạn sẽ đóng socket ngay cả khi chưa có newline. Tối đa 64 connection đồng thời.
+Cập nhật 24/10/2026. Mỗi message là một JSON object trên một dòng UTF-8. TCP được giữ xuyên suốt phiên chơi. Client phải gửi `HELLO` đầu tiên. Server đọc tối đa 2048 ký tự UTF-16 mỗi frame; vượt giới hạn sẽ đóng socket ngay cả khi chưa có newline. Tối đa 64 connection đồng thời.
+
+## Ghép trận, người chờ lượt sau và audio (24/10)
+
+- Yêu cầu tìm trận vẫn có hiệu lực trong khoảng đã được chọn nhưng chưa chốt phòng. `CANCEL_MATCH` có thể hủy ở khoảng này; lượt ghép cũ không được dùng yêu cầu tìm lại, kể cả cùng mode. Nếu server chốt phòng trước, hủy trả `NOT_SEARCHING`; người chơi dùng `LEAVE_ROOM` để rời phòng đã ghép. Không có kết quả vừa `CANCELLED` vừa được ghép từ cùng yêu cầu đó.
+- `ROOM_STATE.room.roundParticipantIds` và `GAME_START.roundParticipantIds` chứa ID người tham gia round hiện tại/vừa kết thúc; mảng rỗng trước vòng đầu. Mỗi `GAME_START` thay bằng danh sách vòng mới. QUICK cho người mới vào phòng FINISHED để chờ READY; ID chưa nằm trong danh sách này thấy lobby chờ lượt sau, không thấy kết quả trận cũ. PLAYING vẫn chặn người mới; JOURNEY đã bắt đầu vẫn chặn người thay thế.
+- Resume FINISHED của người chỉ vào chờ lượt sau vẫn nhận room/snapshot, nhưng không nhận `GAME_OVER` của vòng chưa chơi. Người đã chơi vẫn nhận lại kết quả như trước.
+- Metadata khiên/boost/nhặt đồ/damage vẫn có thể gửi cho cả phòng. Client chỉ phát SFX gắn với player khi có avatar đang hiển thị; sau đó áp khoảng cách nghe. Không dùng `(0,0,0)` hay vị trí cũ của avatar ẩn. Tiếng nổ, Core rơi và objective có tọa độ riêng vẫn dùng chính sách event hiện có.
 
 ## Kết thúc sớm, đồng hồ và quan sát (23/10)
 
@@ -16,7 +23,7 @@ Cập nhật 23/10/2026. Mỗi message là một JSON object trên một dòng U
 - `WELCOME.hasRoom`: true khi session còn phòng; false hoặc thiếu ở session mới. Client xóa phòng/actor cũ khi false. Resume không còn phòng còn nhận `LEFT_ROOM`; `LEAVE_ROOM` luôn được xác nhận bằng `LEFT_ROOM`, kể cả đã ở menu.
 - Phòng đã bắt đầu giữ session mất kết nối tối đa 10 giây, kể cả ở FINISHED hoặc khi Hành trình hoàn tất. Lobby chưa bắt đầu bỏ người mất kết nối; hết hạn giữ chỗ thì server dọn người và phòng rỗng.
 - Resume PLAYING: `WELCOME → ROOM_STATE → STATE_UPDATE` có geometry → `PLAYER_RECONNECTED → ACK`.
-- Resume FINISHED: `WELCOME → ROOM_STATE → STATE_UPDATE` có geometry → `GAME_OVER → JOURNEY_COMPLETE` (nếu đã hoàn tất) → `PLAYER_RECONNECTED → ACK`.
+- Resume FINISHED của người đã tham gia round: `WELCOME → ROOM_STATE → STATE_UPDATE` có geometry → `GAME_OVER → JOURNEY_COMPLETE` (nếu đã hoàn tất) → `PLAYER_RECONNECTED → ACK`. Người mới vào chờ vòng sau bỏ qua `GAME_OVER`.
 - `ROOM_STATE.room` có `roundIndex`, `roundWinnerId`, `roundEndReason`, `winnerIds`, `journeyComplete` để dựng lại kết quả độc lập với event đã bỏ lỡ.
 - `GAME_START`, `GAME_OVER` có `roundIndex`; `STATE_UPDATE` có `roomCode` và `roundIndex` tăng từ 1 mỗi vòng trong phòng. Client chỉ nhận snapshot khớp phòng/vòng; snapshot PLAYING không được mở lại vòng đã FINISHED.
 - Cả hai đầu chỉ gộp các snapshot liền nhau. Event là mốc thứ tự; snapshot recovery có geometry được giữ nếu snapshot sau không có geometry. Inbox client đầy 256 message sẽ reconnect để khôi phục thay vì âm thầm bỏ event; outbound server đầy 128 sẽ đóng connection chậm.
@@ -75,7 +82,7 @@ Mỗi phòng, kể cả phòng tạo bằng mã, cần ít nhất `minPlayers` =
 
 Đủ 2 người cùng mode thì ghép ở lần tick kế tiếp (game loop 50 ms), tối đa 4 người mỗi nhóm đang chờ. Server tạo phòng mới, gửi `{"type":"MATCH_FOUND","room":"ABC123","mode":"QUICK"}` cho từng người, rồi `ROOM_STATE` và `GAME_START`, không cần `READY`. Phòng riêng không được đưa vào tìm trận: bạn bè phải nhập mã. Sau trận, mọi người bấm `READY` để chơi tiếp hoặc `LEAVE_ROOM` để tìm trận khác.
 
-`CANCEL_MATCH` rời hàng chờ và nhận `{"type":"MATCHMAKING","status":"CANCELLED"}`; không ở trong hàng nhận `NOT_SEARCHING`. Đang trong hàng chờ thì `CREATE_ROOM`, `JOIN_ROOM`, `FIND_MATCH` nhận `ALREADY_SEARCHING`; đang ở trong phòng thì `FIND_MATCH` nhận `ALREADY_IN_ROOM`. Mất kết nối khi đang chờ thì bị xóa khỏi hàng; reconnect không tự vào lại hàng.
+`CANCEL_MATCH` hủy yêu cầu đang chờ hoặc đang ghép nhưng chưa chốt phòng và nhận `{"type":"MATCHMAKING","status":"CANCELLED"}`; không còn yêu cầu có hiệu lực thì nhận `NOT_SEARCHING`. Đang chờ/đang ghép thì `CREATE_ROOM`, `JOIN_ROOM`, `FIND_MATCH` nhận `ALREADY_SEARCHING`; đang ở trong phòng thì `FIND_MATCH` nhận `ALREADY_IN_ROOM`. Mất kết nối khi đang chờ/đang ghép hủy ticket; reconnect không tự vào lại hàng. Nếu chốt phòng đã hoàn tất trước khi disconnect, áp quy tắc giữ chỗ của phòng đã bắt đầu.
 
 Server trả `ACK` sau request không phải PING. ACK xác nhận server đã xử lý message đến điểm phản hồi, không tự khẳng định hành động gameplay thành công; client vẫn phải đọc `ERROR` nếu có.
 
@@ -85,6 +92,7 @@ Server trả `ACK` sau request không phải PING. ACK xác nhận server đã x
 
 - `code`, `phase`, `mapId`, `mapName`, `arenaSize`, `minPlayers`, `maxPlayers`, `players`;
 - `mode`: `QUICK` hoặc `JOURNEY`;
+- `roundIndex`, `roundParticipantIds`, `roundWinnerId`, `roundEndReason`: định danh vòng, người đã tham gia và kết quả; không coi mọi người đang có mặt trong phòng đều đã chơi vòng vừa kết thúc;
 - `chapterIndex`: `-1` cho QUICK; `0`, `1`, `2` cho ba chương JOURNEY;
 - `scores`: mảng `{playerId,name,points,roundWins,eliminations}`; rỗng trong QUICK. `roundWins` là số mảnh Tim Lửa đã mang về, `eliminations` là số lần loại đối thủ;
 - `journeyComplete`: hành trình đã kết thúc hay chưa.
