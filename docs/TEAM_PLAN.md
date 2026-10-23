@@ -1,5 +1,11 @@
 # Phân công nhóm — Bomb Me Baby
 
+## Điều chỉnh âm thanh 23/10/2026
+
+Phản hồi tiếp theo: người dùng xác nhận âm thanh đã ổn, riêng bom còn nhẹ. Tăng riêng tiếng bom: mở dải trầm/độ rõ, attack 6 ms, RMS mục tiêu −23 dBFS và gain phát 0,64–0,86 theo bán kính; giữ giới hạn tổng gain và không thêm lại lớp động cơ/bass. Các file âm thanh khác giữ nguyên. Bản này cần nghe lại để chốt độ mạnh của bom.
+
+Theo phản hồi tiếng bom/xung kích và khiên còn rè: thay ba tiếng nổ `explosionCrunch` bằng mẫu nổ trầm Kenney ngắn hơn, thay tiếng bật/đỡ khiên, lọc lại tiếng tăng tốc; bỏ lớp bass ghép thêm và hai loop động cơ khiên/tăng tốc. Cập nhật script tái tạo, nguồn và số đo tại [AUDIO_CREDITS.md](AUDIO_CREDITS.md), [AUDIO_LEVELS.csv](AUDIO_LEVELS.csv); kết quả kiểm tra tại [AUDIO_VALIDATION.md](AUDIO_VALIDATION.md). Bộ hiện tại dùng file tải về, còn 20 clip; mô tả “11 SFX tự tổng hợp” bên dưới là lịch sử ngày 21/10. Cần nghe lại trên thiết bị thật để chốt cảm giác, không coi số đo peak là bằng chứng đã hết rè khi chơi.
+
 ## Bổ sung tích hợp 22/10/2026
 
 Các mốc bên dưới giữ nguyên để phản ánh lịch sử đóng góp. Trạng thái mới nhất xem [FINAL_VALIDATION.md](FINAL_VALIDATION.md): đã sửa R1–R8, watchdog đóng nhầm connection, metadata chương trên HUD và vòng đời vật liệu; 98 test Java qua cả hai mode, thêm regression test C#/Unity, script bot, build Windows và server JAR. Nguồn đang ở working tree, chưa tự commit/merge. Benchmark mới ghi riêng tại [EXPERIMENTS_FINAL.md](EXPERIMENTS_FINAL.md); không thay thế hay sửa số liệu 19/10.

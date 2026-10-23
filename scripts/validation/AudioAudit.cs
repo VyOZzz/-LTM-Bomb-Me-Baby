@@ -1,5 +1,5 @@
 // Copy this file to Assets/Editor in an isolated audio validation project.
-// Requires BombAudio.cs, BombSettings.cs and the 23 clips loaded by BombAudio.
+// Requires BombAudio.cs, BombSettings.cs and the 20 clips loaded by BombAudio.
 using System;
 using System.Reflection;
 using UnityEditor;
@@ -19,13 +19,33 @@ public static class AudioAudit {
         try {
             AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
             AudioClip[] clips = Resources.LoadAll<AudioClip>("Audio");
-            Check(clips.Length == 23, "Expected 23 active downloaded/user clips, got " + clips.Length);
+            Check(clips.Length == 20, "Expected 20 active downloaded/user clips, got " + clips.Length);
             foreach (AudioClip clip in clips) {
                 Check(clip.length > .005f && clip.samples > 0, "Invalid imported audio: " + clip.name);
                 Check(clip.frequency == 44100 || clip.name == "music_menu", "Unexpected sample rate");
                 Check(!clip.name.StartsWith("sfx_"), "Generated audio is still active");
                 if (clip.name.StartsWith("music_"))
                     Check(clip.loadType == AudioClipLoadType.Streaming, "Music must stream: " + clip.name);
+            }
+            foreach (string name in new[] { "mix_explosion_low", "mix_shield_body", "mix_boost_body" })
+                Check(Resources.Load<AudioClip>("Audio/" + name) == null, "Retired layer still ships: " + name);
+            foreach (string name in new[] { "mix_explosion_1", "mix_explosion_2", "mix_explosion_3", "mix_shield", "mix_shield_hit", "mix_boost" }) {
+                AudioClip clip = Resources.Load<AudioClip>("Audio/" + name);
+                Check(clip != null && clip.length < .85f, "Soft cue is missing or too long: " + name);
+                var importer = (AudioImporter)AssetImporter.GetAtPath(AssetDatabase.GetAssetPath(clip));
+                Check(importer.defaultSampleSettings.compressionFormat == AudioCompressionFormat.PCM,
+                    "Short cue must not be compressed a second time: " + name);
+                clip.LoadAudioData();
+                float[] samples = new float[clip.samples * clip.channels];
+                Check(clip.GetData(samples, 0), "Cannot read imported samples: " + name);
+                float peak = 0;
+                foreach (float sample in samples) {
+                    if (float.IsNaN(sample) || float.IsInfinity(sample)) throw new Exception("Invalid sample: " + name);
+                    peak = Mathf.Max(peak, Mathf.Abs(sample));
+                }
+                Check(peak > .01f && peak < .40f, "Silent or excessive imported peak: " + name + " " + peak);
+                Check(Mathf.Abs(samples[0]) < .01f && Mathf.Abs(samples[samples.Length - 1]) < .01f,
+                    "Cue edges can click: " + name);
             }
             var go = new GameObject("Audio validation");
             go.AddComponent<AudioListener>();
@@ -51,9 +71,14 @@ public static class AudioAudit {
             Call(audio, "Audibility", right); Call(audio, "Audibility", left);
             Check((float)right[3] > 0 && (float)left[3] < 0, "Stereo direction is reversed");
             audio.PlayShield(true, Vector3.zero);
-            Check(((AudioSource)Field(audio, "shieldBody")).clip.name == "mix_shield_body", "Shield layer missing");
+            Check(Array.Exists(go.GetComponents<AudioSource>(), source => source.clip != null
+                && source.clip.name == "mix_shield" && !source.loop), "Shield activation must be a one-shot");
             audio.PlayBoost(true, Vector3.zero);
-            Check(((AudioSource)Field(audio, "boostBody")).clip.name == "mix_boost_body", "Boost layer missing");
+            Check(Array.Exists(go.GetComponents<AudioSource>(), source => source.clip != null
+                && source.clip.name == "mix_boost" && !source.loop), "Boost must be a one-shot");
+            foreach (AudioSource source in go.GetComponents<AudioSource>())
+                Check(!source.loop || source.clip == null || source.clip.name == "mix_charge"
+                    || source.clip.name.StartsWith("music_"), "Unexpected gameplay loop");
             audio.SetCharging(true, .8f);
             sfx.SetValue(null, 0f);
             Call(audio, "Update");
@@ -66,8 +91,7 @@ public static class AudioAudit {
             audio.PlayResult(false);
             Check(((AudioSource)Field(audio, "result")).clip.name == "mix_defeat", "Defeat mapping");
             audio.SetMenuMusic();
-            Check((float)Field(audio, "shieldStarted") < 0 && (float)Field(audio, "boostStarted") < 0,
-                "Ability tails survive leaving the match");
+            Check((float)Field(audio, "chargeGain") == 0, "Charge tail survives leaving the match");
             Check(!(bool)Field(audio, "charging"), "Charge survives leaving the match");
             UnityEngine.Object.DestroyImmediate(go);
             Debug.Log("AUDIO_AUDIT_PASS checks=" + checks + " clips=" + clips.Length);

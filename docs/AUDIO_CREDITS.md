@@ -1,6 +1,6 @@
 # Nguồn và xử lý âm thanh — Bomb Me Baby
 
-Cập nhật 22/10/2026. Nhạc/SFX đang dùng là bản ghi tải từ các tác giả dưới đây; không dùng âm tổng hợp trong gameplay. Codex hỗ trợ tìm nguồn, xử lý file và tích hợp code. Tất cả đường dẫn audio trong bảng tính từ `LTM-Bomb-Me-Baby/Assets/Resources/Audio/`.
+Cập nhật 23/10/2026. Nhạc/SFX đang dùng là bản ghi tải từ các tác giả dưới đây; không dùng bộ SFX tự tổng hợp cũ trong gameplay. Codex hỗ trợ tìm nguồn, xử lý file và tích hợp code. Tất cả đường dẫn audio trong bảng tính từ `LTM-Bomb-Me-Baby/Assets/Resources/Audio/`.
 
 ## Nhạc theo màn
 
@@ -20,16 +20,13 @@ SHA-256 nhạc sảnh trước/sau: `6C6808475E0BF3B2CCA02925EB0048DA3A8CA1E4C7F
 | Sự kiện | File sử dụng | Bản ghi gốc | Nguồn / tác giả / giấy phép |
 | --- | --- | --- | --- |
 | Nạp bom | `mix_charge.ogg` | `spaceEngineSmall_000.ogg` | [Sci-fi Sounds — Kenney, CC0](https://kenney.nl/assets/sci-fi-sounds) |
-| Bom nổ: ba biến thể | `mix_explosion_1/2/3.ogg` | `explosionCrunch_004/002/001.ogg` | Sci-fi Sounds — Kenney, CC0 |
-| Thân âm trầm khi nổ | `mix_explosion_low.ogg` | `lowFrequency_explosion_000.ogg` | Sci-fi Sounds — Kenney, CC0 |
+| Bom nổ/xung kích: ba biến thể | `mix_explosion_1/2/3.ogg` | `lowFrequency_explosion_000/001/000.ogg`; biến thể 3 tăng tempo 1,12× | Sci-fi Sounds — Kenney, CC0 |
 | Nhặt năng lượng | `mix_energy.ogg` | `confirmation_003.ogg` | [Interface Sounds — Kenney, CC0](https://kenney.nl/assets/interface-sounds) |
 | Nhặt Core / Tim Lửa | `mix_core.ogg` | `maximize_006.ogg` | Interface Sounds — Kenney, CC0 |
-| Bật khiên | `mix_shield.ogg` | `forceField_003.ogg` | Sci-fi Sounds — Kenney, CC0 |
-| Lớp điện duy trì khiên | `mix_shield_body.ogg` | `engineCircular_002.ogg` | Sci-fi Sounds — Kenney, CC0 |
-| Khiên đỡ đòn | `mix_shield_hit.ogg` | `impactGlass_medium_002.ogg` | [Impact Sounds — Kenney, CC0](https://kenney.nl/assets/impact-sounds) |
+| Bật khiên | `mix_shield.ogg` | `maximize_004.ogg` | Interface Sounds — Kenney, CC0 |
+| Khiên đỡ đòn | `mix_shield_hit.ogg` | `glass_001.ogg` | Interface Sounds — Kenney, CC0 |
 | Lướt/tăng tốc | `mix_boost.ogg` | `knifeSlice.ogg` | [RPG Audio — Kenney, CC0](https://kenney.nl/assets/rpg-audio) |
-| Lớp khí đẩy khi tăng tốc | `mix_boost_body.ogg` | `thrusterFire_002.ogg` | Sci-fi Sounds — Kenney, CC0 |
-| Bị đánh / phản sát thương | `mix_damage.ogg` | `impactPunch_heavy_000.ogg` | Impact Sounds — Kenney, CC0 |
+| Bị đánh / phản sát thương | `mix_damage.ogg` | `impactPunch_heavy_000.ogg` | [Impact Sounds — Kenney, CC0](https://kenney.nl/assets/impact-sounds) |
 | Tiếp đất sau khi bị hất | `mix_land_1/2.ogg` | `impactSoft_heavy_000/001.ogg` | Impact Sounds — Kenney, CC0 |
 | Core xuất hiện; Tim Lửa xuất hiện / rơi / đặt lên bệ | `mix_drop.ogg` | `handleCoins2.ogg` | RPG Audio — Kenney, CC0 |
 | Chiến thắng | `mix_victory.ogg` | `VICTORY_0.ogg` (3,9 giây) | [Fanfares — Spring/Spring Enterprises, CC-BY 4.0](https://opengameart.org/content/fanfares) |
@@ -37,7 +34,9 @@ SHA-256 nhạc sảnh trước/sau: `6C6808475E0BF3B2CCA02925EB0048DA3A8CA1E4C7F
 | Nút UI | `mix_ui.ogg` | `click_003.ogg` | Interface Sounds — Kenney, CC0 |
 | Rê chuột / đổi mục UI | Dùng lại `mix_energy.ogg` | `confirmation_003.ogg` | Interface Sounds — Kenney, CC0 |
 
-SFX được lọc bớt âm cao chói/hạ âm siêu trầm, cân RMS mục tiêu −23 dBFS và peak mục tiêu tối đa −6 dBFS trước encode; mức thực sau encode nằm trong [AUDIO_LEVELS.csv](AUDIO_LEVELS.csv). Đầu/cuối file có fade ngắn; khiên/boost có đường cong vào và tắt riêng. Pitch tiếng nổ/nhặt/lướt/tiếp đất biến thiên nhẹ giữa lần phát. Nhạc kết quả dùng cân loudness như nhạc màn chơi.
+SFX được lọc bớt âm cao chói/hạ âm siêu trầm. Ba tiếng nổ cân RMS mục tiêu −23 dBFS; bật khiên, khiên đỡ đòn và tăng tốc giữ RMS mục tiêu −25 dBFS. Sáu clip này đều có peak mục tiêu tối đa −9 dBFS trước encode, sau khi làm mềm đầu/cuối. Các SFX khác giữ mục tiêu −23/−6 dBFS. Mức thực sau encode nằm trong [AUDIO_LEVELS.csv](AUDIO_LEVELS.csv); OGG có thể lệch nhẹ so với peak mục tiêu. Nhạc kết quả dùng cân loudness như nhạc màn chơi.
+
+Tiếng nổ bỏ mẫu `explosionCrunch`, dùng một tiếng trầm dài 0,65–0,8 giây, lọc dưới 65–80 Hz và trên 2–2,4 kHz, không ghép thêm lớp bass. Sau khi người dùng xác nhận âm thanh ổn nhưng bom còn nhẹ, mở rộng dải này và rút fade-in tiếng bom từ 12 xuống 6 ms để rõ cú nổ hơn; gain gameplay tăng từ 0,48–0,64 lên 0,64–0,86 theo bán kính nổ (khoảng +2,5 dB trước giới hạn tổng gain). Bật khiên dùng tiếng kích hoạt 0,42 giây; đỡ đòn đổi sang tiếng kính ngắn. Tăng tốc chỉ còn tiếng vút được lọc trên 3,2 kHz. Bỏ hoàn toàn loop `engineCircular`/`thrusterFire` của hai kỹ năng. Khiên/tăng tốc giữ fade-in 12 ms; cả sáu clip có fade-out tối đa 120 ms và Unity nhập PCM để tránh nén mất dữ liệu lần hai. Pitch tiếng nổ/lướt chỉ biến thiên ±2%; tiếng nhặt/tiếp đất giữ như trước. Bản tăng lực bom mới cần người dùng nghe lại.
 
 Hover UI dùng nguồn phát riêng, gain 0,40 × SFX, pitch 1,25 (khoảng 0,26 giây), giới hạn mỗi 120 ms và không chồng nhiều tiếng. Dùng bản ghi xác nhận dài hơn vì tiếng click 10 ms ở gain 0,08 quá khó nghe dưới nhạc sảnh. Không thêm file audio; nhạc sảnh giữ nguyên.
 
@@ -61,7 +60,9 @@ Script `scripts/prepare_game_audio.ps1` dùng FFmpeg và ffprobe. Chuẩn bị m
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare_game_audio.ps1 -SourceRoot C:\audio-sources -Ffmpeg C:\ffmpeg\bin\ffmpeg.exe -Ffprobe C:\ffmpeg\bin\ffprobe.exe
 ```
 
-Đã xóa 15 WAV tự tổng hợp cũ trong `Assets/AudioArchive/`, 10 OGG `kenney_*` trước xử lý và script tổng hợp cũ. Thư mục `Resources/Audio/` còn đúng 23 clip đang dùng: 19 `mix_*`, ba `music_*.ogg` và `music_menu.mp3`. Các file `.meta` của clip đang dùng được giữ nguyên.
+Có thể chỉ xử lý các clip thay đổi bằng tham số `-Clips @('mix_explosion_1','mix_explosion_2','mix_explosion_3','mix_shield','mix_shield_hit','mix_boost')` khi gọi script trong PowerShell; các hàng số đo khác được giữ lại. Script lấy bản gốc theo bảng trên, không lọc chồng bản đã xử lý.
+
+Đã xóa 15 WAV tự tổng hợp cũ trong `Assets/AudioArchive/`, 10 OGG `kenney_*` trước xử lý và script tổng hợp cũ. Ngày 23/10 bỏ thêm `mix_explosion_low`, `mix_shield_body`, `mix_boost_body` cùng `.meta` sau khi kiểm tra không có tham chiếu GUID khác. Thư mục `Resources/Audio/` còn đúng 20 clip đang dùng: 16 `mix_*`, ba `music_*.ogg` và `music_menu.mp3`. GUID các clip giữ lại không đổi; sáu clip sửa chuyển thiết lập compression sang PCM.
 
 ## Kiểm chứng nghe trong trận
 

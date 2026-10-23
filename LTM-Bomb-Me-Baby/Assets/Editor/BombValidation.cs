@@ -89,7 +89,7 @@ public static class BombValidation {
             if (previousMaterials >= 0) Assert(materials <= previousMaterials, "Runtime materials stable after three maps: " + materials);
             previousMaterials = materials;
         }
-        foreach (string clip in new[] { "music_menu", "music_meadow", "music_crossroads", "music_crater", "mix_energy", "mix_shield_hit", "mix_boost_body" })
+        foreach (string clip in new[] { "music_menu", "music_meadow", "music_crossroads", "music_crater", "mix_energy", "mix_shield_hit", "mix_shield", "mix_boost", "mix_explosion_1", "mix_explosion_2", "mix_explosion_3" })
             Assert(Resources.Load<AudioClip>("Audio/" + clip) != null, "Audio imports: " + clip);
 
         // Two ordinary TCP clients talking to the packaged Java server.

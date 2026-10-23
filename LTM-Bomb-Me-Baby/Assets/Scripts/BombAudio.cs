@@ -17,18 +17,16 @@ public sealed class BombAudio : MonoBehaviour {
     readonly float[] nextCue = new float[(int)Cue.Count * 2];
     readonly AudioSource[] music = new AudioSource[2];
     readonly float[] musicWeight = new float[2];
-    AudioSource chargeLoop, shieldBody, boostBody, result, uiHover;
-    AudioClip chargeClip, explosionLowClip, energyClip, coreClip, shieldClip, boostClip;
-    AudioClip shieldBodyClip, boostBodyClip, shieldHitClip, dropClip;
+    AudioSource chargeLoop, result, uiHover;
+    AudioClip chargeClip, energyClip, coreClip, shieldClip, boostClip;
+    AudioClip shieldHitClip, dropClip;
     AudioClip damageClip, victoryClip, defeatClip, uiClickClip;
     AudioClip[] explosions, landings;
     AudioClip menuMusic, meadowMusic, crossroadsMusic, craterMusic, desiredMusic;
     Vector3 listeningPosition, listeningRight = Vector3.right;
     bool hasListeningPosition, charging;
     float chargeAmount, chargeGain, musicDuckUntil, musicDuck = 1;
-    float shieldStarted = -1, boostStarted = -1;
     int activeMusic, explosionVariant, landingVariant;
-    const float ShieldDuration = 1.5f, BoostDuration = .9f;
     const float UiHoverGain = .40f;
 
     void Awake() {
@@ -40,22 +38,17 @@ public sealed class BombAudio : MonoBehaviour {
         for (int i = 0; i < voices.Length; i++)
             voices[i] = new Voice { source = CreateSource(false, 128) };
         chargeLoop = CreateSource(true, 100);
-        shieldBody = CreateSource(true, 100);
-        boostBody = CreateSource(true, 100);
         result = CreateSource(false, 64);
         uiHover = CreateSource(false, 80);
         for (int i = 0; i < music.Length; i++) music[i] = CreateSource(true, 180);
 
         chargeClip = Load("mix_charge");
         explosions = new[] { Load("mix_explosion_1"), Load("mix_explosion_2"), Load("mix_explosion_3") };
-        explosionLowClip = Load("mix_explosion_low");
         energyClip = Load("mix_energy");
         coreClip = Load("mix_core");
         shieldClip = Load("mix_shield");
-        shieldBodyClip = Load("mix_shield_body");
         shieldHitClip = Load("mix_shield_hit");
         boostClip = Load("mix_boost");
-        boostBodyClip = Load("mix_boost_body");
         damageClip = Load("mix_damage");
         landings = new[] { Load("mix_land_1"), Load("mix_land_2") };
         dropClip = Load("mix_drop");
@@ -100,8 +93,6 @@ public sealed class BombAudio : MonoBehaviour {
         chargeLoop.pitch = Mathf.Lerp(.85f, 1.3f, chargeAmount);
         if (charging && chargeClip != null && !chargeLoop.isPlaying) chargeLoop.Play();
         if (!charging && chargeGain <= .001f) chargeLoop.Stop();
-        UpdateAbility(shieldBody, ref shieldStarted, ShieldDuration, .10f, .28f, .22f, false);
-        UpdateAbility(boostBody, ref boostStarted, BoostDuration, .04f, .24f, .30f, true);
         result.volume = BombSettings.Sfx * .65f;
         uiHover.volume = BombSettings.Sfx * UiHoverGain;
         UpdateVoices();
@@ -152,32 +143,6 @@ public sealed class BombAudio : MonoBehaviour {
             music[i].volume = BombSettings.Music * level * musicWeight[i] * musicDuck;
             if (i != activeMusic && musicWeight[i] == 0) music[i].Stop();
         }
-    }
-
-    void UpdateAbility(AudioSource source, ref float started, float duration,
-            float attackTime, float releaseTime, float level, bool accelerate) {
-        if (started < 0) return;
-        float elapsed = Time.unscaledTime - started;
-        if (elapsed >= duration) {
-            source.Stop();
-            started = -1;
-            return;
-        }
-        float attack = Mathf.SmoothStep(0, 1, elapsed / attackTime);
-        float release = Mathf.SmoothStep(0, 1, (duration - elapsed) / releaseTime);
-        source.volume = BombSettings.Sfx * level * Mathf.Min(attack, release);
-        source.pitch = accelerate ? Mathf.Lerp(.88f, 1.15f, elapsed / duration)
-            : .95f + Mathf.Sin(elapsed * 7) * .02f;
-    }
-
-    void StartAbility(AudioSource source, AudioClip clip, ref float started) {
-        if (clip == null || BombSettings.Sfx <= 0) return;
-        source.Stop();
-        source.clip = clip;
-        source.volume = 0;
-        source.pitch = .9f;
-        started = Time.unscaledTime;
-        source.Play();
     }
 
     public void SetListeningPoint(Vector3 position, Vector3 screenRight) {
@@ -245,9 +210,6 @@ public sealed class BombAudio : MonoBehaviour {
         charging = false;
         chargeAmount = chargeGain = 0;
         chargeLoop.Stop();
-        shieldStarted = boostStarted = -1;
-        shieldBody.Stop();
-        boostBody.Stop();
     }
 
     public void SetMenuMusic() {
@@ -288,19 +250,14 @@ public sealed class BombAudio : MonoBehaviour {
     public void PlayShield(bool local, Vector3 position) {
         if (!AllowCue(Cue.Shield, local, .15f)) return;
         Play(shieldClip, local, position, .48f);
-        if (local) {
-            DuckMusic(.3f);
-            StartAbility(shieldBody, shieldBodyClip, ref shieldStarted);
-        }
+        // One short activation cue; engine loops made the shield sound distorted.
+        if (local) DuckMusic(.2f);
     }
 
     public void PlayBoost(bool local, Vector3 position) {
         if (!AllowCue(Cue.Boost, local, .15f)) return;
-        Play(boostClip, local, position, .65f, 25, Random.Range(.96f, 1.04f));
-        if (local) {
-            DuckMusic(.3f);
-            StartAbility(boostBody, boostBodyClip, ref boostStarted);
-        }
+        Play(boostClip, local, position, .50f, 25, Random.Range(.98f, 1.02f));
+        if (local) DuckMusic(.2f);
     }
 
     public void PlayShieldHit(bool local, Vector3 position) {
@@ -342,9 +299,9 @@ public sealed class BombAudio : MonoBehaviour {
         if (Audibility(local, position, 38, out pan) < .005f) return;
         DuckMusic(.55f);
         float power = Mathf.InverseLerp(2, 12, radius);
+        // Each clip already contains the low impact; avoid stacking another bass layer.
         Play(explosions[explosionVariant++ % explosions.Length], local, position,
-            Mathf.Lerp(.50f, .72f, power), 38, Random.Range(.94f, 1.03f));
-        Play(explosionLowClip, local, position, Mathf.Lerp(.18f, .30f, power), 38);
+            Mathf.Lerp(.64f, .86f, power), 38, Random.Range(.98f, 1.02f));
     }
 
     public static void UiClick() {
