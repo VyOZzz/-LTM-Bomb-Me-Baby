@@ -5,7 +5,6 @@ This does not modify or close the developer's open Unity project.
 import argparse
 import os
 from pathlib import Path
-import shutil
 import subprocess
 import time
 
@@ -23,9 +22,10 @@ def main():
     fixtures = root / "server/target/unity-fixtures.jsonl"
     if not fixtures.exists():
         parser.error("Run mvn test package in server/ first")
-    for folder in ("Assets", "Packages", "ProjectSettings"):
-        shutil.copytree(root / "LTM-Bomb-Me-Baby" / folder, project / folder, dirs_exist_ok=True)
     flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+    subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+        str(root / "scripts/sync_unity_project.ps1"), "-Destination", str(project)],
+        check=True, creationflags=flags)
     log_path = build / "unity-validation.log"
     with (build / "unity-test-server.log").open("w", encoding="utf-8") as server_log:
         server = subprocess.Popen([args.java, "-Dsync.mode=optimized", "-jar",

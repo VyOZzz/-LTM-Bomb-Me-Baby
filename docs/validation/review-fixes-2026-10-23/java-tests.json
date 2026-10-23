@@ -1,0 +1,56 @@
+﻿[
+    {
+        "suite":  "bombmebaby.CompletionRegressionTest",
+        "tests":  8,
+        "failures":  0,
+        "errors":  0
+    },
+    {
+        "suite":  "bombmebaby.ConnectionTest",
+        "tests":  30,
+        "failures":  0,
+        "errors":  0
+    },
+    {
+        "suite":  "bombmebaby.GameRoomTest",
+        "tests":  19,
+        "failures":  0,
+        "errors":  0
+    },
+    {
+        "suite":  "bombmebaby.PracticeBotsTest",
+        "tests":  6,
+        "failures":  0,
+        "errors":  0
+    },
+    {
+        "suite":  "bombmebaby.ReviewFixesTest",
+        "tests":  8,
+        "failures":  0,
+        "errors":  0
+    },
+    {
+        "suite":  "bombmebaby.ServerFixesTest",
+        "tests":  15,
+        "failures":  0,
+        "errors":  0
+    },
+    {
+        "suite":  "bombmebaby.ShardCarrierActionTest",
+        "tests":  2,
+        "failures":  0,
+        "errors":  0
+    },
+    {
+        "suite":  "bombmebaby.ShardObjectiveTest",
+        "tests":  7,
+        "failures":  0,
+        "errors":  0
+    },
+    {
+        "suite":  "bombmebaby.ShardStealMechanicsTest",
+        "tests":  12,
+        "failures":  0,
+        "errors":  0
+    }
+]

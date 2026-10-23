@@ -1,5 +1,9 @@
 # Phân công nhóm — Bomb Me Baby
 
+## Rà soát kỹ thuật và luồng chơi 23/10/2026
+
+Đã sửa cả 5 lỗi trong đợt rà soát 23/10: Hành trình thiếu người kết thúc sớm có kết quả; không cộng sai thời gian phá ấn khi khựng; phản khiên reset phá ấn; client chết ngừng gửi gameplay input; bản sao build loại asset đã xóa. Bổ sung Đấu nhanh tối đa 3 phút (hết giờ nhiều người thì hòa) và camera/audio tự theo người sống với phạm vi nhìn do server quyết định. **107 test Java qua ở cả baseline/optimized, 12 kiểm tra C#, 81 kiểm tra Unity và fixture staging qua.** Chi tiết luật, kiểm chứng và giới hạn tại [FINAL_VALIDATION.md](FINAL_VALIDATION.md). Source chưa commit/merge; cần dùng client/server cùng phiên bản protocol.
+
 ## Điều chỉnh âm thanh 23/10/2026
 
 Phản hồi tiếp theo: người dùng xác nhận âm thanh đã ổn, riêng bom còn nhẹ. Tăng riêng tiếng bom: mở dải trầm/độ rõ, attack 6 ms, RMS mục tiêu −23 dBFS và gain phát 0,64–0,86 theo bán kính; giữ giới hạn tổng gain và không thêm lại lớp động cơ/bass. Các file âm thanh khác giữ nguyên. Bản này cần nghe lại để chốt độ mạnh của bom.
@@ -8,11 +12,11 @@ Theo phản hồi tiếng bom/xung kích và khiên còn rè: thay ba tiếng n�
 
 ## Bổ sung tích hợp 22/10/2026
 
-Các mốc bên dưới giữ nguyên để phản ánh lịch sử đóng góp. Trạng thái mới nhất xem [FINAL_VALIDATION.md](FINAL_VALIDATION.md): đã sửa R1–R8, watchdog đóng nhầm connection, metadata chương trên HUD và vòng đời vật liệu; 98 test Java qua cả hai mode, thêm regression test C#/Unity, script bot, build Windows và server JAR. Nguồn đang ở working tree, chưa tự commit/merge. Benchmark mới ghi riêng tại [EXPERIMENTS_FINAL.md](EXPERIMENTS_FINAL.md); không thay thế hay sửa số liệu 19/10.
+Mốc 22/10: đã sửa thứ tự snapshot, phục hồi phòng/kết quả, va chạm tăng size, watchdog đóng nhầm connection, metadata chương trên HUD và vòng đời vật liệu; khi đó 98 test Java qua cả hai mode. Đây là lịch sử, không phải số test hiện tại. Trạng thái 23/10 xem [FINAL_VALIDATION.md](FINAL_VALIDATION.md). Benchmark 22/10 ghi riêng tại [EXPERIMENTS_FINAL.md](EXPERIMENTS_FINAL.md); không thay thế số liệu 19/10 và chưa được đo lại sau thay đổi 23/10.
 
 Việc nhóm cần chốt: thông tin trang bìa, playtest người thật/LAN, kiểm tra Compilatio và bàn giao bản Report đã nộp. Các số 71 test/11 SFX ở phần lịch sử không mô tả bản hiện tại.
 
-Cập nhật: 21/10/2026, đối chiếu lại với code, test và các commit Unity/âm thanh mới. Bản 15/10 và 20/10 xem trong lịch sử Git của file này. Tài liệu đối chiếu: `final-project/Topics.md`, `Instruction.md`, `Submission.md` và `README.md`.
+Thông tin nhóm và lịch sử đóng góp bên dưới giữ theo mốc 21/10/2026. Bản 15/10 và 20/10 xem trong lịch sử Git của file này. Tài liệu đối chiếu: `final-project/Topics.md`, `Instruction.md`, `Submission.md` và `README.md`.
 
 | Người | Vai trò | Tài khoản Git |
 | --- | --- | --- |
@@ -28,30 +32,30 @@ Cập nhật: 21/10/2026, đối chiếu lại với code, test và các commit 
 | | `0267323`, `f571d91`, `e7e7316` (13–14/10) | Lưu yêu cầu đồ án, kế hoạch phân công đầu tiên, concept arena/HUD, cốt truyện Ba Mảnh Tim Lửa. |
 | | `05721b1`, `9b15950`, `301dfec` (20–21/10) | Menu chọn mode, HUD, minimap, mảnh Tim Lửa, lời dẫn từ JSON, cooldown bom, màn mở đầu bằng video/ảnh dự phòng, hình ảnh menu, bảng điểm/kết quả và cập nhật luật Hành trình. |
 | Tiên | `dc255a3`, `752d67d` (15–17/10) | Novelty selective sync (`SyncMode` baseline/optimized); sửa reconnect, token sai/hết hạn, request trùng, disconnect, dọn phòng; test `ConnectionTest`, `ServerFixesTest`; 3 tài liệu bàn giao. |
-| | `4beb0c9` + 4 commit sửa (20/10) | Chế độ Đấu nhanh và Hành trình Ba Mảnh (`GameMode`, điểm, `JOURNEY_COMPLETE`); sửa lộ vị trí trong bụi cho event nổ/Core và snapshot khôi phục; cập nhật `PROTOCOL.md`; 55 dòng Unity để client đọc protocol mới (nút chọn mode, dòng chữ chương/điểm, `lastSeq`, `visible`). Tại mốc này 45/45 test qua; hiện đã tăng lên 71 test. |
+| | `4beb0c9` + 4 commit sửa (20/10) | Chế độ Đấu nhanh và Hành trình Ba Mảnh (`GameMode`, điểm, `JOURNEY_COMPLETE`); sửa lộ vị trí trong bụi cho event nổ/Core và snapshot khôi phục; cập nhật `PROTOCOL.md`; 55 dòng Unity để client đọc protocol mới (nút chọn mode, dòng chữ chương/điểm, `lastSeq`, `visible`). Tại mốc này 45/45 test qua; đến mốc 21/10 tăng lên 71 test; bộ hiện tại xem phần đầu tài liệu. |
 | | `d5aaa69`, `806c4d9` (21/10, hỗ trợ tích hợp) | Thêm 11 SFX tự tổng hợp, `BombAudio`, âm thanh UI/gameplay, script tái tạo và sửa cảnh báo tên biến. Phần đóng góp âm thanh cần được ghi đúng theo người thực hiện/thực sự phối hợp trong PR và báo cáo. |
 | Phương | `a84e1d5`, `0199310` (15/10) | Kịch bản Hành trình Ba Mảnh (`STORY_SCRIPT.md`), cập nhật phân công 15/10, `load_test.py` đo RTT/byte/message/`processingMicros` với N client. |
 | | `c556012` → `a54d111` (19/10) | `run_benchmark.ps1`, `summarize_experiments.py`, ghi `map_id`/`sync_mode`; 18 lượt đo baseline/optimized 2/4/8 client (`experiments/`, `EXPERIMENTS.md`); sửa `network_smoke.py` cho optimized; mẫu `AUDIO_CREDITS.md`, `PLAYTEST_MAPS.md`; merge nhánh `ThuyTien` vào `lanphuong`. |
 
 Trạng thái kiểm chứng ngày 21/10: Unity đã có HUD, VFX cơ bản, lời dẫn, bảng điểm/kết quả, 11 SFX và 4 track nhạc menu/map; source Unity compile thành công với `6000.3.6f1`. Client có writer nền, inbox giới hạn/gộp snapshot, heartbeat, banner reconnect/hết hạn, trạng thái người mất kết nối và bảng F3. Server có writer queue riêng từng connection, timeout client im lặng/write treo, dừng input cũ, dọn phòng offline và **71 test** đều qua ở `baseline` và `optimized`; smoke TCP toàn tiến trình đã qua ở optimized. Benchmark cũ có 18 lượt 2/4/8 client giả lập. Chưa điền playtest ba map, chưa đo lại bằng 2–4 Unity client thật/LAN và các thay đổi trải nghiệm demo chưa nằm trên `origin/main`.
 
-## Mốc còn lại
+## Mốc bàn giao còn lại (cập nhật 23/10)
 
-- **22/10:** review/merge hai commit âm thanh vào `main`; tạo Unity build Windows; chơi trọn Đấu nhanh và Hành trình với 2 client; điền playtest 3 map.
+- **Đã có bản build 23/10:** Windows và server JAR; kiểm tra tự động qua. Còn review/commit các thay đổi hiện tại, playtest 2–4 client và điền kết quả ba map.
 - **24/10:** nghe thử/cân bằng nhạc và SFX trên build 2–4 client; chốt runbook demo và cấu hình server/map.
 - **25/10:** kiểm chứng HUD, VFX, âm thanh, lời dẫn, bảng điểm và màn kết trên build; chạy `optimized` end-to-end; deploy server thử nghiệm và đo lại trên bản cuối.
 - **28/10:** đủ các phần báo cáo; README build/run/test chạy đúng trên máy sạch; `main` chứa bản cuối.
 - **30/10:** báo cáo `.docx` hoàn chỉnh, kiểm tra Compilatio, luyện bảo vệ.
 - **31/10, 23:59:** hạn nộp chính thức theo `final-project/Submission.md`.
 
-## Phân công từ 20/10
+## Phân công bàn giao (giữ vai trò từ 20/10, cập nhật tiến độ 23/10)
 
 Nguyên tắc: Vỹ làm toàn bộ Unity. Tiên đã làm xong phần lớn server nên phần còn lại nghiêng về deploy và tài liệu. Phương tập trung playtest, âm thanh, đo lại, ghép báo cáo và đóng gói bài nộp. Không mở thêm hạng mục hoàn thiện hình ảnh map trong phạm vi còn lại.
 
 | Người | Việc | Bàn giao kiểm chứng được |
 | --- | --- | --- |
 | **Vỹ** (Unity, tích hợp) | Review và merge các thay đổi vào `main`; tạo build Windows từ commit cuối; kiểm tra 6 mục Unity trong `THANH_VIEN_A_BAN_GIAO.md`, gồm `optimized`, reconnect, hai mode, bảng điểm và màn kết. Chụp ảnh game chạy thật và sửa lỗi tích hợp phát sinh. | Bản build 2–4 client chơi từ lobby đến kết quả ở cả hai mode; ảnh chụp game chạy thật; `main` và tag phát hành chứa bản đã kiểm chứng. |
-| **Tiên** (server) | Sửa lỗi server phát sinh khi kiểm thử Unity; giữ 71 test qua ở cả hai sync mode. Writer queue, heartbeat, input expiry và dọn phòng offline đã có; phần còn lại là chuẩn bị cách chạy server deploy được (port cấu hình, JAR/Docker hoặc nền tảng tương đương), cập nhật bàn giao và hỗ trợ smoke test public/LAN. | Test sạch sau mỗi sửa; client kết nối được tới server tách riêng; tài liệu bàn giao khớp code và lệnh triển khai. |
+| **Tiên** (server) | Sửa lỗi server phát sinh khi kiểm thử Unity; giữ bộ 107 test hiện tại qua ở cả hai sync mode. Writer queue, heartbeat, input expiry và dọn phòng offline đã có; phần còn lại là chuẩn bị cách chạy server deploy được (port cấu hình, JAR/Docker hoặc nền tảng tương đương), cập nhật bàn giao và hỗ trợ smoke test public/LAN. | Test sạch sau mỗi sửa; client kết nối được tới server tách riêng; tài liệu bàn giao khớp code và lệnh triển khai. |
 | **Phương** (map, đo, âm thanh, đóng gói) | Playtest 3 map và điền kết quả thật; nghe thử/cân bằng bộ nhạc và SFX trên 2–4 client. Đo lại baseline/optimized trên commit cuối, ưu tiên thêm LAN hai máy. Ghép báo cáo `.docx`, chạy Compilatio, chuẩn bị `Source/` và `Report/`. | `PLAYTEST_MAPS.md` đã điền; âm thanh có nguồn; `EXPERIMENTS.md` khớp bản cuối; báo cáo đúng tên và có kết quả Compilatio. |
 
 Phần viết báo cáo, mỗi người viết phần mình làm:

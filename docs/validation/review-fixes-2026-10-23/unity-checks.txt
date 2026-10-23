@@ -1,27 +1,23 @@
-BOMB_CHECK_PASS Main scene bootstraps BombGame
+﻿BOMB_CHECK_PASS Main scene bootstraps BombGame
 BOMB_CHECK_PASS Server fixtures exist
 BOMB_CHECK_PASS Map plays: meadow
 BOMB_CHECK_PASS Map geometry: meadow
 BOMB_CHECK_PASS Both player states reach Unity
 BOMB_CHECK_PASS HUD chapter follows server
-BOMB_SCREENSHOT meadow
 BOMB_CHECK_PASS Result stays FINISHED
 BOMB_CHECK_PASS Leave clears local room
 BOMB_CHECK_PASS Map plays: crater
 BOMB_CHECK_PASS Map geometry: crater
 BOMB_CHECK_PASS Both player states reach Unity
 BOMB_CHECK_PASS HUD chapter follows server
-BOMB_SCREENSHOT crater
 BOMB_CHECK_PASS Result stays FINISHED
 BOMB_CHECK_PASS Leave clears local room
 BOMB_CHECK_PASS Map plays: crossroads
 BOMB_CHECK_PASS Map geometry: crossroads
 BOMB_CHECK_PASS Both player states reach Unity
 BOMB_CHECK_PASS HUD chapter follows server
-BOMB_SCREENSHOT crossroads
 BOMB_CHECK_PASS Result stays FINISHED
 BOMB_CHECK_PASS Leave clears local room
-BOMB_MATERIALS cycle=0 count=11 Bomb runtime: transparent#-11706, Bomb runtime: transparent#-11702, Bomb runtime: transparent#-11690, Bomb runtime: opaque#-11652, Bomb runtime: opaque#-11638, Bomb runtime: opaque#-11626, Bomb runtime: opaque#-11614, Bomb runtime: opaque#-11602, Bomb runtime: opaque#-11590, Bomb runtime: ground#-8340, Bomb runtime: ground#-8338
 BOMB_CHECK_PASS Map plays: meadow
 BOMB_CHECK_PASS Map geometry: meadow
 BOMB_CHECK_PASS Both player states reach Unity
@@ -40,7 +36,6 @@ BOMB_CHECK_PASS Both player states reach Unity
 BOMB_CHECK_PASS HUD chapter follows server
 BOMB_CHECK_PASS Result stays FINISHED
 BOMB_CHECK_PASS Leave clears local room
-BOMB_MATERIALS cycle=1 count=11 Bomb runtime: transparent#-21720, Bomb runtime: transparent#-21716, Bomb runtime: transparent#-21704, Bomb runtime: opaque#-21666, Bomb runtime: opaque#-21652, Bomb runtime: opaque#-21640, Bomb runtime: opaque#-21628, Bomb runtime: opaque#-21616, Bomb runtime: opaque#-21604, Bomb runtime: ground#-18420, Bomb runtime: ground#-18418
 BOMB_CHECK_PASS Runtime materials stable after three maps: 11
 BOMB_CHECK_PASS Map plays: meadow
 BOMB_CHECK_PASS Map geometry: meadow
@@ -60,17 +55,28 @@ BOMB_CHECK_PASS Both player states reach Unity
 BOMB_CHECK_PASS HUD chapter follows server
 BOMB_CHECK_PASS Result stays FINISHED
 BOMB_CHECK_PASS Leave clears local room
-BOMB_MATERIALS cycle=2 count=11 Bomb runtime: transparent#-31722, Bomb runtime: transparent#-31718, Bomb runtime: transparent#-31706, Bomb runtime: opaque#-31668, Bomb runtime: opaque#-31654, Bomb runtime: opaque#-31642, Bomb runtime: opaque#-31630, Bomb runtime: opaque#-31618, Bomb runtime: opaque#-31606, Bomb runtime: ground#-28422, Bomb runtime: ground#-28420
-BOMB_CHECK_PASS Runtime materials stable after three maps: 11
+BOMB_CHECK_PASS Runtime materials stable after three maps: 2
 BOMB_CHECK_PASS Audio imports: music_menu
 BOMB_CHECK_PASS Audio imports: music_meadow
 BOMB_CHECK_PASS Audio imports: music_crossroads
 BOMB_CHECK_PASS Audio imports: music_crater
 BOMB_CHECK_PASS Audio imports: mix_energy
 BOMB_CHECK_PASS Audio imports: mix_shield_hit
-BOMB_CHECK_PASS Audio imports: mix_boost_body
+BOMB_CHECK_PASS Audio imports: mix_shield
+BOMB_CHECK_PASS Audio imports: mix_boost
+BOMB_CHECK_PASS Audio imports: mix_explosion_1
+BOMB_CHECK_PASS Audio imports: mix_explosion_2
+BOMB_CHECK_PASS Audio imports: mix_explosion_3
+BOMB_CHECK_PASS Dead client keeps heartbeat
+BOMB_CHECK_PASS Dead Update sends no gameplay input
+BOMB_CHECK_PASS Death clears local charge
+BOMB_CHECK_PASS Camera and listener select server spectator target
+BOMB_CHECK_PASS Quick HUD receives server countdown
+BOMB_CHECK_PASS Spectator advances after followed player dies
+BOMB_CHECK_PASS Missing local state sends no gameplay input
+BOMB_CHECK_PASS Early Journey result cannot offer impossible next chapter
 BOMB_CHECK_PASS TCP create -> join -> ready -> live snapshot in Unity
 BOMB_CHECK_PASS TCP opponent leave restores correct winning popup
 BOMB_CHECK_PASS Unity ignores stale playing snapshot after result
 BOMB_CHECK_PASS TCP leave returns Unity to menu
-BOMB_VALIDATION_PASS checks=69
+BOMB_VALIDATION_PASS checks=81

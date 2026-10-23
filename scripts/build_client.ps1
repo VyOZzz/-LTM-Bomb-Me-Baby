@@ -10,10 +10,8 @@ $log = Join-Path $repoRoot 'builds/unity-build.log'
 New-Item -ItemType Directory -Force -Path (Split-Path $log -Parent) | Out-Null
 if ($Isolated) {
     $copy = Join-Path $repoRoot 'builds/unity-validation'
-    foreach ($folder in @('Assets', 'Packages', 'ProjectSettings')) {
-        & robocopy (Join-Path $project $folder) (Join-Path $copy $folder) /E /R:0 /W:0 /NFL /NDL /NJH /NJS /NP | Out-Null
-        if ($LASTEXITCODE -ge 8) { throw "Failed to copy $folder" }
-    }
+    & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'sync_unity_project.ps1') -SourceProject $project -Destination $copy
+    if ($LASTEXITCODE -ne 0) { throw 'Unity staging failed' }
     $project = $copy
 }
 $arguments = @('-batchmode', '-nographics', '-quit', '-projectPath', ('"' + $project + '"'), '-buildTarget', 'Win64',

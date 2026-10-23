@@ -33,7 +33,7 @@ class ShardStealMechanicsTest {
         park(placed.a, 20, 0);
         park(placed.b, 1, 0);
         placed.room.update(active, 0);
-        placed.room.update(active + 1_500, 0);
+        advance(placed.room, active, active + 1_500);
         double before = progress(placed.shard, placed.b, active + 1_500);
         park(placed.c, 4.5, 0);
         placed.b.shieldUntil = active + 1_601;
@@ -90,7 +90,7 @@ class ShardStealMechanicsTest {
         park(f.c, 0, 2);
         long active = f.time + ShardObjective.PEDESTAL_PROTECTION_MS;
         f.room.update(active, 0);
-        f.room.update(active + 2_000, 0);
+        advance(f.room, active, active + 2_000);
 
         assertEquals(1.0 / 3.0, progress(f.shard, f.b, active + 2_000), .02);
         assertEquals(1.0 / 3.0, progress(f.shard, f.c, active + 2_000), .02);
@@ -104,7 +104,7 @@ class ShardStealMechanicsTest {
         park(f.c, -2, 0);
         long active = f.time + ShardObjective.PEDESTAL_PROTECTION_MS;
         f.room.update(active, 0);
-        f.room.update(active + 1_200, 0);
+        advance(f.room, active, active + 1_200);
         double otherProgress = progress(f.shard, f.c, active + 1_200);
 
         // Use the owner as a source outside the ring so C remains an independent breaker.
@@ -154,7 +154,7 @@ class ShardStealMechanicsTest {
         long active = f.time + ShardObjective.PEDESTAL_PROTECTION_MS;
         f.room.update(active, 0);
         long broken = active + ShardObjective.SEAL_BREAK_MS;
-        f.room.update(broken, 0);
+        advance(f.room, active, broken);
 
         assertEquals(ShardObjective.State.GROUND, f.shard.state);
         assertSame(f.b, f.shard.pickupPriority);
@@ -180,7 +180,7 @@ class ShardStealMechanicsTest {
         long active = f.time + ShardObjective.PEDESTAL_PROTECTION_MS;
         f.room.update(active, 0);
         long broken = active + ShardObjective.SEAL_BREAK_MS;
-        f.room.update(broken, 0);
+        advance(f.room, active, broken);
         f.b.connected = false;
         f.b.disconnectedAt = broken;
         park(f.c, f.shard.x, f.shard.z);
@@ -261,6 +261,10 @@ class ShardStealMechanicsTest {
         source.charging = true;
         source.chargeSince = explodeAt - GameRules.MAX_CHARGE_MS;
         source.chargeReadyAt = 0;
+    }
+
+    private static void advance(GameRoom room, long from, long to) {
+        for (long now = from + 50; now <= to; now += 50) room.update(now, .05);
     }
 
     @SuppressWarnings("unchecked")

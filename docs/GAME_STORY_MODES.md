@@ -1,6 +1,6 @@
-# Đề xuất cốt truyện và chế độ chơi — Bomb Me Baby
+# Cốt truyện và chế độ chơi — Bomb Me Baby
 
-Trạng thái: cập nhật 21/10/2026. **Hành trình Ba Mảnh đã được triển khai ở Java server, JSON protocol và Unity**, gồm objective, ba chương, điểm, lời dẫn, phim/ảnh mở đầu, HUD/VFX và SFX. Nhạc riêng theo chương và kiểm thử end-to-end 2–4 Windows client trên build cuối vẫn chưa hoàn tất. Đội 2v2 vẫn chỉ là đề xuất.
+Trạng thái: cập nhật 23/10/2026. **Hành trình Ba Mảnh đã được triển khai ở Java server, JSON protocol và Unity**, gồm objective, ba chương, điểm, lời dẫn, phim/ảnh mở đầu, HUD/VFX và SFX. Nhạc menu và ba map đã có; Windows build và kiểm thử tự động đã qua. Playtest 2–4 Windows client trên build cuối vẫn chưa hoàn tất. Đội 2v2 vẫn chỉ là đề xuất.
 
 ## Ý tưởng chính
 
@@ -30,21 +30,24 @@ Giọng điệu: vui, cạnh tranh, hơi bí ẩn; nhân vật bị **loại kh�
 
 ## Chế độ chơi
 
-### 1. Đấu nhanh — ưu tiên hoàn thiện trước 20/10
+### 1. Đấu nhanh — đã triển khai
 
 - 2–4 người chơi thật cho demo; server hiện cho phép tối đa 10.
-- Một trận PvP tự do trên một map; người sống cuối cùng thắng.
+- Một trận PvP tự do trên một map, tối đa 180 giây; người sống cuối cùng thắng sớm, hết giờ còn nhiều người thì hòa.
 - Dùng luật và luồng phòng hiện tại: tạo/vào phòng → Ready → trận → kết quả.
-- HUD, lời dẫn, nhạc/SFX, VFX và banner reconnect đã có; cần build Windows và kiểm thử end-to-end 2–4 client thật.
+- HUD, lời dẫn, nhạc/SFX, VFX và banner reconnect đã có; đã build Windows; còn playtest end-to-end 2–4 client thật.
 
-### 2. Hành trình Ba Mảnh — đã có logic server và UI cơ bản
+### 2. Hành trình Ba Mảnh — đã triển khai
 
-- 2–4 người trong cùng phòng chơi **ba vòng theo thứ tự** `meadow → crossroads → crater`.
+- Demo 2–4 người, phòng hỗ trợ 2–10 người, cùng chơi **ba vòng theo thứ tự** `meadow → crossroads → crater`.
 - Sau mỗi vòng, người bị loại trở lại ở vòng sau. Sau ba chương, **nhiều mảnh nhất thắng**; hòa thì xét số lần hạ đối thủ, rồi người thắng chương cuối trong nhóm đang hòa. Nếu vẫn bằng nhau, công bố đồng chiến thắng. Điểm (+3 khi thắng chương, +1 khi hạ đối thủ) chỉ là thống kê, không quyết định xếp hạng.
 - Giữa các vòng: màn kể chuyện ngắn, bảng điểm và nút Ready. Vòng mới đặt lại HP/Size/cooldown như hiện tại; **điểm hành trình** được giữ trên server.
 - Server chọn map, tính điểm và phát kết quả; client chỉ hiển thị. `mode`, `chapterIndex`, `scores` đã có trong trạng thái và `JOURNEY_COMPLETE` kết thúc hành trình. Xem `docs/PROTOCOL.md`.
 
-### 3. Đội 2v2 — chỉ làm sau hai chế độ trên
+- Nếu còn dưới hai người tham gia sau giữ chỗ reconnect 10 giây, Hành trình kết thúc sớm theo thành tích đã đạt, không cộng mảnh của chương chưa chơi. Không nhận người mới sau khi Hành trình bắt đầu.
+- Sau khi bị loại, camera/audio tự theo người sống; optimized giữ phạm vi nhìn và luật bụi của mục tiêu quan sát.
+
+### 3. Đội 2v2 — ý tưởng ngoài phạm vi hiện tại
 
 - Hai đội tranh tài trên một map; đội còn người sống cuối cùng thắng.
 - Cần thêm team assignment, luật tránh gây sát thương đồng đội, trạng thái đội và test. Đây là tính năng mới đáng kể, không đưa vào demo nếu chưa kiểm chứng trọn vẹn.
@@ -57,6 +60,6 @@ Nếu muốn danh sách online toàn hệ thống, bổ sung `ONLINE_LIST` khi v
 
 ## Ranh giới kỹ thuật và lịch
 
-- Đến **20/10:** hoàn thiện Đấu nhanh, chọn map/hiển thị chuyện mở đầu đơn giản, có ít nhất một trận 2–4 Unity client chạy thật.
+- Mốc thiết kế ban đầu 20/10 đã qua. Tiến độ hiện tại và kiểm chứng theo [FINAL_VALIDATION.md](FINAL_VALIDATION.md); không coi mốc kế hoạch là kết quả playtest.
 - Hành trình đã có thứ tự map, điểm server, event/UI cơ bản và test nhiều vòng. Việc tiếp theo là playtest 2–4 Unity client, hoàn thiện lời dẫn/VFX và sửa lỗi tích hợp nếu có.
 - Cốt truyện, art và chế độ chơi giúp phần chức năng/demo. Phần **Novelty / Contributions** của môn Lập trình mạng vẫn cần cải tiến kỹ thuật riêng và số liệu thực nghiệm, như kế hoạch trong `docs/TEAM_PLAN.md`.

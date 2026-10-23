@@ -13,6 +13,7 @@ final class GameRoom {
     private static final List<String> JOURNEY_MAPS = List.of("meadow", "crossroads", "crater");
     private static final int ROUND_WIN_POINTS = 3;
     private static final int ELIMINATION_POINTS = 1;
+    static final long QUICK_ROUND_MS = 180_000;
 
     static final class ScoreState {
         final String playerId;
@@ -53,6 +54,8 @@ final class GameRoom {
     String finalRoundWinnerId = "";
     String roundWinnerId = "";
     String roundEndReason = "";
+    String journeyEndReason = "";
+    private long roundStartedAt;
     int roundIndex;
     private int nextPickupId = 1;
     private long lastOrbAt;
@@ -92,6 +95,7 @@ final class GameRoom {
         player.room = null;
         player.ready = false;
         checkGameOver();
+        completeJourneyIfShort(System.currentTimeMillis());
         broadcast(data("type", "ROOM_STATE", "room", roomInfo()));
     }
 
@@ -121,6 +125,7 @@ final class GameRoom {
         List<double[]> spawns = randomSpawns(players.size());
         hasStarted = true;
         phase = Phase.PLAYING;
+        roundStartedAt = now;
         roundIndex++;
         roundWinnerId = "";
         roundEndReason = "";
@@ -217,7 +222,12 @@ final class GameRoom {
             }
         }
         checkGameOver();
+        completeJourneyIfShort(now);
         if (phase != Phase.PLAYING) return;
+        if (mode == GameMode.QUICK && now - roundStartedAt >= QUICK_ROUND_MS) {
+            finishRound(null, "TIME");
+            return;
+        }
         for (PlayerState p : players) {
             if (!p.alive) continue;
             if (p.connected) {
@@ -310,15 +320,7 @@ final class GameRoom {
                 target.hp = Math.max(0, target.hp - damage);
                 double actualDamage = hpBefore - target.hp;
                 broadcast(data("type","PLAYER_DAMAGED","playerId",target.id,"by",source.id,"amount",damage));
-                if (target.hp > 0 && objective != null) {
-                    double[] shardDrop = safeShardDrop(target, source.x, source.z);
-                    boolean resetSeal = objective.onDamaged(target, charge, actualDamage, now,
-                        shardDrop[0], shardDrop[1]);
-                    if (resetSeal && now >= target.staggerImmuneUntil) {
-                        target.staggerUntil = now + GameRules.SEAL_STAGGER_MS;
-                        target.staggerImmuneUntil = now + GameRules.SEAL_STAGGER_IMMUNITY_MS;
-                    }
-                }
+                applyDamageConsequences(target, source, charge, actualDamage, now);
                 if (target.hp <= 0) {
                     source.kills++;
                     awardElimination(source);
@@ -326,7 +328,10 @@ final class GameRoom {
                 }
             }
         }
+        double sourceHpBefore = source.hp;
         source.hp = Math.max(0, source.hp - damageDone);
+        if (lastReflector != null)
+            applyDamageConsequences(source, lastReflector, charge, sourceHpBefore - source.hp, now);
         dropExplosionEnergy(source, sizeBeforeExplosion);
         source.size = source.baseSize;
         broadcastExplosion(source, radius);
@@ -338,6 +343,17 @@ final class GameRoom {
             eliminate(source, "reflection", now);
         }
         checkGameOver();
+    }
+
+    private void applyDamageConsequences(PlayerState target, PlayerState source,
+                                         double charge, double actualDamage, long now) {
+        if (target.hp <= 0 || actualDamage <= 0 || objective == null) return;
+        double[] drop = safeShardDrop(target, source.x, source.z);
+        if (objective.onDamaged(target, charge, actualDamage, now, drop[0], drop[1])
+                && now >= target.staggerImmuneUntil) {
+            target.staggerUntil = now + GameRules.SEAL_STAGGER_MS;
+            target.staggerImmuneUntil = now + GameRules.SEAL_STAGGER_IMMUNITY_MS;
+        }
     }
 
     /** Turn the temporary Size spent by an explosion back into visible Energy fragments. */
@@ -473,8 +489,9 @@ final class GameRoom {
 
     private void broadcastCoreSpawn(Pickup core) {
         for (PlayerState viewer : players) {
+            PlayerState perspective = perspective(viewer);
             if (syncMode == SyncMode.OPTIMIZED
-                    && GameRules.distance(viewer.x,viewer.z,core.x,core.z) > SyncMode.PICKUP_VISIBILITY) continue;
+                    && GameRules.distance(perspective.x,perspective.z,core.x,core.z) > SyncMode.PICKUP_VISIBILITY) continue;
             viewer.send(data("type","CORE_SPAWNED","pickupId",core.id,"x",core.x,"z",core.z));
         }
     }
@@ -501,9 +518,24 @@ final class GameRoom {
         if (mode == GameMode.JOURNEY && chapterIndex == JOURNEY_MAPS.size() - 1) {
             finalRoundWinnerId = roundWinnerId;
             journeyComplete = true;
+            journeyEndReason = "COMPLETED";
             journeyWinnerIds = selectJourneyWinners();
             broadcast(journeyCompleteEvent());
         }
+        broadcast(data("type","ROOM_STATE","room",roomInfo()));
+    }
+
+    /** Keep reconnect reservations, but never leave an unfillable Journey at ready 1/1. */
+    private void completeJourneyIfShort(long now) {
+        if (mode != GameMode.JOURNEY || !hasStarted || journeyComplete) return;
+        long participants = players.stream()
+            .filter(p -> p.connected || now - p.disconnectedAt < GameRules.RECONNECT_MS).count();
+        if (participants >= GameRules.MIN_PLAYERS) return;
+        if (phase == Phase.PLAYING) return; // checkGameOver resolves the current chapter first.
+        journeyComplete = true;
+        journeyEndReason = "INSUFFICIENT_PLAYERS";
+        journeyWinnerIds = selectJourneyWinners();
+        broadcast(journeyCompleteEvent());
         broadcast(data("type","ROOM_STATE","room",roomInfo()));
     }
 
@@ -532,7 +564,7 @@ final class GameRoom {
         String winnerId = journeyWinnerIds.size() == 1 ? journeyWinnerIds.get(0) : "";
         return data("type","JOURNEY_COMPLETE","room",code,"mode",mode.name(),
             "chapterIndex",protocolChapterIndex(),"winnerId",winnerId,
-            "winnerIds",journeyWinnerIds,"scores",scores());
+            "winnerIds",journeyWinnerIds,"scores",scores(),"reason",journeyEndReason);
     }
 
     private void spawnOrb() {
@@ -642,7 +674,7 @@ final class GameRoom {
             "arenaSize",map.halfSize,"minPlayers",GameRules.MIN_PLAYERS,"maxPlayers",GameRules.MAX_PLAYERS,
             "mode",mode.name(),"chapterIndex",protocolChapterIndex(),"scores",scores(),
             "roundIndex",roundIndex,"roundWinnerId",roundWinnerId,"roundEndReason",roundEndReason,
-            "winnerIds",journeyWinnerIds,"journeyComplete",journeyComplete,"players",players.stream().map(p -> data(
+            "winnerIds",journeyWinnerIds,"journeyComplete",journeyComplete,"journeyEndReason",journeyEndReason,"players",players.stream().map(p -> data(
             "id",p.id,"name",p.name,"ready",p.ready,"connected",p.connected,
             "reconnectRemaining",p.connected ? 0 : Math.max(0,p.disconnectedAt + GameRules.RECONNECT_MS - System.currentTimeMillis()) / 1000.0)).toList());
     }
@@ -671,6 +703,7 @@ final class GameRoom {
     synchronized Map<String,Object> snapshot(long now, PlayerState viewer,
                                              boolean includeStaticGeometry, boolean forceBaselineData) {
         boolean optimized = !forceBaselineData && syncMode == SyncMode.OPTIMIZED;
+        PlayerState perspective = perspective(viewer);
 
         // ---- player states ----
         List<Map<String,Object>> states = new ArrayList<>();
@@ -699,15 +732,17 @@ final class GameRoom {
         List<?> visibleCores = List.copyOf(cores);
         if (optimized && viewer != null) {
             visibleOrbs = orbs.stream()
-                .filter(o -> GameRules.distance(viewer.x,viewer.z,o.x,o.z) <= SyncMode.PICKUP_VISIBILITY)
+                .filter(o -> GameRules.distance(perspective.x,perspective.z,o.x,o.z) <= SyncMode.PICKUP_VISIBILITY)
                 .toList();
             visibleCores = cores.stream()
-                .filter(c -> GameRules.distance(viewer.x,viewer.z,c.x,c.z) <= SyncMode.PICKUP_VISIBILITY)
+                .filter(c -> GameRules.distance(perspective.x,perspective.z,c.x,c.z) <= SyncMode.PICKUP_VISIBILITY)
                 .toList();
         }
 
         Map<String,Object> snap = data("type","STATE_UPDATE","tick",tick,"phase",phase.name(),
             "roomCode",code,"roundIndex",roundIndex,
+            "spectatorTargetId",viewer != null && !viewer.alive && perspective != viewer ? perspective.id : "",
+            "roundTimeLeft",mode == GameMode.QUICK ? Math.max(0, Math.min(QUICK_ROUND_MS, QUICK_ROUND_MS - (now - roundStartedAt))) / 1000.0 : 0,
             "mapId",map.id,"mapName",map.name,"arenaSize",map.halfSize,
             "mode",mode.name(),"chapterIndex",protocolChapterIndex(),"scores",scores(),
             "players",states,"orbs",visibleOrbs,"cores",visibleCores);
@@ -725,11 +760,20 @@ final class GameRoom {
 
     synchronized boolean canSee(PlayerState viewer, PlayerState target) {
         if (viewer == null || viewer == target) return true;
+        viewer = perspective(viewer);
+        if (viewer == target) return true;
         if (objective != null && phase == Phase.PLAYING && objective.reveals(target)) return true;
         if (GameRules.distance(viewer.x,viewer.z,target.x,target.z) > GameRules.PLAYER_VISIBILITY_DISTANCE)
             return false;
         int targetBush = bushAt(target.x, target.z);
         return targetBush < 0 || bushAt(viewer.x, viewer.z) == targetBush;
+    }
+
+    /** Spectators share a living player's viewpoint, including bush and pickup culling. */
+    private PlayerState perspective(PlayerState viewer) {
+        if (viewer == null || viewer.alive) return viewer;
+        return players.stream().filter(p -> p.alive && p.connected).findFirst()
+            .orElseGet(() -> players.stream().filter(p -> p.alive).findFirst().orElse(viewer));
     }
 
     synchronized boolean keepsDisconnectedSession() {

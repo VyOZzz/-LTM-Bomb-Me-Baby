@@ -1,6 +1,6 @@
 # Thành viên A — Học và hiểu phần Java server từ đầu
 
-Cập nhật ngày 15/10/2026. Đọc cùng [README](../README.md), [bàn giao cho T và B](THANH_VIEN_A_BAN_GIAO.md) và [kết quả kiểm thử](THANH_VIEN_A_KIEM_THU.md).
+Cập nhật ngày 23/10/2026. Đọc cùng [README](../README.md), [bàn giao cho T và B](THANH_VIEN_A_BAN_GIAO.md), [kiểm chứng hiện tại](FINAL_VALIDATION.md) và [mốc kiểm thử 21/10](THANH_VIEN_A_KIEM_THU.md).
 
 Tài liệu này giải thích code thực tế trong thư mục `server/`. Nó thay thế bản hướng dẫn cũ có một số mô tả chưa đúng với code. Không cần hiểu toàn bộ Java trước khi đọc; hãy đi lần lượt từ mục 1 đến mục 6, chạy test, rồi đọc sâu phần khóa và đồng bộ.
 
@@ -84,7 +84,7 @@ sequenceDiagram
     end
     R-->>U: STATE_UPDATE mỗi 2 tick (~100 ms)
     R-->>U: GAME_OVER khi đủ điều kiện
-    alt Phòng JOURNEY và vừa xong chương 3
+    alt Phòng JOURNEY xong chương 3 hoặc kết thúc sớm do thiếu người
         R-->>U: JOURNEY_COMPLETE + scores + winnerIds
     end
 ```
@@ -98,7 +98,7 @@ Luồng ví dụ:
 5. Khi mọi người đã sẵn sàng và còn kết nối, `ready()` gọi `start()`.
 6. `MOVE` chỉ đặt hướng `dx`, `dz`. `update()` mới dùng thời gian `dt` và tốc độ để tính vị trí, kiểm tra vật cản.
 7. `snapshot()` tạo dữ liệu gửi cho từng người. Unity nhận và nội suy hình ảnh cho mượt.
-8. Người cuối cùng còn sống thắng. Phòng một người là chế độ thử, không tự kết thúc ngay chỉ vì có một người sống.
+8. Người cuối cùng còn sống thắng sớm. Phòng một người không thể bắt đầu. Đấu nhanh hòa sau 180 giây nếu còn nhiều người; Hành trình xét chủ bệ/người cầm mảnh khi hết 180 giây.
 
 Ba giai đoạn phòng là `WAITING` (chờ), `PLAYING` (đang chơi), `FINISHED` (đã kết thúc vòng). Với Đấu nhanh, sẵn sàng lại bắt đầu vòng ngẫu nhiên mới. Với Hành trình, sẵn sàng lại sau chương 1/2 chuyển sang chương kế tiếp; sau chương 3 server không cho bắt đầu vòng thứ tư.
 
@@ -114,18 +114,18 @@ Client tạo phòng bằng `CREATE_ROOM` với `mode="JOURNEY"`. Nếu bỏ tr�
 | 1 | `crossroads` | Mảnh Đường |
 | 2 | `crater` | Mảnh Nhiệt |
 
-Mỗi lần loại trực tiếp một đối thủ bằng vụ nổ hoặc phản khiên được 1 điểm. Người sống cuối cùng của vòng nhận thêm 3 điểm và một `roundWins`. Khi vòng kết thúc, server gửi `GAME_OVER` kèm bảng `scores`. Người chơi READY lại để sang chương kế tiếp; `start()` reset HP, Size, cooldown và số kill của vòng nhưng không xóa điểm hành trình.
+Mỗi lần loại trực tiếp một đối thủ bằng vụ nổ hoặc phản khiên được 1 điểm. Người thắng chương (sống sót cuối cùng hoặc giữ mảnh khi hết giờ) nhận thêm 3 điểm và một `roundWins`. Khi vòng kết thúc, server gửi `GAME_OVER` kèm bảng `scores`. Người chơi READY lại để sang chương kế tiếp; `start()` reset HP, Size, cooldown và số kill của vòng nhưng không xóa điểm hành trình.
 
 Sau chương 3, `selectJourneyWinners()` xếp theo thứ tự:
 
-1. Tổng `points` cao nhất.
-2. Nếu hòa, `roundWins` cao nhất.
+1. Số mảnh `roundWins` cao nhất.
+2. Nếu hòa, số lần hạ `eliminations` cao nhất. `points` chỉ để thống kê.
 3. Nếu vẫn hòa, người thắng vòng cuối được ưu tiên khi nằm trong nhóm hòa.
 4. Nếu vẫn không tách được, trả nhiều id trong `winnerIds`; `winnerId` để rỗng.
 
 Server phát `JOURNEY_COMPLETE` gồm `mode`, `chapterIndex`, `scores`, `winnerId` và `winnerIds`. `mode`, `chapterIndex`, `scores` cũng có trong `ROOM_STATE`, `GAME_START` và `STATE_UPDATE`, nên reconnect vẫn lấy được tiến độ hiện tại.
 
-Điểm được giữ trong `journeyScores`, không nằm trong Unity. Người vào phòng bị chặn sau khi hành trình đã bắt đầu để không chen vào giữa chương. Người mất mạng giữa hai chương vẫn có 10 giây reconnect; hết hạn bị rời danh sách. Điểm đã ghi vẫn nằm trong kết quả hành trình, nhưng phòng cần người còn kết nối READY để đi tiếp.
+Điểm được giữ trong `journeyScores`, không nằm trong Unity. Người vào phòng bị chặn sau khi hành trình đã bắt đầu để không chen vào giữa chương. Người mất mạng giữa hai chương vẫn có 10 giây reconnect; hết hạn bị rời danh sách. Điểm đã ghi vẫn nằm trong kết quả hành trình. Còn dưới hai người tham gia sau giữ chỗ thì kết thúc sớm với `INSUFFICIENT_PLAYERS`, không mời READY; nếu đủ người thì READY để đi tiếp.
 
 ## 5. Vì sao client không tự quyết định nhặt Core?
 
@@ -191,7 +191,7 @@ Socket cũ mất đi không có nghĩa session phải mất ngay. `sessions` lư
 
 Nếu session đã ngắt và chưa hết thời hạn 10 giây, server gắn socket mới vào cùng `PlayerState`: giữ id, phòng, HP và sequence. Server không hồi sinh người đã bị loại chỉ vì họ reconnect.
 
-Thời hạn tính từ lúc **server phát hiện ngắt kết nối** và ghi `disconnectedAt`, không nhất thiết từ lúc Wi-Fi thực sự mất. Chưa có heartbeat timeout để phát hiện mọi trường hợp TCP bị treo im lặng.
+Thời hạn tính từ lúc **server phát hiện ngắt kết nối** và ghi `disconnectedAt`, không nhất thiết từ lúc Wi-Fi thực sự mất. Server đóng kết nối không nhận message trong 6 giây hoặc write treo 3 giây; client phát hiện server im lặng sau 7 giây. MOVE cũ hết hiệu lực sau 0,5 giây, còn PING duy trì kết nối khi đứng yên/quan sát.
 
 ### 7.2. Lỗi còn sót trong bản đầu vào
 
@@ -202,7 +202,7 @@ Bản cũ đã khóa lúc nhận token, nhưng disconnect làm hai bước tách
 `withSessionState()` lấy khóa theo một thứ tự:
 
 ```text
-khóa PlayerState → khóa GameRoom (nếu có) → khóa ghi Connection (khi gửi)
+khóa PlayerState → khóa GameRoom (nếu có) → khóa hàng đợi gửi Connection
 ```
 
 `disconnect()` và `resume()` cùng đi qua vùng khóa này. Disconnect chỉ tác động nếu nó vẫn sở hữu session:
@@ -213,9 +213,9 @@ if (player.connection != this) return;
 
 `this` ở đây là đối tượng Connection đang chạy. Nếu session đã có Connection mới, dọn dẹp muộn của Connection cũ không được thay đổi nó.
 
-Ở lobby hoặc phòng đã kết thúc, disconnect rời phòng; phòng rỗng được bỏ khỏi danh sách server. Trong trận, người chơi ở lại chờ reconnect, hướng đi về 0 và đối thủ nhận `PLAYER_DISCONNECTED`.
+Ở lobby chưa bắt đầu, disconnect rời phòng. Phòng đã bắt đầu giữ chỗ 10 giây cả khi PLAYING/FINISHED hoặc Hành trình hoàn tất; hết hạn được dọn, phòng rỗng bị xóa. Khi mất kết nối, hướng đi/nạp về trạng thái dừng và phòng nhận PLAYER_DISCONNECTED.
 
-Khi resume, khóa phòng được giữ đến lúc gửi xong `WELCOME`, `ROOM_STATE` và snapshot khôi phục. Nhờ vậy game loop không gửi snapshot định kỳ trước `WELCOME`. Hai socket tranh cùng token chỉ có một socket thành công.
+Khi resume, khóa phòng được giữ đến lúc xếp `WELCOME`, `ROOM_STATE` và snapshot khôi phục vào hàng đợi; writer thực hiện socket I/O ngoài khóa phòng. Nhờ vậy game loop không gửi snapshot định kỳ trước `WELCOME`. Hai socket tranh cùng token chỉ có một socket thành công.
 
 Token không tồn tại cũng trả `RESUME_FAILED`, thay vì âm thầm tạo người chơi mới dù client đang yêu cầu khôi phục người cũ. Muốn bắt đầu session mới, client gửi HELLO không có token.
 
@@ -233,7 +233,7 @@ Snapshot khôi phục gọi `snapshot(..., includeStaticGeometry=true)`: có l�
 
 ## 8. Hiểu đa luồng và khóa trong code
 
-Server dùng `Executors.newFixedThreadPool(64)` để xử lý Connection; không phải `newCachedThreadPool`. Mỗi Connection đang chạy chiếm một worker đọc socket. Các connection vượt số worker có thể phải chờ trong hàng đợi; đây không phải thiết kế hỗ trợ vô hạn người chơi.
+Server dùng `Executors.newFixedThreadPool(64)` để xử lý Connection; không phải `newCachedThreadPool`. Mỗi Connection đang chạy chiếm một worker đọc socket. Server từ chối connection mới khi đủ 64 kết nối; mỗi connection còn có writer riêng. Đây không phải thiết kế hỗ trợ vô hạn người chơi.
 
 Game loop có một luồng định thời riêng, lần lượt cập nhật các phòng. Trong cùng phòng, `join`, `leave`, `ready`, `action`, `update`, `snapshot` và `roomInfo` dùng `synchronized`.
 
@@ -247,7 +247,7 @@ Tương đương lấy khóa `this`, mà `this` ở đây là phòng hiện tạ
 
 Để tránh deadlock, không thêm đoạn lấy khóa player bên trong phương thức GameRoom đang giữ khóa room. Việc đảo thứ tự room → player sẽ xung đột với player → room của vòng đời kết nối.
 
-Giới hạn hiện tại: ghi socket vẫn đồng bộ, có thể diễn ra trong khi giữ khóa phòng/session. Client đọc chậm có thể làm chậm phòng và game loop. Test hiện chưa chứng minh chịu được client chậm hoặc tải lớn; hàng đợi gửi riêng là hướng cải tiến sau này.
+Mỗi connection có writer nền và hàng đợi tối đa 128 message; chỉ gộp snapshot liền nhau, giữ thứ tự event. Socket I/O không chạy dưới khóa phòng/session. Queue đầy hoặc write treo dẫn đến đóng connection đó. Cơ chế này có test, nhưng chưa thay cho đo tải/mạng LAN kém bằng nhiều Unity client.
 
 ## 9. Cải tiến đồng bộ: nói đúng tên, đo đúng thứ
 
@@ -286,10 +286,10 @@ Trong optimized, `PLAYER_EXPLODE` được tạo riêng cho từng viewer: ngư�
 | Kết thúc trận | Loại người hết hạn | Loại toàn bộ người hết hạn trước khi chọn thắng/thua |
 | Core | Người gần nhất, khóa room | Test cạnh tranh và các điều kiện nhận Core |
 | Đồng bộ | BASELINE/OPTIMIZED và culling | Chọn mode tường minh cho test; snapshot không dùng chung danh sách pickup có thể thay đổi |
-| Spawn | Chọn vị trí bằng greedy farthest-point | Thử lại tối đa 32 điểm bắt đầu nếu bố trí bị kẹt; giữ khoảng cách tối thiểu 28 |
+| Spawn | Chọn vị trí bằng greedy farthest-point | Thử lại tối đa 96 điểm bắt đầu nếu bố trí bị kẹt; giữ khoảng cách tối thiểu 28 |
 | Hành trình | Chưa có | QUICK/JOURNEY, ba map cố định, điểm loại/thắng vòng, tie-break và `JOURNEY_COMPLETE` |
 | Unity protocol/UI | Chưa nhận mode/điểm; chưa dựng map từ GAME_START | DTO mới, nút tạo hai mode, bảng điểm, event cuối và cache geometry từ GAME_START |
-| Test | 27 test; vài test chỉ tự lặp điều kiện | 68 test, gồm 17 test TCP thật, cấu hình map demo và các suite objective/tranh mảnh; kiểm tra sync mode và game mode |
+| Test | 27 test; vài test chỉ tự lặp điều kiện | 107 test ở bộ hiện tại, gồm 30 test Connection, luật trận/objective, bot và hồi quy; xem FINAL_VALIDATION.md |
 | Hướng dẫn | Có mô tả chưa khớp code | Viết lại theo code, thêm cách học, lệnh chạy, bằng chứng và giới hạn |
 
 Lỗi spawn xuất hiện khi chạy test: `Cannot separate 10 spawns on map meadow`. Một lựa chọn đầu tiên không tốt có thể làm thuật toán tham lam không xếp đủ người dù map còn cách bố trí hợp lệ. Thử lại giúp xử lý trường hợp đó mà không hạ khoảng cách; test kiểm tra 20 seed × 3 map. Đây là kiểm tra hữu hạn, không phải chứng minh toán học cho mọi seed.
@@ -307,7 +307,7 @@ mvn clean test
 
 `mvn` là Maven, công cụ tải thư viện, biên dịch và chạy test. Dự án biên dịch với Java release 17; máy kiểm tra dùng JDK 21.0.10 và Maven 3.9.16. Lần đầu Maven có thể cần mạng để tải thư viện.
 
-Kết quả đúng ở bản hiện tại là `Tests run: 45, Failures: 0, Errors: 0, Skipped: 0` rồi `BUILD SUCCESS`.
+Kết quả đã xác nhận ở bản hiện tại là `Tests run: 107, Failures: 0, Errors: 0, Skipped: 0` rồi `BUILD SUCCESS`. Số test sẽ tăng khi bổ sung ca mới; không coi con số cũ là điều kiện bắt buộc để build.
 
 Chạy từng nhóm để học:
 
@@ -331,7 +331,7 @@ Kiểm tra mode optimized bằng test, chưa cần Unity:
 mvn test "-Dsync.mode=optimized"
 ```
 
-Sau khi T tích hợp và xác nhận protocol, khởi động lại server bằng:
+Unity hiện đã tích hợp optimized. Khởi động server ở chế độ này bằng:
 
 ```powershell
 mvn compile exec:java "-Dexec.args=7777" "-Dsync.mode=optimized"
@@ -376,7 +376,7 @@ Trong IntelliJ, bạn có thể đặt breakpoint ở `Connection.handle`, `resu
 
 **Cải tiến có phải delta sync không?** Hiện tại là selective sync: bỏ map tĩnh khỏi snapshot thường và lọc dữ liệu theo viewer. Chưa có delta từng trường dựa trên snapshot trước.
 
-**Server tính điểm Hành trình ra sao?** Mỗi lần loại trực tiếp được 1 điểm; thắng vòng được 3 điểm và tăng số vòng thắng. Hết ba chương, server so tổng điểm, vòng thắng, rồi người thắng vòng cuối. Client chỉ hiển thị kết quả server gửi.
+**Server tính điểm Hành trình ra sao?** Mỗi lần loại trực tiếp được 1 điểm; thắng vòng được 3 điểm và tăng số vòng thắng. Hết ba chương, server so số mảnh, số lần hạ, rồi người thắng chương cuối nếu nằm trong nhóm hòa; vẫn bằng thì đồng thắng. Điểm không quyết định xếp hạng. Client chỉ hiển thị kết quả server gửi.
 
 **Vì sao mode sync và mode game là hai thứ khác nhau?** `SyncMode` chọn cách truyền snapshot (`BASELINE`/`OPTIMIZED`). `GameMode` chọn luật phòng (`QUICK`/`JOURNEY`). Có thể chạy JOURNEY trên cả baseline lẫn optimized.
 
@@ -384,6 +384,6 @@ Trong IntelliJ, bạn có thể đặt breakpoint ở `Connection.handle`, `resu
 
 **processingMicros là gì?** Thời gian trong luồng xử lý request đến trước khi gửi ACK; có thể gồm thời gian chờ khóa và gửi phản hồi trước đó. Nó không phải RTT, cũng không phải số đo riêng cho serialize snapshot định kỳ.
 
-**Đã hoàn thành toàn bộ game chưa?** Server Hành trình, protocol, Unity UI/lời dẫn/VFX/nhạc/SFX và 68 test tự động đã có. Unity batch compile đã qua và đã có benchmark loopback 2/4/8 client giả lập. Vẫn chưa có Windows build phát hành của commit cuối, playtest đủ ba map và kiểm chứng end-to-end 2–4 client thật trên LAN/Internet; chỉ báo cáo hoàn thành toàn bộ sau khi có các bằng chứng này.
+**Đã hoàn thành toàn bộ game chưa?** Bộ hiện tại có 107 test Java, 12 kiểm tra C# và 81 kiểm tra Unity qua; Windows build và server JAR đã tạo. Benchmark loopback thuộc bản 22/10, chưa đo lại source 23/10. Vẫn cần commit/tag phát hành, playtest đủ ba map và kiểm chứng 2–4 client thật trên LAN/Internet; chỉ báo cáo hoàn thành toàn bộ sau khi có các bằng chứng này.
 
 Hãy tập trả lời bằng cách chỉ vào hàm và chạy test minh họa, thay vì học thuộc nguyên đoạn. Tài liệu có AI hỗ trợ biên soạn; người nộp cần tự kiểm chứng và trình bày đúng phần mình hiểu.

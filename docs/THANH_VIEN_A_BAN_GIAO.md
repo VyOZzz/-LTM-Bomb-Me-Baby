@@ -1,6 +1,6 @@
 # Bàn giao phần A cho T và B
 
-Cập nhật 21/10/2026, đối chiếu với source đã commit trên nhánh hiện tại và lượt kiểm tra sạch cùng ngày.
+Cập nhật 23/10/2026, đối chiếu working tree hiện tại; các sửa đổi mới chưa commit/merge. Dùng client/server cùng phiên bản [PROTOCOL.md](PROTOCOL.md).
 
 ## Trạng thái
 
@@ -8,9 +8,9 @@ Cập nhật 21/10/2026, đối chiếu với source đã commit trên nhánh hi
 - JOURNEY chạy `meadow → crossroads → crater`, giữ điểm/vòng thắng và phát `JOURNEY_COMPLETE`.
 - Novelty selective sync hoạt động ở server; Unity đã dựng/cache geometry từ GAME_START và hiểu tọa độ ẩn.
 - Reconnect, sequence trùng, tranh Core và Hành trình có test tự động.
-- 71/71 test Java qua ở baseline và optimized; xem [kết quả](THANH_VIEN_A_KIEM_THU.md).
-- Unity `6000.3.6f1` đã batch compile thành công; 11 SFX import được. Đã có 18 lượt benchmark loopback 2/4/8 client giả lập trong `experiments/`.
-- Chưa phát hành lại Windows build và chưa chơi end-to-end 2–4 client thật trên cùng commit cuối.
+- 107 test Java qua ở mỗi lần chạy baseline/optimized; xem [kết quả hiện tại](FINAL_VALIDATION.md), [mốc lịch sử 21/10](THANH_VIEN_A_KIEM_THU.md).
+- Unity `6000.3.6f1`: 81 kiểm tra Play Mode và 12 kiểm tra C# qua; 20 clip (16 SFX, 4 nhạc). Benchmark 22/10 có 18 lượt loopback, chưa đo lại sau sửa 23/10.
+- Đã build Windows và server JAR; chưa playtest end-to-end 2–4 Windows client trên commit/tag phát hành.
 
 ## Protocol cần cả nhóm dùng
 
@@ -19,12 +19,12 @@ Cập nhật 21/10/2026, đối chiếu với source đã commit trên nhánh hi
 | Message | Thay đổi |
 | --- | --- |
 | `CREATE_ROOM` | Nhận `mode=QUICK` hoặc `mode=JOURNEY`; thiếu mode mặc định QUICK |
-| `ROOM_STATE.room` | Thêm `mode`, `chapterIndex`, `scores`, `journeyComplete` |
+| `ROOM_STATE.room` | Có mode/chapter/scores, roundIndex, roundWinnerId, roundEndReason, winnerIds, journeyComplete, journeyEndReason |
 | `GAME_START` | Có mode/chapter/scores và geometry tĩnh |
-| `STATE_UPDATE` | Có mode/chapter/scores; optimized không lặp geometry |
+| `STATE_UPDATE` | Có roomCode/roundIndex, mode/chapter/scores, roundTimeLeft, spectatorTargetId; optimized không lặp geometry |
 | `GAME_OVER` | Có mode/chapter/scores của vòng vừa kết thúc |
-| `JOURNEY_COMPLETE` | Event mới sau crater, có `winnerId`, `winnerIds`, `scores` |
-| `WELCOME` | Có `syncMode`, `demoMap`; khi resume có thêm `lastSeq`. Unity hiện cấu hình ở F3 và đưa counter lên giá trị phù hợp |
+| `JOURNEY_COMPLETE` | Sau crater hoặc kết thúc sớm, có winnerId/winnerIds/scores/reason |
+| `WELCOME` | Có `hasRoom`, `syncMode`, `demoMap`; khi resume có thêm `lastSeq`. Unity hiện cấu hình ở F3 và đưa counter lên giá trị phù hợp |
 
 `scores` là mảng để Unity `JsonUtility` đọc được:
 
@@ -36,10 +36,10 @@ T cần mở Unity và kiểm tra trực quan:
 
 1. Hai nút tạo phòng Đấu nhanh/Hành trình gửi đúng mode.
 2. GAME_START dựng đủ đá/bụi ở optimized.
-3. Sau mỗi chương, bảng điểm đúng và READY chuyển map.
+3. Sau chương chưa cuối và còn đủ người, bảng điểm đúng và READY chuyển map; thiếu người thì kết thúc sớm, không chờ READY 1/1.
 4. Sau crater, hiện kết quả cuối và không còn nút READY.
 5. Hai người chơi thật reconnect trong trận và giữa hai chương.
-6. Lời dẫn, HUD và VFX chương không che gameplay.
+6. Lời dẫn, HUD và VFX chương không che gameplay; Đấu nhanh hòa khi hết 3 phút; camera/audio người chết tự theo người sống, không lộ đối thủ trong bụi ở optimized.
 
 ## B đo baseline và optimized
 
@@ -68,14 +68,14 @@ Các chỉ số nên lưu:
 | processingMicros | Thời gian xử lý request trước ACK, không phải RTT hoặc thời gian snapshot định kỳ |
 | ERROR/reconnect | Lưu cả lần thất bại, không lọc mẫu xấu |
 
-Phép đo fixture tự động hiện cho `baseline=1799`, `optimized=821` byte JSON trong một trạng thái cố định. Benchmark trận giả lập cho thấy giảm khoảng 66–79% byte nhận/client/s tùy số client; xem `EXPERIMENTS.md` để biết điều kiện và giới hạn.
+Fixture snapshot so hai nhánh trên cùng trạng thái và kiểm tra optimized nhỏ hơn; kích thước thay đổi khi DTO thay đổi. Benchmark ngày 22/10 giảm khoảng 62–78% byte nhận/client/s; xem [EXPERIMENTS_FINAL.md](EXPERIMENTS_FINAL.md) và fingerprint của bản đã đo. Không gán số đo cũ cho source hiện tại.
 
 ## Giới hạn cần ghi đúng
 
 - Selective sync hiện không phải delta encoding từng trường.
 - Reconnect optimized gửi lại geometry nhưng vẫn che player vô hình/cull pickup. Event nổ che tọa độ theo viewer và Core spawn xa không được gửi; vẫn không tuyên bố chống gian lận toàn diện vì chưa có xác thực/TLS và event không tọa độ vẫn để lộ một phần diễn biến.
 - Socket được ghi bằng writer riêng cho từng connection; snapshot chờ được gộp về bản mới nhất. Client im lặng 6 giây, write treo 3 giây hoặc queue control đầy sẽ bị đóng riêng, không giữ khóa room/game loop.
-- Người vào phòng bị chặn sau khi JOURNEY bắt đầu. Người mất mạng giữa chương có 10 giây reconnect; hết hạn rời roster và phòng cần những người còn lại READY.
+- Người vào phòng bị chặn sau khi JOURNEY bắt đầu. Người mất mạng giữa chương có 10 giây reconnect; hết hạn bị loại/dọn khỏi roster. Còn dưới hai người tham gia thì Hành trình kết thúc sớm; đủ người mới READY tiếp.
 - Unity source đã compile nhưng chưa có bằng chứng playtest cuối bằng 2–4 Windows client thật ở cả QUICK/JOURNEY.
 - `scripts/network_smoke.py` đã đọc geometry từ GAME_START để dùng được với cả baseline và optimized; cần lưu lại kết quả chạy trên commit/tag phát hành.
 - Benchmark 2/4/8 client và CSV thô đã có; B cần đo lại trên bản cuối, ưu tiên cố định map/seed và bổ sung LAN hai máy.

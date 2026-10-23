@@ -92,6 +92,8 @@ public static class BombValidation {
         foreach (string clip in new[] { "music_menu", "music_meadow", "music_crossroads", "music_crater", "mix_energy", "mix_shield_hit", "mix_shield", "mix_boost", "mix_explosion_1", "mix_explosion_2", "mix_explosion_3" })
             Assert(Resources.Load<AudioClip>("Audio/" + clip) != null, "Audio imports: " + clip);
 
+        VerifyDeadInputAndSpectating();
+
         // Two ordinary TCP clients talking to the packaged Java server.
         int port = int.Parse(BombBuild.Argument("-bombTestPort", "17778"));
         BombNetwork local = Field<BombNetwork>("network");
@@ -127,6 +129,56 @@ public static class BombValidation {
         if (peer.Connected && EditorApplication.timeSinceStartup >= nextPeerPing) {
             nextPeerPing = EditorApplication.timeSinceStartup + 1;
             peer.Send(new BombMessage { type = "PING" });
+        }
+    }
+
+    static void Set(string name, object value) => typeof(BombGame).GetField(name, Private).SetValue(game, value);
+    static object Call(string name) => typeof(BombGame).GetMethod(name, Private).Invoke(game, null);
+
+    static void VerifyDeadInputAndSpectating() {
+        BombNetwork local = Field<BombNetwork>("network");
+        var outbox = (System.Collections.Concurrent.ConcurrentQueue<string>)
+            typeof(BombNetwork).GetField("outbox", Private).GetValue(local);
+        try {
+            Deliver("{\"type\":\"WELCOME\",\"playerId\":\"dead-local\",\"hasRoom\":false}");
+            Deliver("{\"type\":\"ROOM_STATE\",\"room\":{\"code\":\"SPECTATE\",\"mode\":\"QUICK\",\"phase\":\"PLAYING\",\"roundIndex\":1}}");
+            var snapshot = new ServerMessage {
+                type = "STATE_UPDATE", phase = "PLAYING", roomCode = "SPECTATE", roundIndex = 1,
+                mapId = "meadow", mode = "QUICK", arenaSize = 48, roundTimeLeft = 123,
+                spectatorTargetId = "living", players = new[] {
+                    new PlayerData { id = "dead-local", name = "Local", alive = false, connected = true, visible = true, size = 1 },
+                    new PlayerData { id = "living", name = "Living", alive = true, connected = true, visible = true, size = 1, hp = 100, x = 35 },
+                    new PlayerData { id = "next", name = "Next", alive = true, connected = true, visible = true, size = 1, hp = 100, x = 40 }
+                }, orbs = Array.Empty<PickupData>(), cores = Array.Empty<PickupData>()
+            };
+            Deliver(JsonUtility.ToJson(snapshot));
+            typeof(BombNetwork).GetField("transportReady", Private).SetValue(local, true);
+            local.MarkWelcomed();
+            Set("nextMoveAt", -1f); Set("nextPingAt", -1f); Set("charging", true);
+            Call("Update");
+            string[] sent = outbox.ToArray();
+            Assert(sent.Any(s => s.Contains("\"PING\"")), "Dead client keeps heartbeat");
+            Assert(!sent.Any(s => s.Contains("\"MOVE\"") || s.Contains("\"EXPLODE\"")), "Dead Update sends no gameplay input");
+            Assert(!Field<bool>("charging"), "Death clears local charge");
+            var viewed = Call("ViewAvatar");
+            Assert(((PlayerData)viewed.GetType().GetField("state").GetValue(viewed)).id == "living", "Camera and listener select server spectator target");
+            Assert(Field<float>("roundTimeLeft") == 123, "Quick HUD receives server countdown");
+            snapshot.spectatorTargetId = "next"; snapshot.players[1].alive = false;
+            Deliver(JsonUtility.ToJson(snapshot));
+            viewed = Call("ViewAvatar");
+            Assert(((PlayerData)viewed.GetType().GetField("state").GetValue(viewed)).id == "next", "Spectator advances after followed player dies");
+            // No local state yet: input must also be blocked during join/reconnect.
+            Set("myId", "not-in-snapshot"); Set("nextMoveAt", -1f);
+            int queued = outbox.Count;
+            Call("HandleInput");
+            Assert(outbox.Count == queued, "Missing local state sends no gameplay input");
+            Set("myId", "dead-local");
+            Deliver("{\"type\":\"ROOM_STATE\",\"room\":{\"code\":\"SPECTATE\",\"mode\":\"JOURNEY\",\"phase\":\"FINISHED\",\"chapterIndex\":0,\"journeyComplete\":true,\"journeyEndReason\":\"INSUFFICIENT_PLAYERS\"}}");
+            Assert((bool)Call("JourneyFinished") && !(bool)Call("JourneyHasNextChapter"), "Early Journey result cannot offer impossible next chapter");
+        } finally {
+            local.Dispose();
+            Call("ResetRoomState");
+            Set("nextPingAt", 0f); Set("nextMoveAt", 0f);
         }
     }
 

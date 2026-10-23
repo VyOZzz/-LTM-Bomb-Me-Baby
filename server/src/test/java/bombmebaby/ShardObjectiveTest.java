@@ -41,10 +41,12 @@ class ShardObjectiveTest {
         park(b, 1, 0);
         room.update(t + ShardObjective.PEDESTAL_PROTECTION_MS, 0);
         assertSame(b, room.objective.challenger);
-        room.update(t + ShardObjective.PEDESTAL_PROTECTION_MS + 3_000, 0);
+        for (long now = t + ShardObjective.PEDESTAL_PROTECTION_MS + 50;
+                now <= t + ShardObjective.PEDESTAL_PROTECTION_MS + 3_000; now += 50) room.update(now, .05);
         assertEquals(ShardObjective.State.PLACED, room.objective.state,
             "Owner presence slows seal breaking instead of pausing it");
-        room.update(t + ShardObjective.PEDESTAL_PROTECTION_MS + 6_000, 0);
+        for (long now = t + ShardObjective.PEDESTAL_PROTECTION_MS + 3_050;
+                now <= t + ShardObjective.PEDESTAL_PROTECTION_MS + 6_000; now += 50) room.update(now, .05);
         assertEquals(ShardObjective.State.GROUND, room.objective.state);
         assertSame(b, room.objective.pickupPriority);
     }

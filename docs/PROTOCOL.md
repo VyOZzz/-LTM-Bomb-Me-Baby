@@ -1,6 +1,15 @@
 # TCP JSON protocol
 
-Cập nhật 22/10/2026. Mỗi message là một JSON object trên một dòng UTF-8. TCP được giữ xuyên suốt phiên chơi. Client phải gửi `HELLO` đầu tiên. Server đọc tối đa 2048 ký tự UTF-16 mỗi frame; vượt giới hạn sẽ đóng socket ngay cả khi chưa có newline. Tối đa 64 connection đồng thời.
+Cập nhật 23/10/2026. Mỗi message là một JSON object trên một dòng UTF-8. TCP được giữ xuyên suốt phiên chơi. Client phải gửi `HELLO` đầu tiên. Server đọc tối đa 2048 ký tự UTF-16 mỗi frame; vượt giới hạn sẽ đóng socket ngay cả khi chưa có newline. Tối đa 64 connection đồng thời.
+
+## Kết thúc sớm, đồng hồ và quan sát (23/10)
+
+- QUICK có giới hạn 180 giây. Còn tối đa một người sống thì kết thúc như trước; hết giờ còn nhiều người sống thì `GAME_OVER.reason="TIME"`, `winnerId=""` (hòa). `STATE_UPDATE.roundTimeLeft` là số giây còn lại do server tính; mỗi vòng mới đặt lại 180 giây. JOURNEY tiếp tục dùng `objective.timeLeft`.
+- JOURNEY đã bắt đầu không nhận người thay thế. Khi còn dưới hai người tham gia, kết thúc chương hiện tại theo luật sống sót rồi kết thúc Hành trình sớm. Người mất kết nối vẫn giữ chỗ trong 10 giây; người chết nhưng còn kết nối vẫn là người tham gia chương sau. Chỉ cộng mảnh/điểm của chương đã chơi. Xếp hạng theo số mảnh rồi số lần hạ gục, không dùng ưu tiên người thắng chương cuối nếu chương cuối chưa diễn ra; các thứ hạng bằng nhau được đồng thắng, kể cả điểm đã kiếm được của người rời phòng.
+- `JOURNEY_COMPLETE.reason` và `ROOM_STATE.room.journeyEndReason` là `COMPLETED` khi đủ ba chương, `INSUFFICIENT_PLAYERS` khi kết thúc sớm. `journeyComplete=true` cho cả hai; không cho READY tiếp. Resume vẫn phát lại kết quả, lý do và bảng điểm.
+- `STATE_UPDATE.spectatorTargetId` rỗng khi viewer còn sống; khi đã chết, server chọn người sống đầu tiên trong danh sách phòng, ưu tiên còn kết nối. Tự chọn lại nếu người đó chết/rời phòng/mất kết nối. Camera và điểm nghe âm thanh theo mục tiêu này. Trong OPTIMIZED, tọa độ player, pickup, event nổ/knockback/Core dùng góc nhìn mục tiêu, giữ nguyên luật khoảng cách/bụi. BASELINE vẫn gửi dữ liệu đầy đủ như thiết kế đo so sánh trước đây.
+- Client đã chết hoặc chưa có local state không gửi input gameplay; vẫn gửi PING và nhận snapshot. Hiện quan sát tự động, chưa có chọn mục tiêu thủ công.
+- “Vào vòng” là nhân vật bước vào vòng tròn quanh bệ Tim Lửa, không phải người mới vào trận. Phá ấn chỉ cộng từ tick sau khi quan sát thấy nhân vật hợp lệ trong vòng đó, tối đa 100 ms mỗi tick như giới hạn catch-up của movement. Đồng hồ hết chương vẫn theo thời gian thực, không bị kéo dài bởi server khựng. Sát thương thực tế từ phản khiên cũng reset phá ấn và áp stagger; người được khiên chặn damage không bị reset.
 
 ## Khôi phục và thứ tự message (22/10)
 
@@ -94,7 +103,7 @@ Mỗi chương có một mảnh và một bệ đá ở tâm map (`ShardObjectiv
 4. Người cầm bước vào vòng bệ (bán kính 3) thì đặt mảnh và trở thành owner. Bệ được bảo hộ 5 giây. Sau đó mỗi đối thủ sống/kết nối trong vòng tự phá ấn với progress riêng trong 3 giây. Owner trong vòng chỉ giảm tốc còn 50%, không pause.
 5. Damage thực tế reset riêng progress của challenger trúng đòn và stagger 0,45 giây; Shield chặn cả reset lẫn stagger. Rời vòng, chết hoặc disconnect cũng xóa progress riêng.
 6. Challenger hoàn thành đầu tiên làm mảnh bật ra gần mép vòng, được ưu tiên nhặt 0,75 giây. Bệ quá nhiệt 4 giây và không nhận lại mảnh. Priority mất ngay nếu người đó chết/disconnect.
-5. Hết 3 phút, chủ bệ (nếu chưa đặt thì người đang cầm) thắng chương với `reason="TIME"`. Chỉ còn một người sống thì người đó thắng với `reason="LAST_STANDING"`.
+7. Hết 3 phút, chủ bệ (nếu chưa đặt thì người đang cầm) thắng chương với `reason="TIME"`. Chỉ còn một người sống thì người đó thắng với `reason="LAST_STANDING"`.
 
 Mọi `STATE_UPDATE` của JOURNEY có thêm object công khai, không lọc theo viewer kể cả ở OPTIMIZED:
 
@@ -152,11 +161,12 @@ Mỗi vòng kết thúc bằng:
 }
 ```
 
-Sau chương 0 hoặc 1, người chơi bấm READY lại để sang chương tiếp theo. Server reset HP/Size/cooldown và trạng thái vòng, giữ điểm hành trình. Sau chương 2, server gửi thêm:
+Sau chương 0 hoặc 1, khi còn đủ người và Hành trình chưa kết thúc sớm, người chơi bấm READY lại để sang chương tiếp theo. Server reset HP/Size/cooldown và trạng thái vòng, giữ điểm hành trình. Sau chương 2, server gửi thêm:
 
 ```json
 {
   "type":"JOURNEY_COMPLETE",
+  "reason":"COMPLETED",
   "room":"ABC123",
   "mode":"JOURNEY",
   "chapterIndex":2,
@@ -166,7 +176,7 @@ Sau chương 0 hoặc 1, người chơi bấm READY lại để sang chương ti
 }
 ```
 
-Không thể READY để tạo vòng thứ tư; server trả `JOURNEY_COMPLETE` dưới dạng mã ERROR.
+Kết thúc sớm dùng cùng event trên với reason INSUFFICIENT_PLAYERS và chapterIndex của chương đã chơi. Không thể READY khi journeyComplete=true, kể cả kết thúc sớm, hoặc để tạo vòng thứ tư; server trả `JOURNEY_COMPLETE` dưới dạng mã ERROR.
 
 ## Các event khác
 

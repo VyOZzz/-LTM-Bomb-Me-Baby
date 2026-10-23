@@ -14,6 +14,8 @@ sealed class BombHud {
         public int chapter;
         public string mapName;
         public float matchTime;
+        public float roundTimeLeft;
+        public string spectatorName;
         public float rttMs, serverMicros;
         public int sentPerSecond, receivedPerSecond;
         public long sentBytesPerSecond, receivedBytesPerSecond;
@@ -91,7 +93,7 @@ sealed class BombHud {
             DrawCharge(v.me, W, H, carryingShard);
             DrawAbility(0, new Vector2(W - 178, H - 112), "KHIÊN", "E", Shield, v.me.shield, v.me.shieldCooldown, ShieldCooldown);
             DrawAbility(1, new Vector2(W - 74, H - 112), "TĂNG TỐC", "SHIFT", Boost, v.me.boost, v.me.boostCooldown, BoostCooldown);
-        } else if (v.me != null) DrawSpectating(W, H);
+        } else if (v.me != null) DrawSpectating(W, H, v.spectatorName);
         if (BombSettings.ShowControls && v.matchTime < 8) DrawControlsHint(H, Mathf.Clamp01((8 - v.matchTime) / 1.5f), v.journey);
     }
 
@@ -185,10 +187,9 @@ sealed class BombHud {
     void DrawMatchPill(View v, float W) {
         string mode = v.journey ? $"CHƯƠNG {v.chapter + 1}/3" : "ĐẤU NHANH";
         if (!string.IsNullOrEmpty(v.mapName)) mode += "  •  " + v.mapName;
-        // Journey counts the objective down; otherwise the clock shows elapsed match time.
-        bool countdown = v.objective != null && v.objective.Active;
-        string clock = countdown ? Clock(v.objective.timeLeft) : Clock(Mathf.Floor(v.matchTime));
-        bool urgent = countdown && v.objective.timeLeft <= 10;
+        float remaining = v.objective != null && v.objective.Active ? v.objective.timeLeft : v.roundTimeLeft;
+        string clock = Clock(remaining);
+        bool urgent = remaining <= 10;
 
         float modeWidth = label.CalcSize(new GUIContent(mode)).x / u;
         float clockWidth = labelRight.CalcSize(new GUIContent(clock)).x / u;
@@ -479,8 +480,9 @@ sealed class BombHud {
         centerText.normal.textColor = Text;
     }
 
-    void DrawSpectating(float W, float H) {
-        const string text = "Bạn đã bị loại — đang xem phần còn lại của trận";
+    void DrawSpectating(float W, float H, string spectatorName) {
+        string text = string.IsNullOrEmpty(spectatorName) ? "Bạn đã bị loại — đang chờ kết quả"
+            : "Bạn đã bị loại — đang theo dõi " + spectatorName;
         float width = label.CalcSize(new GUIContent(text)).x / u + 48;
         Rect r = R(W / 2 - width / 2, H - 92, width, 44);
         Fill(r, Panel, RoundBig);

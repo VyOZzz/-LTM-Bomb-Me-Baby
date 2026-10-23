@@ -22,7 +22,7 @@ sealed class BombModeMenu {
     readonly Card[] cards = {
         new Card {
             mode = "QUICK", key = "1", tag = "1 TRẬN  •  2–10 NGƯỜI", title = "ĐẤU NHANH",
-            description = "Vào trận ngay. Ăn năng lượng cho bóng to ra, nạp nổ và là quả bom cuối cùng còn lăn.",
+            description = "Ăn năng lượng, nạp nổ và sống sót cuối cùng. Tối đa 3 phút; hết giờ còn nhiều người thì hòa.",
             rows = new[,] { { "Bản đồ", "Ngẫu nhiên mỗi trận" }, { "Thắng khi", "Chỉ còn mình bạn" } },
             tooltip = "Phím 1  •  Một trận sinh tồn, hợp để làm quen", accent = Charge
         },

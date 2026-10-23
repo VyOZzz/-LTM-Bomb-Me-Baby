@@ -489,6 +489,26 @@ class ConnectionTest {
         }
     }
 
+    @Test void earlyJourneyCompletionIsReplayedOnResume() throws Exception {
+        Peer host = hello();
+        host.request("type", "CREATE_ROOM", "seq", 1, "mode", "JOURNEY");
+        Peer other = readyOpponent(host);
+        host.request("type", "READY", "seq", 2, "ready", true);
+        other.request("type", "LEAVE_ROOM", "seq", 3);
+        assertEquals("INSUFFICIENT_PLAYERS", host.until("JOURNEY_COMPLETE").get("reason").getAsString());
+        host.disconnect();
+        Peer resumed = connect();
+        resumed.send("type", "HELLO", "resumeToken", host.player.resumeToken);
+        resumed.until("WELCOME");
+        JsonObject info = resumed.until("ROOM_STATE").getAsJsonObject("room");
+        assertTrue(info.get("journeyComplete").getAsBoolean());
+        assertEquals("INSUFFICIENT_PLAYERS", info.get("journeyEndReason").getAsString());
+        resumed.until("STATE_UPDATE");
+        resumed.until("GAME_OVER");
+        assertEquals(host.player.id, resumed.until("JOURNEY_COMPLETE").getAsJsonArray("winnerIds").get(0).getAsString());
+        resumed.until("ACK");
+    }
+
     private Peer hello() throws Exception {
         Peer peer = connect();
         peer.send("type", "HELLO", "name", "A");

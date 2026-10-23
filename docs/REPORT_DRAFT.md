@@ -1,10 +1,10 @@
 # Bomb Me Baby: trò chơi đấu trường nhiều người với đồng bộ trạng thái chọn lọc
 
-**Bản nội dung để nhóm rà soát, cập nhật ngày 22/10/2026.** Chưa phải file Word đã nộp Compilatio. Cần điền số nhóm, lớp, họ tên/MSSV, thông tin giảng viên; kiểm tra lại phần đóng góp và bổ sung ảnh/playtest thật. Không tự suy ra các thông tin này từ tên tài khoản Git.
+**Bản nội dung để nhóm rà soát, cập nhật ngày 23/10/2026.** Chưa phải file Word đã nộp Compilatio. Cần điền số nhóm, lớp, họ tên/MSSV, thông tin giảng viên; kiểm tra lại phần đóng góp và bổ sung ảnh/playtest thật. Không tự suy ra các thông tin này từ tên tài khoản Git.
 
 ## Abstract
 
-Bomb Me Baby giải quyết bài toán đồng bộ một trò chơi đấu trường nhiều người giữa Unity client và Java server. Client gửi ý định điều khiển; server giữ quyền quyết định vị trí hợp lệ, vật phẩm, sát thương, objective và kết quả. Hệ thống dùng TCP lâu dài với JSON phân cách bằng newline, mô phỏng 20 Hz và gửi snapshot 10 Hz. Cải tiến được đánh giá là đồng bộ chọn lọc: bỏ geometry tĩnh khỏi snapshot thường, lọc pickup theo khoảng cách và giấu tọa độ người chơi không nhìn thấy. Cơ chế phục hồi bổ sung session token, sequence, định danh phòng/vòng và phát lại kết quả kết thúc. Bản kiểm chứng có 98 test Java qua ở hai cấu hình, 12 kiểm tra C# và 69 kiểm tra Unity tự động; đã tạo Windows player và server JAR. Thực nghiệm loopback mới, dữ liệu lỗi trước sửa và các giới hạn được trình bày tách biệt; chưa dùng phép đo này để khẳng định hiệu năng trên Internet hoặc trải nghiệm của người thật.
+Bomb Me Baby giải quyết bài toán đồng bộ một trò chơi đấu trường nhiều người giữa Unity client và Java server. Client gửi ý định điều khiển; server giữ quyền quyết định vị trí hợp lệ, vật phẩm, sát thương, objective và kết quả. Hệ thống dùng TCP lâu dài với JSON phân cách bằng newline, mô phỏng 20 Hz và gửi snapshot 10 Hz. Cải tiến được đánh giá là đồng bộ chọn lọc: bỏ geometry tĩnh khỏi snapshot thường, lọc pickup theo khoảng cách và giấu tọa độ người chơi không nhìn thấy. Cơ chế phục hồi bổ sung session token, sequence, định danh phòng/vòng và phát lại kết quả kết thúc. Bản kiểm chứng có 107 test Java qua ở hai cấu hình, 12 kiểm tra C# và 81 kiểm tra Unity tự động; đã tạo Windows player và server JAR. Thực nghiệm loopback mới, dữ liệu lỗi trước sửa và các giới hạn được trình bày tách biệt; chưa dùng phép đo này để khẳng định hiệu năng trên Internet hoặc trải nghiệm của người thật.
 
 **Keywords:** multiplayer game; authoritative server; TCP JSON; selective synchronization; reconnect; Unity.
 
@@ -12,7 +12,7 @@ Bomb Me Baby giải quyết bài toán đồng bộ một trò chơi đấu trư
 
 Một trò chơi nhiều người cần duy trì trạng thái nhất quán dù input đến đồng thời, client chậm hoặc kết nối tạm thời bị gián đoạn. Nếu client tự quyết định HP, vị trí hay người thắng, các máy có thể cho kết quả khác nhau. Nếu server gửi toàn bộ bản đồ và vật phẩm liên tục, chi phí truyền dữ liệu tăng dù phần lớn hình học không đổi.
 
-Mục tiêu của dự án là xây dựng trò chơi PvP có thể demo với 2–4 người và hỗ trợ tối đa 10 người trong phòng riêng, đồng thời minh họa giao tiếp mạng, xử lý đồng thời, phục hồi lỗi và đánh giá một cải tiến định lượng. Đấu nhanh dùng điều kiện người sống cuối cùng. Hành trình gồm ba chương meadow, crossroads, crater, tranh Mảnh Tim Lửa và giữ kết quả qua chương.
+Mục tiêu của dự án là xây dựng trò chơi PvP có thể demo với 2–4 người và hỗ trợ tối đa 10 người trong phòng riêng, đồng thời minh họa giao tiếp mạng, xử lý đồng thời, phục hồi lỗi và đánh giá một cải tiến định lượng. Đấu nhanh tối đa 180 giây: người sống cuối cùng thắng sớm, hết giờ còn nhiều người thì hòa. Hành trình gồm ba chương meadow, crossroads, crater, tranh Mảnh Tim Lửa và giữ kết quả qua chương.
 
 Phạm vi không bao gồm tài khoản, cơ sở dữ liệu lịch sử trận, thanh toán hoặc dịch vụ vận hành quy mô lớn. Trạng thái phòng/session được lưu trong bộ nhớ; restart server làm mất phiên. Bot là TCP client phục vụ kiểm thử, không phải chế độ chơi offline. Đồ họa và âm thanh hỗ trợ demo, không được dùng thay bằng chứng cho đóng góp kỹ thuật.
 
@@ -61,7 +61,7 @@ flowchart LR
 
 ## 6. Network Communication Design
 
-Mọi frame là JSON UTF-8 kết thúc bằng LF. HELLO mở session hoặc yêu cầu resume bằng token. Trừ HELLO/PING, `seq` phải tăng trong cùng session; request lặp không được thực thi lại. ACK phản ánh thời gian xử lý server, không thay thế GAME_START/GAME_OVER hay xác nhận luật nghiệp vụ. PONG echo timestamp để đo RTT.
+Mọi frame là JSON UTF-8 phân cách bằng newline; reader chấp nhận LF hoặc CRLF. HELLO mở session hoặc yêu cầu resume bằng token. Trừ HELLO/PING, `seq` phải tăng trong cùng session; request lặp không được thực thi lại. ACK phản ánh thời gian xử lý server, không thay thế GAME_START/GAME_OVER hay xác nhận luật nghiệp vụ. PONG echo timestamp để đo RTT.
 
 ```mermaid
 sequenceDiagram
@@ -99,6 +99,8 @@ Một lỗi được bắt trong thực nghiệm là watchdog đọc `writeStart
 
 Khi nhặt orb/Core làm tăng bán kính, server giải quyết chồng collider với đá/biên trước bước di chuyển sau. Trường hợp cụm đá làm phép chiếu dao động có tìm vị trí trống gần nhất bằng các vòng lấy mẫu. Boost chỉ sinh orb khi lượng size thực chi đủ giá trị orb. Hành trình xếp theo số mảnh, rồi số lần hạ, rồi người thắng chương cuối trong nhóm hòa; vẫn hòa thì đồng thắng. Client dùng winnerIds để phân biệt đồng thắng với người còn lại.
 
+Hành trình thiếu người sau giữ chỗ reconnect 10 giây kết thúc sớm, chỉ tính các chương đã chơi. Phá ấn chỉ cộng thời gian sau khi nhân vật đã vào vòng tròn quanh bệ, tối đa 100 ms mỗi tick; deadline chương vẫn theo thời gian thực. Damage phản khiên cũng reset tiến độ phá ấn. Người chết ngừng gửi input gameplay; camera/audio và lọc dữ liệu optimized cùng theo một người sống do server chọn.
+
 Presentation dùng vật liệu riêng cho actor, pickup và objective, giải phóng cùng đối tượng; cache dùng chung được giữ riêng. Hai vật liệu nền fallback được hủy khi thay bằng vật liệu có texture. Âm thanh dùng pool 20 giọng, nhạc cho từng map và hạ nền theo sự kiện; nhạc sảnh do người dùng chọn được giữ nguyên.
 
 ## 8. Experimental Setup
@@ -113,13 +115,13 @@ Lượt trước sửa watchdog được giữ ở `experiments/final-2026-10-22
 
 | Lớp kiểm tra | Kết quả đã thực hiện | Giới hạn |
 | --- | --- | --- |
-| Java/JUnit | 98 test qua baseline và optimized | Chạy trên máy hiện tại |
+| Java/JUnit | 107 test qua baseline và optimized | Chạy trên máy hiện tại |
 | C# ngoài Unity | 12 kiểm tra hàng đợi/kết quả qua | Không đánh giá rendering |
-| Unity Play Mode | 69 kiểm tra headless qua | Một Unity client + peer TCP; không phải hai Unity player |
-| Vật liệu qua ba chu kỳ map | 11 → 11 → 11 vật liệu được gắn nhãn | Không phải tổng RAM/GC/FPS |
+| Unity Play Mode | 81 kiểm tra headless qua | Một Unity client + peer TCP; không phải hai Unity player |
+| Vật liệu qua ba chu kỳ map | Test không tăng số vật liệu qua chu kỳ đã qua | Thời điểm hủy cuối frame ảnh hưởng số đếm; không phải tổng RAM/GC/FPS |
 | Build | Windows player và server JAR tạo thành công | Chưa nghiệm thu máy sạch |
 
-Benchmark sau sửa hoàn tất 18 lượt, không có ERROR/CONNECTION_LOST. Trung bình ba lượt trên mỗi cấu hình:
+Benchmark ngày 22/10 sau sửa watchdog hoàn tất 18 lượt, không có ERROR/CONNECTION_LOST. Trung bình ba lượt trên mỗi cấu hình:
 
 | Client | Baseline byte nhận/client/s | Optimized byte nhận/client/s | Giảm |
 | --- | ---: | ---: | ---: |
@@ -127,7 +129,7 @@ Benchmark sau sửa hoàn tất 18 lượt, không có ERROR/CONNECTION_LOST. Tr
 | 4 | 101 530,6 | 26 110,8 | 74,3% |
 | 8 | 115 042,9 | 43 546,6 | 62,1% |
 
-Fingerprint nguồn: `698fbcb72a23e47ef29f1413490ae6dbabe9da9599fcc8d346f6175eb4029ab5`. Chi tiết RTT, phương pháp tính và raw CSV nằm ở `docs/EXPERIMENTS_FINAL.md`. RTT trung bình hai mode gần nhau; phép đo không chứng minh giảm độ trễ. Số liệu 66–79% trong tài liệu cũ chỉ thuộc ngày 19/10, không được gán lại cho bản cuối.
+Chưa benchmark lại sau sửa gameplay/protocol ngày 23/10; không gán số liệu này cho working tree hiện tại. Fingerprint nguồn đã đo: `698fbcb72a23e47ef29f1413490ae6dbabe9da9599fcc8d346f6175eb4029ab5`. Chi tiết RTT, phương pháp tính và raw CSV nằm ở `docs/EXPERIMENTS_FINAL.md`. RTT trung bình hai mode gần nhau; phép đo không chứng minh giảm độ trễ. Số liệu 66–79% trong tài liệu cũ chỉ thuộc ngày 19/10, không được gán lại cho bản cuối.
 
 ![Render map crossroads từ snapshot Java trong Unity](validation/crossroads.png)
 
@@ -151,7 +153,7 @@ Nhóm không tuyên bố phát minh TCP, snapshot hay interest management. Đi�
 
 ## 12. Limitations và Future Work
 
-Chưa có TLS/tài khoản, lưu lịch sử, chống gian lận toàn diện hoặc rate limit theo client. Một người gửi rất nhanh vẫn có thể tiêu tốn CPU; giới hạn connection/frame/queue không thay thế rate limit. Client chưa có prediction/reconciliation; Đấu nhanh không giới hạn thời gian nên hai người tránh nhau có thể kéo dài trận. Map seed chưa được khóa để so sánh hai mode trên cảnh giống hệt.
+Chưa có TLS/tài khoản, lưu lịch sử, chống gian lận toàn diện hoặc rate limit theo client. Một người gửi rất nhanh vẫn có thể tiêu tốn CPU; giới hạn connection/frame/queue không thay thế rate limit. Client chưa có prediction/reconciliation; quan sát sau khi chết hiện tự chọn mục tiêu, chưa có chuyển mục tiêu thủ công. Map seed chưa được khóa để so sánh hai mode trên cảnh giống hệt.
 
 Cần tiếp tục: playtest 2–4 Windows client, đo FPS/GC trên máy yếu, kiểm tra LAN hai máy và tình huống mạng kém; bổ sung rate limit nếu public server; thử nghiệm seed cố định và các mức latency có kiểm soát. Nếu mở rộng số phòng lớn, đánh giá NIO hoặc mô hình reader khác dựa trên profiling.
 

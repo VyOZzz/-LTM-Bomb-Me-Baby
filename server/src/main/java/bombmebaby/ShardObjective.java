@@ -58,7 +58,9 @@ final class ShardObjective {
 
     /** Advances the objective; returns true once the chapter timer has run out. */
     boolean update(long now, List<PlayerState> players) {
-        long dt = Math.max(0, now - lastUpdate);
+        // Interaction time follows the simulation's 100 ms catch-up ceiling.
+        // The chapter deadline below deliberately remains on wall time.
+        long dt = Math.min(100, Math.max(0, now - lastUpdate));
         lastUpdate = now;
         clearInvalidPriority(now);
         recoverFireLock(now);
@@ -127,7 +129,9 @@ final class ShardObjective {
         for (PlayerState p : players) {
             if (p == owner || !p.alive || !p.connected || !onPedestal(p)) continue;
             double progress = sealProgressMs.getOrDefault(p, 0.0);
-            long playerDt = Math.min(activeDt, Math.max(0, now - p.staggerUntil));
+            // A newly observed entrant has not spent the preceding interval inside.
+            long playerDt = sealProgressMs.containsKey(p)
+                ? Math.min(activeDt, Math.max(0, now - p.staggerUntil)) : 0;
             if (playerDt > 0)
                 progress += playerDt * (ownerPresent ? OWNER_DEFENSE_SPEED_FACTOR : 1.0);
             sealProgressMs.put(p, progress);

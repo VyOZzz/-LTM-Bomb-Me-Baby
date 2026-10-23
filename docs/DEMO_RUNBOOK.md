@@ -1,10 +1,10 @@
 # Runbook demo — Bomb Me Baby
 
-Cập nhật 22/10/2026. Bản Windows và server JAR đã build; [FINAL_VALIDATION.md](FINAL_VALIDATION.md) ghi phạm vi kiểm tra tự động. Cần chạy checklist bằng người thật trên build này trước nộp; mốc 13/10 bên dưới chỉ là lịch sử.
+Cập nhật 23/10/2026. Bản Windows và server JAR đã build; [FINAL_VALIDATION.md](FINAL_VALIDATION.md) ghi phạm vi kiểm tra tự động. Cần chạy checklist bằng người thật trên build này trước nộp; mốc 13/10 bên dưới chỉ là lịch sử.
 
 ## Chuẩn bị
 
-1. Chạy `mvn test "-Dsync.mode=baseline"` và `mvn test package "-Dsync.mode=optimized"` trong `server/`; cả hai phải qua 98 test.
+1. Chạy `mvn test "-Dsync.mode=baseline"` và `mvn test package "-Dsync.mode=optimized"` trong `server/`; cả hai phải qua 107 test.
 2. Chạy server bằng `mvn compile exec:java "-Dexec.args=7777" "-Dsync.mode=optimized"` (TCP `7777`).
 3. Đặt `server.txt` cạnh file game `.exe`; dòng đầu là `HOST:PORT`.
 4. Khởi động 2–4 bản game. Client thứ nhất tạo phòng; các client còn lại nhập mã phòng rồi vào phòng.
@@ -19,8 +19,10 @@ Muốn demo lặp lại một map Đấu nhanh, thêm `"-Ddemo.map=meadow"` vào
 - Di chuyển bằng WASD; kiểm tra camera bám local player và snapshot vẫn đến.
 - Giữ/thả Space; kiểm tra VFX nổ và HUD hiển thị cooldown bom 2.5 giây.
 - Dùng E và Shift; kiểm tra cooldown Shield/Boost.
-- Loại một player, nhặt Core và chơi tới popup kết quả.
-- Chọn chơi lại; kiểm tra tất cả cùng ready và vòng mới đổi map.
+- Loại một player trong trận ít nhất 3 người; kiểm tra camera người bị loại tự theo người sống và đổi khi mục tiêu bị loại. Nhặt Core và chơi tới popup kết quả.
+- Để ít nhất hai người sống đến hết 3 phút ở Đấu nhanh: HUD về 0, kết quả hòa; chơi lại có đồng hồ mới.
+- Trong Hành trình hai người, cho một người rời phòng hoặc hết hạn reconnect: có kết quả kết thúc sớm, không bị chờ READY 1/1.
+- Chọn chơi lại Đấu nhanh; kiểm tra tất cả cùng ready và vòng mới đổi map (trừ khi đang khóa map demo).
 - Tạo phòng **Hành trình Ba Mảnh**, kiểm tra `meadow → crossroads → crater`, điểm giữa chương và màn kết cuối.
 - Ngắt mạng một client dưới 10 giây rồi kết nối lại; kiểm tra giữ danh tính, phòng và geometry.
 - Xác nhận lời dẫn, VFX, SFX và popup kết quả không che thao tác chính.
@@ -28,10 +30,10 @@ Muốn demo lặp lại một map Đấu nhanh, thêm `"-Ddemo.map=meadow"` vào
 
 ## Trạng thái xác minh
 
-### Source hiện tại — 22/10/2026
+### Source hiện tại — 23/10/2026
 
-- Java: 98 test, 0 failure/error ở cả baseline và optimized; JAR kèm dependency chạy bằng Java 17+.
-- Unity `6000.3.6f1`: Windows build thành công; 12 kiểm tra C# và 69 kiểm tra Play Mode tự động qua. Audio hiện có 19 SFX và 4 track nhạc; nhạc sảnh giữ nguyên.
+- Java: 107 test, 0 failure/error ở cả baseline và optimized; JAR kèm dependency chạy bằng Java 17+.
+- Unity `6000.3.6f1`: Windows build thành công; 12 kiểm tra C# và 81 kiểm tra Play Mode tự động qua. Audio hiện có 16 SFX và 4 track nhạc; nhạc sảnh giữ nguyên.
 - Chưa đánh dấu hoàn thành demo cuối cho đến khi chạy lại 2–4 Windows client trên cùng commit/tag phát hành.
 
 ### Mốc client thật — 13/10/2026

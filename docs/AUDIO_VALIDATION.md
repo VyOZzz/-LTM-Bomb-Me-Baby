@@ -9,7 +9,7 @@ Lượt tinh chỉnh tiếp theo: người dùng xác nhận âm thanh đã ổn
 - Kiểm tra import, nhạc streaming, ánh xạ, stereo/khoảng cách, mute, về sảnh; thêm kiểm tra sáu clip mới nhập PCM, mẫu âm hữu hạn, peak dưới 0,4, biên đầu/cuối nhỏ hơn 0,01, kỹ năng phát một lần và không còn loop động cơ. Đây là kiểm tra Editor, chưa phải nghe trong trận.
 - Sáu file sau encode có peak từ **−10,8 đến −8,6 dBFS**; riêng ba tiếng bom là **−9,0 / −9,0 / −10,8 dBFS**. Số đo từng file tại [AUDIO_LEVELS.csv](AUDIO_LEVELS.csv). FFmpeg decode thành công toàn bộ 20 clip.
 - Kiểm tra ngoại tuyến cộng các giới hạn peak theo gain trong code, với các slider bằng 1: giới hạn gameplay **0,832**, kết quả **0,727** (mức toàn thang là 1). Kết quả tại `builds/audio-mix-check.json`; không tính overshoot khi đổi pitch/resample hoặc xử lý của thiết bị, không phải bản thu mixer Unity.
-- `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build_client.ps1 -Isolated`: **exit 0**, `BOMB_BUILD_PASS 153727435 bytes`. Bản Windows mới: `builds/windows/BombMeBaby.exe`; log `builds/unity-build.log`. Đã bỏ các file audio nghỉ dùng khỏi bản sao kiểm tra trước khi build vì script copy `/E` không xóa file cũ.
+- `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build_client.ps1 -Isolated`: **exit 0**, `BOMB_BUILD_PASS 153727435 bytes`. Bản Windows mới: `builds/windows/BombMeBaby.exe`; log `builds/unity-build.log`. Ở lượt audio đã bỏ thủ công file nghỉ dùng khỏi bản sao do script cũ dùng `/E`. Hiện build/validation dùng chung `sync_unity_project.ps1` với mirror có kiểm tra đường dẫn; không cần thao tác xóa thủ công này. Con số build ở đây thuộc lượt audio; build gameplay mới nhất xem FINAL_VALIDATION.md.
 - SHA-256 nhạc sảnh vẫn là `6C6808475E0BF3B2CCA02925EB0048DA3A8CA1E4C7FEBFAC2F6C180D081EA92D`. `git diff --check` qua.
 - File nghe thử `builds/audio-preview.wav`: ba tiếng nổ → bật khiên → khiên đỡ đòn → tăng tốc; giữa mỗi tiếng có một giây nghỉ. File này phát mức asset gốc đã xử lý, chưa nhân gain gameplay.
 - Người dùng đã xác nhận bản giảm rè ban đầu nghe ổn. Bản tăng lực bom tiếp theo chưa được người dùng nghe xác nhận; agent không nghe trên thiết bị thật hoặc chơi thử 2–4 client. Không suy ra cảm giác nghe chỉ từ peak và kiểm tra tự động. Unity từng có cảnh báo độ dài decode của nhạc `music_meadow` vốn không sửa trong lần này; audit và build đều hoàn tất.
@@ -28,7 +28,7 @@ Lượt tinh chỉnh tiếp theo: người dùng xác nhận âm thanh đã ổn
 
 Project kiểm tra tạm không được đưa vào game; không thêm nút hay chế độ chơi offline.
 
-## Kiểm tra sau khi dọn audio thừa
+## Lịch sử dọn audio trước khi giảm từ 23 còn 20 clip
 
 - Xóa 25 clip không dùng (4.081.133 byte): 15 WAV trong `AudioArchive/` và 10 OGG `kenney_*`, kèm `.meta` và thư mục archive rỗng. Bỏ script tổng hợp cũ.
 - Trước khi xóa, quét GUID trong `Assets/` và `ProjectSettings/`: không có tham chiếu đến các asset bị xóa ngoài khai báo GUID của chính chúng.

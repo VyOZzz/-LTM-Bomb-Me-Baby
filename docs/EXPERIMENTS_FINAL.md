@@ -1,5 +1,7 @@
 # Thực nghiệm bản tích hợp — 22/10/2026
 
+Phạm vi: số liệu của bản đã đo ngày 22/10 theo fingerprint bên dưới. Gameplay/protocol đã thay đổi ngày 23/10; chưa benchmark lại, không coi đây là số đo của working tree hiện tại.
+
 Dữ liệu kết quả sau sửa: [summary.csv](../experiments/final-2026-10-22-v2/summary.csv) và 18 file trong [raw](../experiments/final-2026-10-22-v2/raw/). **18/18 lượt hoàn tất, tổng ERROR/CONNECTION_LOST = 0.** Không gộp với số liệu 19/10 hoặc lượt bị lỗi trước sửa.
 
 ## Cấu hình

@@ -76,7 +76,7 @@ Chạy server bằng `mvn compile exec:java "-Dexec.args=7777" "-Dsync.mode=base
 
 - Cùng Wi-Fi/LAN: chạy server trên một máy, nhập IPv4 LAN của máy đó (ví dụ `192.168.1.20`) trong game và cho phép TCP `7777` qua firewall.
 - Khác mạng Internet: chạy server trên VPS có IP/domain public, hoặc cấu hình port forwarding TCP `7777` trên router tới máy chạy server. Không dùng IP dạng `192.168.x.x` qua Internet.
-- Có thể đặt một file `server.txt` cạnh file `.exe`, dòng đầu là `HOST:PORT` (ví dụ `game.example.com:7777`), hoặc chạy `Bomb Me Baby.exe --server=HOST:PORT`. Client cũng ghi nhớ địa chỉ đã nhập.
+- Có thể đặt một file `server.txt` cạnh file `.exe`, dòng đầu là `HOST:PORT` (ví dụ `game.example.com:7777`), hoặc chạy `BombMeBaby.exe --server=HOST:PORT`. Client cũng ghi nhớ địa chỉ đã nhập.
 
 Kiểm tra từ máy người chơi trước khi mở game (PowerShell):
 
@@ -96,7 +96,7 @@ Test-NetConnection HOST -Port 7777
 
 Khi người chơi tạo hoặc vào phòng **Hành trình Ba Mảnh** lần đầu trong phiên, client phát phim mở đầu `Assets/StreamingAssets/story_intro.mp4` với phụ đề tiếng Việt; nhấn **Esc** hoặc **Space** để bỏ qua. Nếu máy không giải mã được MP4, client tự chuyển sang ba khung hình minh hoạ trong `Assets/Resources/Menu/`. Có thể thay video bằng bản dựng H.264 1920×1080 khác, giữ nguyên tên file để không phải sửa code.
 
-Điều khiển: **WASD/phím mũi tên** di chuyển theo hướng màn hình, **giữ Space** nạp và **thả Space** để nổ, **E** bật Shield, **Shift** Boost. Trong Hành trình, người đang cầm Mảnh Tim Lửa không thể nạp/nổ bom và nhấn **Q** để chủ động thả mảnh. Camera bám sát quả bóng của người chơi và chỉ hiển thị một vùng nhỏ của map. Đấu nhanh đổi sang một map khác ở vòng sau; Hành trình luôn chạy `meadow → crossroads → crater`, giữ điểm qua ba vòng.
+Điều khiển: **WASD/phím mũi tên** di chuyển theo hướng màn hình, **giữ Space** nạp và **thả Space** để nổ, **E** bật Shield, **Shift** Boost. Trong Hành trình, người đang cầm Mảnh Tim Lửa không thể nạp/nổ bom và nhấn **Q** để chủ động thả mảnh. Camera bám sát quả bóng của người chơi và chỉ hiển thị một vùng nhỏ của map; sau khi chết tự theo người còn sống, dùng góc nhìn của người đó. Đấu nhanh tối đa 3 phút, hết giờ còn nhiều người thì hòa, đổi map ở vòng sau. Hành trình chạy `meadow → crossroads → crater`, giữ điểm qua ba vòng; nếu thiếu người sau thời hạn reconnect 10 giây thì kết thúc sớm, tính kết quả theo các chương đã chơi.
 
 Game có nhạc riêng cho menu và ba map. Nhạc tự hạ khi có tiếng nổ/kết quả; dùng pool 20 giọng SFX với âm lượng/kênh trái phải theo vị trí người chơi để hạn chế chồng âm. Khi mất kết nối trong trận, client hiện cửa sổ reconnect 10 giây và số lần thử lại. Người còn trong phòng thấy tên người mất kết nối và thời gian giữ chỗ; vị trí đang ẩn trong bụi không bị lộ.
 
@@ -127,7 +127,7 @@ Nếu báo `ROOM_NOT_FOUND`, kiểm tra mã và địa chỉ server; `ROOM_UNAVA
 powershell -ExecutionPolicy Bypass -File scripts/build_client.ps1 -Isolated
 ```
 
-Output: `builds/windows/BombMeBaby.exe`. `-Isolated` build trong bản sao để bạn có thể giữ Editor đang mở; bỏ cờ nếu build trực tiếp project đã đóng. Truyền `-Unity` nếu Editor nằm ở đường dẫn khác. Trong Editor có **Tools > Bomb Me Baby > Build Windows**. Gửi cả thư mục Windows, không chỉ `.exe`.
+Output: `builds/windows/BombMeBaby.exe`. Build và validation dùng chung `scripts/sync_unity_project.ps1`: đồng bộ cả việc xóa file thừa trong Assets/Packages/ProjectSettings của bản sao, giữ cache Library. Không chạy hai tác vụ đồng thời trên cùng bản sao. `-Isolated` build trong bản sao để bạn có thể giữ Editor đang mở; bỏ cờ nếu build trực tiếp project đã đóng. Truyền `-Unity` nếu Editor nằm ở đường dẫn khác. Trong Editor có **Tools > Bomb Me Baby > Build Windows**. Gửi cả thư mục Windows, không chỉ `.exe`.
 
 ## Bật AI trong Unity Editor (tùy chọn)
 
@@ -142,17 +142,17 @@ Unity AI Assistant cần kết nối mạng và quyền sử dụng/trial hoặc
 
 ## Luật prototype
 
-- 100 HP, không hồi sinh; người cuối cùng sống thắng. Energy tăng Size 0.12 và hồi 3 HP, tối đa 100 HP. Size tối đa 2.6.
+- 100 HP, không hồi sinh trong vòng; người cuối cùng sống thắng sớm. Đấu nhanh hòa nếu hết 180 giây còn nhiều người. Trong Hành trình, hết 180 giây xét chủ bệ/người cầm mảnh; không ai giữ mảnh thì hòa chương. Energy tăng Size 0.12 và hồi 3 HP, tối đa 100 HP. Size tối đa 2.6.
 - Nạp tối đa 8 giây, sau đó tự nổ. Sau mỗi lần nổ, bom có cooldown 2.5 giây do server kiểm soát để không thể spam. Nhấn nhanh tạo vụ nổ nhỏ; bán kính và sát thương tăng mạnh theo đường cong thời gian nạp, Size và khoảng cách. Người nổ không bị sát thương bởi vụ nổ của chính mình; sau nổ Size về Base Size và phần Size đã tiêu hao rơi thành các mảnh Energy quanh vị trí nổ. Bom Size 1 vẫn gây sát thương ở cự ly gần.
 - Shield hoạt động ngay trong 1.5 giây, chặn 100% sát thương nổ và phản 50% về người tấn công; cooldown 9 giây.
-- Boost tăng tốc trong 0.9 giây, giảm Size 0.23 và rơi một Energy Orb, cooldown 5 giây.
+- Boost tăng tốc trong 0.9 giây, tiêu hao tối đa 0.23 Size nhưng không thấp hơn Base Size; chỉ rơi một Energy Orb nếu tiêu hao ít nhất 0.12. Cooldown 5 giây; ở Base Size vẫn tăng tốc được.
 - Đá là vật cản. Bụi không có collision: người chơi có thể đi xuyên vào để ẩn; đối thủ ở ngoài không nhìn thấy người trong bụi, còn người ở cùng bụi vẫn nhìn thấy nhau.
 - Mỗi vòng spawn người chơi ngẫu nhiên, tránh đá/bụi và cách nhau tối thiểu 28 đơn vị. Server chỉ cho thấy đối thủ trong bán kính 26 đơn vị nên không lộ vị trí spawn ở xa.
 - Nhân vật được dựng thành quả bóng có dải màu tương phản; phần bóng xoay theo quãng đường di chuyển để chuyển động lăn đọc được rõ ràng.
 - Khi bị loại, player rơi Core. Người nhặt Core tăng Base Size 0.1, tối đa 1.4.
 - Mất kết nối trong trận có 10 giây để kết nối lại bằng resume token. Quá hạn sẽ bị loại.
 
-Các thông số được đặt ở `server/src/main/java/bombmebaby/GameRules.java`; ba layout map nằm trong `server/src/main/java/bombmebaby/GameMap.java`. Đây là giá trị prototype cụ thể hoá các khoảng gợi ý trong GDD.
+Thông số chiến đấu ở `server/src/main/java/bombmebaby/GameRules.java`, thời hạn Đấu nhanh ở `GameRoom.java`, luật Tim Lửa ở `ShardObjective.java`; ba layout map nằm trong `server/src/main/java/bombmebaby/GameMap.java`. Đây là giá trị prototype cụ thể hoá các khoảng gợi ý trong GDD.
 
 ## Giao thức và kiểm tra
 
@@ -166,6 +166,8 @@ python3 scripts/network_smoke.py
 
 Unity client hiển thị RTT, số message gửi/nhận và dùng nội suy vị trí giữa các snapshot. `ACK.processingMicros` là thời gian server xử lý một message. `scripts/load_test.py` và `scripts/run_benchmark.ps1` ghi dữ liệu CSV để so sánh tự động; kết quả và giới hạn phép đo nằm trong [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md).
 
+Lệnh chạy toàn bộ kiểm tra C#/Unity, staging và build được ghi tại [FINAL_VALIDATION.md](docs/FINAL_VALIDATION.md).
+
 ## Điểm cải tiến và kết quả thực nghiệm
 
 Contribution kỹ thuật chính là **selective state synchronization**:
@@ -174,14 +176,14 @@ Contribution kỹ thuật chính là **selective state synchronization**:
 - player trong bụi/ở xa và pickup ngoài phạm vi được lọc theo từng viewer;
 - event nổ không gửi tọa độ nguồn cho viewer không được phép nhìn thấy.
 
-Phép đo mới ngày 22/10 gồm 18 lượt × 30 giây, cố định map meadow, 2/4/8 client giả lập: `optimized` giảm khoảng **62–78% byte nhận/client/s**, không có lỗi kết nối. Xem [EXPERIMENTS_FINAL.md](docs/EXPERIMENTS_FINAL.md). Kết quả chưa chứng minh giảm RTT hoặc hiệu năng LAN/Internet. Mốc cũ 19/10 (66–79%, map ngẫu nhiên) vẫn được giữ riêng trong [EXPERIMENTS.md](docs/EXPERIMENTS.md).
+Phép đo mới ngày 22/10 gồm 18 lượt × 30 giây, cố định map meadow, 2/4/8 client giả lập: `optimized` giảm khoảng **62–78% byte nhận/client/s**, không có lỗi kết nối. Xem [EXPERIMENTS_FINAL.md](docs/EXPERIMENTS_FINAL.md). Đây là bản đo ngày 22/10 theo fingerprint trong báo cáo, không phải phép đo lại source 23/10. Kết quả chưa chứng minh giảm RTT hoặc hiệu năng LAN/Internet. Mốc cũ 19/10 (66–79%, map ngẫu nhiên) vẫn được giữ riêng trong [EXPERIMENTS.md](docs/EXPERIMENTS.md).
 
-Trạng thái kiểm tra ngày 22/10/2026:
+Trạng thái kiểm tra ngày 23/10/2026:
 
-- Windows player đã build bằng Unity `6000.3.6f1`; 19 clip SFX và 4 track nhạc đang dùng, nhạc sảnh giữ nguyên;
-- 12 kiểm tra C# và 69 kiểm tra Unity Play Mode đã qua, gồm một client Unity kết nối Java thật cùng một peer TCP;
+- Windows player đã build bằng Unity `6000.3.6f1`; 16 clip SFX và 4 track nhạc đang dùng, nhạc sảnh giữ nguyên;
+- 12 kiểm tra C# và 81 kiểm tra Unity Play Mode đã qua, gồm một client Unity kết nối Java thật cùng một peer TCP;
 - test Java, lỗi đã sửa và phạm vi kiểm chứng xem [FINAL_VALIDATION.md](docs/FINAL_VALIDATION.md);
-- 98 test Java đã qua ở cả hai chế độ, và 18 lượt benchmark sau sửa hoàn tất không lỗi.
+- 107 test Java đã qua ở cả hai chế độ; kiểm tra staging qua. Benchmark 18 lượt thuộc bản ngày 22/10, chưa đo lại sau thay đổi gameplay/protocol 23/10.
 
 ## Giới hạn hiện tại
 

@@ -1,56 +1,67 @@
-# Hoàn thiện và kiểm chứng — 22/10/2026
+# Trạng thái và kiểm chứng — 23/10/2026
 
-Phiên bản nguồn: working tree sau `d8084b5`, chưa commit. Không dùng hash commit gốc để khẳng định các sửa đổi đã nằm trên Git remote. Benchmark mới ghi thêm SHA-256 toàn bộ Java source và `pom.xml`.
+Tài liệu này mô tả working tree hiện tại, gồm sửa đổi sau commit `88bf7be`; chưa khẳng định chúng đã commit/merge hoặc phát hành lên remote. Luật và JSON đầy đủ nằm trong [PROTOCOL.md](PROTOCOL.md).
 
-## Lỗi đã sửa
+## Chức năng hiện tại
 
-| Mục | Kết quả |
+- Hai mode, ba map, phòng mã 2–10 người và tìm trận 2–4 người. Phòng đang PLAYING không nhận người mới; người trong phiên có thể reconnect trong 10 giây.
+- Đấu nhanh tối đa 180 giây: người sống cuối cùng thắng; hết giờ còn nhiều người thì hòa. HUD nhận đồng hồ từ server, chơi lại đặt lại thời gian.
+- Hành trình chơi `meadow → crossroads → crater`; mỗi chương tối đa 180 giây. Xếp hạng theo số mảnh → số lần hạ → người thắng chương cuối trong nhóm hòa → đồng thắng. Điểm chỉ để thống kê.
+- Hành trình thiếu người kết thúc sớm sau thời gian giữ chỗ reconnect, giữ thành tích đã kiếm được, không cộng mảnh của chương chưa chơi. Người đã bị loại nhưng còn trong phòng vẫn được tính là người tham gia chương sau.
+- Người chết ngừng gửi input gameplay, vẫn giữ heartbeat và nhận snapshot. Camera/audio tự theo người còn sống; optimized dùng góc nhìn mục tiêu đó và giữ luật bụi/khoảng cách. Chưa có chọn mục tiêu quan sát thủ công.
+- Audio hiện có 20 clip: 16 SFX và 4 track nhạc. Nguồn và kiểm chứng riêng ở [AUDIO_CREDITS.md](AUDIO_CREDITS.md), [AUDIO_VALIDATION.md](AUDIO_VALIDATION.md).
+
+## Các lỗi đã sửa và test bảo vệ
+
+| Nhóm lỗi | Hành vi sau sửa / kiểm chứng |
 | --- | --- |
-| R1: snapshot vượt qua event | Giữ thứ tự TCP, chỉ gộp snapshot liền nhau; giữ geometry recovery; kiểm tra room/vòng ở Unity; overflow khởi động lại kết nối |
-| R2: lobby ma sau resume | WELCOME báo có/không còn phòng; LEFT_ROOM luôn được xác nhận; client xóa state cũ |
-| R3: create/cleanup race | Đăng ký phòng và thêm host dưới cùng room lock; cleanup kiểm tra/xóa dưới room lock |
-| R4: tăng size kẹt đá | Giải quyết chồng collider sau nhặt orb/Core, tìm vị trí trống gần nhất nếu cụm đá gây dao động |
-| R5: mất kết quả khi reconnect | Lưu người thắng/lý do trong room; resume phát lại snapshot đầy đủ và kết quả; giữ session FINISHED 10 giây |
-| R6: luật UI sai | Xếp theo mảnh → số lần hạ → người thắng chương cuối → đồng thắng; điểm chỉ thống kê |
-| R7: hòa bị báo thua | Phân biệt thắng, thua, hòa, đồng chiến thắng; không phát nhạc thua cho hòa/đồng thắng |
-| R8: Boost tạo orb miễn phí | Chỉ thả orb nếu size thực sự tiêu hao đủ 0,12; vẫn được tăng tốc ở base size |
-| R9: timeout giả khi đang ghi | Chụp `writeStartedAt` một lần trước kiểm tra; tránh hai lần đọc volatile thấy giá trị khác nhau và đóng nhầm kết nối khỏe |
-| HUD Hành trình | GAME_START/snapshot cập nhật chương, map, điểm ngay, không chờ ROOM_STATE tiếp theo |
-| Vật liệu đồ họa | Giải phóng vật liệu riêng khi actor/pickup/objective/map bị xóa; giải phóng fallback nền trước khi thay texture |
-| Khung mạng quá dài | Giới hạn ngay khi đọc, không đợi cấp phát toàn bộ dòng; connection mới bị chặn khi đủ 64 |
-| Trải nghiệm phòng | Nút tạo phòng riêng rõ hơn; mô tả vào bằng mã; tìm trận ghép hàng chờ riêng |
+| Snapshot vượt event, lobby ma, mất kết quả khi resume | Giữ thứ tự event, chỉ gộp snapshot liền nhau; roomCode/roundIndex chặn dữ liệu cũ; resume phát lại geometry và kết quả, kể cả kết thúc Hành trình sớm. Test C#, TCP và Unity. |
+| Tạo/dọn phòng đồng thời | Đăng ký host và cleanup dưới room lock; test chạy cạnh tranh. |
+| Tăng size kẹt đá, Boost tạo orb miễn phí | Giải chồng collider sau tăng size; chỉ thả orb khi size thực chi đủ 0,12. Test trên ba map. |
+| Timeout giả khi writer vừa xong | Chụp writeStartedAt một lần trước kiểm tra; regression hai luồng. |
+| UI xếp hạng/hòa | Xếp theo mảnh và lượt hạ; phân biệt thắng, hòa, đồng thắng; khôi phục popup từ room state. |
+| Hành trình kẹt vì chỉ còn một người | Kết thúc sớm có reason INSUFFICIENT_PLAYERS; không mời READY tiếp. Test rời giữa trận/giữa chương, biên reconnect và phát lại kết quả qua TCP. |
+| Server khựng cộng sai phá ấn | “Vào vòng” là bước vào vòng tròn quanh bệ Tim Lửa, không phải vào trận giữa chừng. Tick đầu nhận diện người trong vòng chưa được cộng thời gian trước đó; mỗi tick cộng tối đa 100 ms. Deadline chương vẫn theo thời gian thực. Test bước từ ngoài vào sau 4 giây khựng, người đã phá ấn và giới hạn 3/6 giây. |
+| Phản khiên không reset phá ấn | Damage trực tiếp/phản khiên dùng chung hậu quả damage thực tế; reset đúng người và áp stagger, giữ miễn stagger liên tiếp. |
+| Người chết tiếp tục gửi MOVE | Gọi BombGame.Update thật trong Unity: outbox không có MOVE/EXPLODE, vẫn có PING; thiếu local state cũng không gửi gameplay input. |
+| Staging giữ asset đã xóa | Build/validation dùng chung sync_unity_project.ps1; mirror Assets/Packages/ProjectSettings dưới builds, kiểm tra đường dẫn/reparse point, giữ Library. Fixture kiểm tra file thừa, nguồn/cache và đường dẫn không hợp lệ. |
+| Tài nguyên đồ họa và frame quá dài | Giải phóng vật liệu riêng theo vòng đời đối tượng; giới hạn frame khi đọc và tối đa 64 connection. Test tích hợp và JUnit. |
 
-## Kết quả tự động
+Các harness tái hiện lỗi cũ và báo cáo review trùng đã được bỏ sau khi gộp nội dung cần thiết vào đây. Test hồi quy được giữ trong `server/src/test`, `scripts/validation`, `scripts/test_unity_staging.ps1` và `Assets/Editor/BombValidation.cs`.
 
-- **98 test Java** qua ở cả baseline và optimized, 0 failure/error. Bao gồm TCP thật, resume lobby/đang chơi/giữa chương/finale, giới hạn frame, khóa room, va chạm tăng size trên mọi đá của cả ba map, bot và cuộc đua timeout/ghi socket.
-- **12 kiểm tra C#** qua trên chính `BombNetwork.cs` và `BombProtocol.cs`, chạy bằng `scripts/test_client.ps1`.
-- **69 kiểm tra Unity Play Mode** qua trong Unity 6000.3.6f1: dựng ba map ba lượt bằng snapshot từ Java, cập nhật actor/kết quả, audio import, kiểm tra vật liệu và một Unity client kết nối server JAR thật cùng một peer TCP. Đây là kiểm thử tự động headless, không phải hai người chơi hoặc hai Unity client.
-- Vật liệu được gắn nhãn do game tạo: **11 → 11 → 11** sau mỗi chu kỳ ba map trong harness. Phép đo có giữ map hiện tại và đối tượng chờ cuối frame; chứng minh không tăng trong kịch bản này, không phải tuyên bố toàn bộ bộ nhớ/FPS đã tối ưu.
-- Windows player build thành công bằng `BombBuild.Windows`; output `builds/windows/BombMeBaby.exe`. Bộ nguồn chứa script build lại bằng một lệnh, không phụ thuộc file `.csproj` sinh tự động.
-- Windows player đã chạy nền 8 giây, không tự thoát và không có các lỗi runtime được kiểm tra (NullReference/MissingMethod/TypeLoad/Missing audio/Fatal); tiến trình được harness dừng chủ động. Đây là smoke khởi động, không phải playtest.
-- Chạy lại 69 kiểm tra Unity với thiết bị đồ họa cũng qua; ba ảnh render từ camera bằng snapshot Java đã được xem: [meadow](validation/meadow.png), [crossroads](validation/crossroads.png), [crater](validation/crater.png). Ảnh không gồm HUD và không được gọi là ảnh chụp một trận người thật. Marker kiểm thử lưu ở [unity-checks.txt](validation/unity-checks.txt).
-- Benchmark sau sửa watchdog: **18 lượt × 30 giây, 0 lỗi**, giảm khoảng **62–78% byte nhận/client/s** ở optimized. Xem [EXPERIMENTS_FINAL.md](EXPERIMENTS_FINAL.md) cùng dữ liệu lỗi trước sửa được giữ nguyên.
-- Server được đóng gói JAR kèm Gson: `server/target/bomb-me-baby-server-1.0.0.jar`.
-- Giữ nguyên nhạc sảnh MP3; không thêm lại chế độ offline hoặc âm thanh mở trận.
+## Kết quả mới nhất
 
-Lệnh lặp lại (từ thư mục gốc):
+| Kiểm tra | Kết quả ngày 23/10 |
+| --- | --- |
+| Java/JUnit | 107 test qua ở mỗi lần chạy baseline/optimized, không failure/error. Cùng bộ test chạy hai cấu hình; một số fixture chủ động chọn sync mode để kiểm tra từng nhánh. |
+| C# ngoài Unity | 12 kiểm tra hàng đợi/kết quả qua trên BombNetwork/BombProtocol thật. |
+| Unity Play Mode | 81 kiểm tra headless qua: ba map × ba chu kỳ, actor/kết quả, import audio, vật liệu, input chết/quan sát, một Unity client + một peer TCP trên server JAR thật. |
+| Staging | Fixture mirror, cache Library và giới hạn đường dẫn qua. |
+| Build Windows | exit 0, BOMB_BUILD_PASS; `builds/windows/BombMeBaby.exe`. Gửi cả thư mục Windows. |
+| Server JAR | `server/target/bomb-me-baby-server-1.0.0.jar`, kèm Gson, chạy bằng Java 17+. |
+
+Bằng chứng: [Java](validation/review-fixes-2026-10-23/java-tests.json), [Unity](validation/review-fixes-2026-10-23/unity-checks.txt). Log đầy đủ ở `server/target/surefire-reports/`, `builds/unity-validation.log`, `builds/unity-build.log`; build/target không được Git theo dõi. Lượt Unity đầu gặp lỗi thứ tự khởi tạo transport trong fixture; đã sửa fixture và chạy lại đầy đủ thành công, không sửa production network để làm test qua.
+
+## Chạy lại
+
+Từ thư mục gốc trên Windows, cần JDK 17+, Maven 3.9+, .NET 10 SDK, Python 3.10+ và Unity 6000.3.6f1:
 
 ```powershell
 cd server
 mvn test "-Dsync.mode=baseline"
 mvn test package "-Dsync.mode=optimized"
 cd ..
-powershell -ExecutionPolicy Bypass -File scripts/test_client.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test_client.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test_unity_staging.ps1
 python scripts/validate_unity.py
-powershell -ExecutionPolicy Bypass -File scripts/build_client.ps1 -Isolated
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build_client.ps1 -Isolated
 ```
 
-`test_client.ps1` cần .NET 10 SDK. `validate_unity.py` cần Python 3.10+, Java 17+ và Unity đúng phiên bản; tùy máy truyền `--java` và `--unity`. Validation dùng bản sao trong `builds/unity-validation`, server cổng 17778 và không tác động phiên Editor đang mở.
+Validation dùng bản sao `builds/unity-validation` và server TCP 17778; có `--java`, `--unity` để đổi đường dẫn. Build dùng `-Unity` để đổi Editor. Không chạy build và validation đồng thời vì dùng chung bản sao. Cả hai đồng bộ xóa file thừa chỉ trong ba thư mục nguồn của bản sao, giữ cache Library và không đóng Editor của project gốc.
 
-## Phạm vi còn cần người thật
+## Bằng chứng lịch sử và giới hạn
 
-Lượt benchmark đầu `experiments/final-2026-10-22` dừng ở lượt thứ 6 khi có một CONNECTION_LOST. Regression test của watchdog thất bại trên code cũ và qua sau khi chụp biến volatile một lần. Đây là race đã được xác nhận; trace mạng cũ không đủ để chứng minh duy nhất nguyên nhân của lần disconnect đó. Dữ liệu cũ được giữ nguyên, phép đo sau sửa nằm ở thư mục `final-2026-10-22-v2` và được trình bày riêng.
-
-Chưa có phép đo FPS/GC trong Windows player có đồ họa, nghe âm thanh bằng tai, playtest hai máy LAN, kiểm tra trên máy sạch hoặc Compilatio. Không điền số liệu trải nghiệm chủ quan vào `PLAYTEST_MAPS.md`. Đấu nhanh vẫn kết thúc theo người sống cuối cùng; không tự thêm đồng hồ/thu vòng làm đổi luật.
-
-Trước nộp: bổ sung đúng thông tin nhóm, chơi checklist trên build, kiểm tra similarity theo yêu cầu của thầy và dùng đúng báo cáo đã nộp vào thư mục Report. Những bước này cần thông tin/kết quả thực tế từ nhóm.
+- Benchmark ngày 22/10 vẫn là **18 lượt × 30 giây**, 0 lỗi ở đợt sau sửa watchdog, giảm khoảng **62–78% byte nhận/client/s**. Fingerprint và raw CSV trong [EXPERIMENTS_FINAL.md](EXPERIMENTS_FINAL.md) chỉ xác định bản đã đo ngày đó; chưa benchmark lại sau thay đổi gameplay/protocol 23/10. Không gán số liệu này cho source hiện tại.
+- Các ảnh [meadow](validation/meadow.png), [crossroads](validation/crossroads.png), [crater](validation/crater.png) là render camera từ harness ngày 22/10, không có HUD, không phải trận người thật. Smoke Windows khởi động 8 giây cũng thuộc ngày 22/10; lượt 23/10 xác nhận build và kiểm thử Editor, chưa thay thế playtest Windows.
+- Bộ test 21/10 được ghi riêng trong [THANH_VIEN_A_KIEM_THU.md](THANH_VIEN_A_KIEM_THU.md); không sửa số liệu lịch sử thành số test mới.
+- Chưa có playtest cuối 2–4 Windows client/LAN, đo FPS/GC, kiểm tra máy sạch hay Compilatio. Không điền kết quả chủ quan vào [PLAYTEST_MAPS.md](PLAYTEST_MAPS.md). Các ca server khựng dùng thời gian đầu vào điều khiển được, không phải phép đo tần suất khựng thực tế.
