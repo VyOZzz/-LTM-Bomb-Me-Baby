@@ -1,183 +1,446 @@
-# Bomb Me Baby
+# 💣 Bomb Me Baby
 
-Prototype game PvP arena 2.5D cho tối đa 10 người, xây theo GDD được cung cấp. Unity client hiển thị arena và gửi ý định điều khiển qua TCP; Java server giữ trạng thái chính thức của trận, chọn map, sinh vị trí người chơi, tính va chạm, nhặt vật phẩm, sát thương và người thắng.
+**Game đấu trường PvP 2.5D nhiều người chơi qua mạng TCP** — bài tập lớn môn **Lập trình mạng**, năm học 2026–2027.
 
-## Cấu trúc
+Người chơi điều khiển một quả bóng lăn trên bản đồ, nhặt Energy để lớn lên, gồng bom rồi kích nổ để hạ đối thủ. Toàn bộ luật chơi do **Java server** quyết định (server-authoritative); **Unity client** chỉ gửi ý định điều khiển và hiển thị trạng thái server gửi về.
 
-- `server/`: Java 17, TCP JSON theo từng dòng, game loop 20 Hz, snapshot 10 Hz, thread pool cho client.
-- `LTM-Bomb-Me-Baby/`: project Unity 6.3 LTS (`6000.3.6f1`). Arena, camera, ánh sáng, vật cản và spawn point được lưu thành GameObject thật trong scene; player, pickup và VFX được sinh theo trạng thái mạng. Unity AI Assistant là công cụ Editor tùy chọn, không cần để chạy hoặc build game.
-- `scripts/network_smoke.py`: kiểm tra kết nối thật với 2 client giả lập.
-- `docs/GDD Bomb Me Baby.docx`: bản GDD gốc để nhóm đối chiếu trong quá trình phát triển.
+| | |
+| --- | --- |
+| **Chủ đề** | Chủ đề 2 – Phát triển game mạng (`final-project/Topics.md`) |
+| **Giảng viên** | Thầy Ngô Văn Quyền |
+| **Repository** | https://github.com/VyOZzz/-LTM-Bomb-Me-Baby |
 
-## Kiến trúc và luồng mạng
+### Thành viên nhóm
+
+| STT | MSSV | Họ tên | Email | Phụ trách chính | Đóng góp |
+| --- | --- | --- | --- | --- | ---: |
+| 1 | ... | Vỹ (trưởng nhóm) | ... | Unity client, scene, HUD, prototype ban đầu | ...% |
+| 2 | ... | Tiên | ... | Java server, selective sync, reconnect, kiểm thử JUnit | ...% |
+| 3 | ... | Phương | ... | Kịch bản, map, đo đạc thực nghiệm, âm thanh, đóng gói | ...% |
+| | | | | **Tổng** | **100%** |
+
+---
+
+## Mục lục
+
+1. [Giới thiệu](#1-giới-thiệu)
+2. [Tính năng và luật chơi](#2-tính-năng-và-luật-chơi)
+3. [Kiến trúc hệ thống](#3-kiến-trúc-hệ-thống)
+4. [Giao thức mạng](#4-giao-thức-mạng)
+5. [Điểm mới và kết quả thực nghiệm](#5-điểm-mới-novelty-và-kết-quả-thực-nghiệm)
+6. [Công nghệ sử dụng](#6-công-nghệ-sử-dụng)
+7. [Cấu trúc thư mục](#7-cấu-trúc-thư-mục)
+8. [Yêu cầu hệ thống](#8-yêu-cầu-hệ-thống)
+9. [Hướng dẫn cài đặt và chạy](#9-hướng-dẫn-cài-đặt-và-chạy)
+10. [Kiểm thử và đo đạc](#10-kiểm-thử-và-đo-đạc)
+11. [Xử lý sự cố](#11-xử-lý-sự-cố)
+12. [Giới hạn và hướng phát triển](#12-giới-hạn-và-hướng-phát-triển)
+13. [Tài liệu](#13-tài-liệu)
+
+---
+
+## 1. Giới thiệu
+
+### Bài toán
+
+Game hành động nhiều người cần mọi người chơi thấy **cùng một trận đấu**, trong khi mỗi máy có độ trễ khác nhau và có thể mất kết nối bất kỳ lúc nào. Nếu client tự tính vị trí, máu, sát thương thì dễ lệch trạng thái và dễ gian lận. Ngoài ra, nếu server gửi toàn bộ trạng thái cho mọi người ở mỗi tick thì lượng dữ liệu tăng nhanh theo số người chơi, và client còn biết được vị trí của đối thủ đang ẩn.
+
+### Mục tiêu
+
+1. Xây dựng server TCP giữ trạng thái chính thức của trận, phục vụ nhiều phòng và nhiều client đồng thời.
+2. Thiết kế protocol JSON rõ ràng, có sequence chống request trùng, heartbeat, timeout và reconnect.
+3. Đề xuất cơ chế **đồng bộ trạng thái chọn lọc** (selective sync) và đo mức giảm băng thông so với baseline gửi toàn bộ.
+
+### Phạm vi
+
+- **Có:** 2 chế độ chơi, 3 bản đồ, phòng riêng bằng mã 6 ký tự, ghép trận ngẫu nhiên, tối đa 10 người/phòng, reconnect trong 10 giây, Unity client cho Windows.
+- **Chưa có:** đăng nhập/tài khoản, mã hóa TLS, lưu lịch sử trận, chống gian lận toàn diện.
+
+---
+
+## 2. Tính năng và luật chơi
+
+### Chế độ chơi
+
+| Chế độ | Mô tả |
+| --- | --- |
+| **Đấu nhanh** | Tối đa 3 phút. Người sống cuối cùng thắng. Hết giờ mà còn nhiều người thì xếp hạng: mỗi lần hạ +3 điểm → tổng sát thương → còn sống → HP. 60 giây cuối, vị trí mọi người hiện trên minimap. |
+| **Hành trình Tim Lửa** | 3 chương liên tiếp trên 3 bản đồ (`meadow` → `crossroads` → `crater`), mỗi chương tối đa 6 phút. Mang Mảnh Tim Lửa đặt lên bệ và giữ 30 giây không bị cướp để thắng chương. |
+
+### Vào trận
+
+- **Tìm trận:** server ghép ngẫu nhiên 2–4 người cùng chọn một chế độ và vào trận ngay.
+- **Phòng riêng:** một người tạo phòng, gửi mã 6 ký tự cho bạn bè; trận bắt đầu khi có ít nhất 2 người và tất cả bấm **Sẵn sàng**.
+
+### Điều khiển
+
+| Phím | Hành động |
+| --- | --- |
+| `W A S D` / phím mũi tên | Di chuyển |
+| Giữ `Space` → thả | Gồng bom → kích nổ (tự nổ sau 4 giây) |
+| `E` | Khiên: chặn 100% sát thương trong 1,5 giây, phản 50% về người tấn công (hồi 9 giây) |
+| `Shift` | Tăng tốc 0,9 giây, tốn một ít Size (hồi 5 giây) |
+| `Q` | Thả Mảnh Tim Lửa (Hành trình) |
+| Giữ `F` | Cướp mảnh khi đứng trong bệ (Hành trình) |
+| `F3` | Bảng debug: server, chế độ đồng bộ, RTT |
+| `Esc` / `Space` | Bỏ qua phim mở đầu |
+
+### Luật chính
+
+- 100 HP, không hồi sinh trong vòng. Bom Size 1 gồng đầy gây 80 sát thương ở tâm nổ, giảm dần theo khoảng cách; hồi bom 2,5 giây.
+- Nhặt Energy: +0,12 Size (tối đa 2,6), +1 HP, tăng tốc nhẹ. Nổ xong Size về Base Size, phần Size đã tiêu rơi ra thành Energy.
+- Người bị loại rơi Core; nhặt Core tăng Base Size thêm 0,1 (tối đa 1,4).
+- Đá là vật cản. Bụi cho phép ẩn nấp: đối thủ ở ngoài không thấy người trong bụi. Chỉ thấy đối thủ trong bán kính 26 đơn vị.
+- Mất kết nối có 10 giây để vào lại bằng resume token, quá hạn thì bị loại.
+
+Thông số nằm trong `server/src/main/java/bombmebaby/GameRules.java` (chiến đấu), `GameRoom.java` (Đấu nhanh), `ShardObjective.java` (Hành trình) và `GameMap.java` (bản đồ).
+
+---
+
+## 3. Kiến trúc hệ thống
 
 ```text
-Unity clients (2–4 khi demo, tối đa 10)
-        │  TCP lâu dài, JSON theo từng dòng
-        │  HELLO / room action / MOVE / EXPLODE / PING
-        ▼
-Java authoritative server
-  ├─ thread pool nhận và kiểm tra request
-  ├─ khóa riêng theo room khi đổi trạng thái
-  ├─ game loop 20 Hz
-  └─ hàng đợi ghi riêng/client; gộp snapshot liền nhau, giữ thứ tự event gameplay
-        │
-        └─ STATE_UPDATE / ACK / PONG / GAME_OVER / JOURNEY_COMPLETE
+ ┌──────────────┐ ┌──────────────┐       ┌──────────────┐
+ │ Unity client │ │ Unity client │  ...  │ Unity client │   (2–10 người / phòng)
+ └──────┬───────┘ └──────┬───────┘       └──────┬───────┘
+        │   TCP lâu dài, JSON mỗi dòng (port 7777)
+        ▼                ▼                      ▼
+ ┌──────────────────────────────────────────────────────────┐
+ │                 Java authoritative server                 │
+ │  ServerSocket ── thread pool (64) ── Connection/client    │
+ │                     │                  └─ writer queue    │
+ │       ┌─────────────┼──────────────┐                     │
+ │   Matchmaker    GameRoom (lock)  Sessions (resume token)  │
+ │                     │                                     │
+ │         Game loop 20 Hz ── snapshot 10 Hz ── SyncMode     │
+ └──────────────────────────────────────────────────────────┘
 ```
 
-Client chỉ gửi ý định điều khiển. Server kiểm tra sequence, tính movement, va chạm, khả năng nhìn thấy, sát thương, objective và người thắng. `baseline` gửi snapshot đầy đủ; `optimized` gửi geometry lúc bắt đầu/reconnect rồi lọc trạng thái động theo từng viewer.
+| Thành phần | Nhiệm vụ |
+| --- | --- |
+| `BombServer` | Nhận kết nối, đọc frame JSON, kiểm tra `seq`, điều phối request, chạy game loop, dọn session hết hạn |
+| `Connection` | Một luồng đọc + một luồng ghi riêng cho mỗi client; hàng đợi ghi tối đa 128 message, gộp snapshot liền nhau |
+| `GameRoom` | Trạng thái một phòng: di chuyển, va chạm, nổ bom, nhặt đồ, thắng thua. Mọi thay đổi chạy dưới khóa của phòng |
+| `Matchmaker` | Hàng đợi tìm trận theo chế độ, ghép 2–4 người |
+| `SyncMode` | `BASELINE` gửi đầy đủ / `OPTIMIZED` lọc theo từng người xem |
+| `ShardObjective` | Luật Mảnh Tim Lửa của chế độ Hành trình |
+| Unity `BombNetwork` | Socket TCP, luồng ghi nền, inbox giới hạn, heartbeat, tự reconnect |
+| Unity `BombGame` | Xử lý message, nội suy vị trí giữa hai snapshot, HUD, camera, âm thanh |
 
-## Chạy server
+**Concurrency:** mỗi client có luồng đọc lấy từ thread pool và luồng ghi riêng; game loop chạy trên một luồng riêng. Thứ tự khóa luôn là `player → room → hàng đợi ghi` để tránh deadlock; ghép trận khóa các player theo thứ tự id. Client chậm làm đầy hàng đợi ghi sẽ bị đóng kết nối, không làm chậm cả phòng.
 
-Cần JDK 17+ và Maven 3.9+.
+---
 
-```sh
-cd server
-mvn test
-mvn exec:java -Dexec.args="7777"
+## 4. Giao thức mạng
+
+- **Giao thức:** TCP, kết nối giữ suốt phiên chơi. Mỗi message là một JSON object trên một dòng UTF-8, tối đa 2048 ký tự.
+- **Luồng chính:**
+
+```text
+Client                                   Server
+  |------ HELLO {name, resumeToken} ------->|
+  |<----- WELCOME {playerId, resumeToken} --|
+  |------ FIND_MATCH / CREATE_ROOM -------->|
+  |<----- MATCH_FOUND / ROOM_STATE ---------|
+  |<----- GAME_START {map, obstacles} ------|
+  |------ MOVE / CHARGE_START / EXPLODE --->|   (mỗi request có seq tăng dần)
+  |<----- ACK {seq, processingMicros} ------|
+  |<----- STATE_UPDATE (10 Hz) -------------|
+  |------ PING ---------------------------->|
+  |<----- PONG -----------------------------|
+  |<----- GAME_OVER {winnerId, leaderboard}-|
+  |------ LEAVE_ROOM / đóng socket -------->|
 ```
 
-Server mặc định nghe TCP port `7777`. Mở firewall cho port này nếu người chơi ở máy khác. Giao thức prototype là TCP thuần trong mạng tin cậy; chưa có đăng nhập hay TLS.
+- **Ví dụ message:**
 
-Từ PowerShell ở thư mục gốc, có thể dùng:
+```json
+{"type":"HELLO","name":"Bom A","resumeToken":""}
+{"type":"MOVE","seq":4,"directionX":0.8,"directionZ":0.3}
+{"type":"ERROR","code":"DUPLICATE_SEQUENCE"}
+```
+
+- **Xử lý lỗi:**
+
+| Tình huống | Cách xử lý |
+| --- | --- |
+| JSON sai / thiếu trường | Trả `ERROR INVALID_MESSAGE`, giữ kết nối |
+| Request trùng hoặc cũ | `seq` ≤ seq đã nhận → `DUPLICATE_SEQUENCE`, không thực hiện lại |
+| Hành động sai trạng thái | `NOT_IN_ROOM`, `ACTION_UNAVAILABLE`, `ROOM_UNAVAILABLE`, `BOMB_COOLDOWN`… |
+| Frame quá lớn | Đóng socket khi vượt 2048 ký tự kể cả chưa có newline |
+| Client im lặng | Server đóng sau 6 giây không nhận message hợp lệ; client tự đóng sau 7 giây |
+| Ghi bị treo | Đóng kết nối nếu một lần ghi kéo dài quá 3 giây hoặc hàng đợi đầy 128 |
+| Mất kết nối | Giữ chỗ 10 giây; client gửi lại `HELLO` kèm `resumeToken` để khôi phục phòng và trạng thái |
+| Quá tải | Tối đa 64 kết nối đồng thời |
+
+Đặc tả đầy đủ các message: [docs/PROTOCOL.md](docs/PROTOCOL.md).
+
+---
+
+## 5. Điểm mới (Novelty) và kết quả thực nghiệm
+
+### Selective state synchronization
+
+| Khía cạnh | Baseline | Proposed (`OPTIMIZED`) |
+| --- | --- | --- |
+| Hình học bản đồ (đá, bụi) | Gửi lại trong mọi snapshot | Gửi một lần ở `GAME_START` hoặc khi reconnect |
+| Người chơi ở xa / trong bụi | Gửi đủ tọa độ cho mọi người | Ẩn tọa độ với người không được phép thấy |
+| Energy / Core | Gửi toàn bộ | Chỉ gửi vật phẩm trong tầm nhìn |
+| Sự kiện nổ | Gửi tọa độ cho cả phòng | Không gửi tọa độ cho người không thấy nguồn nổ |
+| Tác dụng phụ | Client biết vị trí đối thủ đang ẩn | Chống "map hack" ngay từ dữ liệu gửi đi |
+
+Chuyển chế độ bằng `-Dsync.mode=baseline|optimized` khi chạy server.
+
+### Kết quả đo
+
+Đo ngày 22/10/2026: loopback, map `meadow`, 2/4/8 client giả lập, mỗi cấu hình 3 lượt × 30 giây, **18/18 lượt hoàn tất, 0 lỗi kết nối**.
+
+| Client | Byte nhận/client/s (baseline) | Byte nhận/client/s (optimized) | Giảm |
+| ---: | ---: | ---: | ---: |
+| 2 | 94 850 | 20 777 | **78,1%** |
+| 4 | 101 531 | 26 111 | **74,3%** |
+| 8 | 115 043 | 43 547 | **62,1%** |
+
+RTT trung bình ở cả hai chế độ đều khoảng 0,3–0,45 ms trên loopback; kết quả **không** chứng minh được optimized giảm RTT. Số liệu đo trên bản code ngày 22/10, trước các thay đổi gameplay 23–25/10. Cấu hình máy, dữ liệu thô và giới hạn của phép đo: [docs/EXPERIMENTS_FINAL.md](docs/EXPERIMENTS_FINAL.md), [experiments/final-2026-10-22-v2/](experiments/final-2026-10-22-v2/).
+
+---
+
+## 6. Công nghệ sử dụng
+
+| Hạng mục | Công nghệ |
+| --- | --- |
+| Server | Java 17, `java.net.ServerSocket`/`Socket`, `ExecutorService` |
+| Client | Unity 6.3 LTS (`6000.3.6f1`), C#, `System.Net.Sockets.TcpClient` |
+| Giao thức | TCP, JSON theo dòng (protocol tự thiết kế) |
+| Thư viện | Gson 2.11 (server), Newtonsoft.Json (client), JUnit 5 (test) |
+| Build | Maven 3.9 (server), Unity batch build (client) |
+| Script đo/test | Python 3 (chỉ dùng thư viện chuẩn), PowerShell |
+| Tài nguyên | Asset CC0 của Kenney, âm thanh ghi nguồn trong `docs/ASSET_CREDITS.md`, `docs/AUDIO_CREDITS.md` |
+
+---
+
+## 7. Cấu trúc thư mục
+
+```text
+-LTM-Bomb-Me-Baby/
+├── README.md                  ← file này
+├── server/                    ← Java server (Maven)
+│   ├── pom.xml
+│   └── src/
+│       ├── main/java/bombmebaby/   BombServer, GameRoom, Matchmaker, SyncMode, ...
+│       └── test/java/bombmebaby/   test JUnit
+├── LTM-Bomb-Me-Baby/          ← project Unity (client)
+│   ├── Assets/Scenes/Main.unity
+│   ├── Assets/Scripts/        BombNetwork, BombGame, BombProtocol, HUD, map, âm thanh...
+│   ├── Assets/Editor/         công cụ build, kiểm tra, dựng scene
+│   └── Assets/StreamingAssets/ phim mở đầu, lời dẫn
+├── scripts/                   ← chạy server, build client, bot, đo đạc, đóng gói
+├── experiments/               ← dữ liệu đo thô (CSV) và bảng tổng hợp
+├── docs/                      ← protocol, thực nghiệm, báo cáo nháp, runbook demo, GDD
+├── final-project/             ← yêu cầu đồ án của giảng viên
+└── builds/                    ← bản build (bị Git bỏ qua, tạo bằng script)
+```
+
+---
+
+## 8. Yêu cầu hệ thống
+
+| | Tối thiểu | Máy nhóm đã dùng để đo |
+| --- | --- | --- |
+| Hệ điều hành | Windows 10/11 64-bit | Windows 11 |
+| CPU | 4 nhân | Intel Core i7-11800H |
+| RAM | 8 GB (16 GB nếu mở Unity Editor) | 8 GB |
+| Ổ đĩa | ~1 GB cho bản build; ~10 GB nếu cài Unity Editor | |
+| Mạng | Cùng LAN, hoặc server có IP public/port forwarding | Loopback |
+
+| Phần mềm | Phiên bản | Cần khi |
+| --- | --- | --- |
+| JDK | 17 trở lên | Chạy server |
+| Maven | 3.9 trở lên | Build/test server từ source |
+| Unity Hub + Unity Editor | `6000.3.6f1` | Mở/sửa/build client từ source |
+| Python | 3.10 trở lên | Chạy bot, smoke test, benchmark (không cần cài thêm thư viện) |
+| Git | bất kỳ | Clone source |
+
+> Chỉ chơi thì **không cần** cài Unity: chỉ cần bản build Windows và một máy chạy server có Java 17.
+
+---
+
+## 9. Hướng dẫn cài đặt và chạy
+
+### Bước 1 — Lấy source code
+
+```powershell
+git clone https://github.com/VyOZzz/-LTM-Bomb-Me-Baby.git
+cd -LTM-Bomb-Me-Baby
+```
+
+Hoặc giải nén thư mục `Source/` trong gói nộp bài.
+
+Kiểm tra công cụ đã cài:
+
+```powershell
+java -version      # phải là 17 trở lên
+mvn -v
+python --version
+```
+
+### Bước 2 — Chạy server
+
+Server **không cần database**; mọi trạng thái nằm trong bộ nhớ. Chọn một trong các cách sau.
+
+**Cách A — script có sẵn (khuyên dùng):**
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/run_server.ps1
+# Tùy chọn: -Port 7777  -SyncMode optimized|baseline  -DemoMap meadow|crossroads|crater
 ```
 
-Hoặc đóng gói một lần rồi chạy chỉ với Java 17+ (máy chạy không cần Maven):
+Script tự build JAR rồi chạy server ở chế độ `optimized`.
+
+**Cách B — Maven:**
 
 ```powershell
 cd server
-mvn test package
+mvn test                                                     # chạy toàn bộ test
+mvn compile exec:java "-Dexec.args=7777" "-Dsync.mode=optimized"
+```
+
+**Cách C — đóng gói JAR, máy chạy chỉ cần Java:**
+
+```powershell
+cd server
+mvn package
 java -Dsync.mode=optimized -jar target/bomb-me-baby-server-1.0.0.jar 7777
 ```
 
-## Tài liệu và kiểm thử phần Java server (thành viên A)
+Khi thấy dòng `Bomb Me Baby server on TCP port 7777` là server đã sẵn sàng.
 
-- [Học từ đầu và giải thích từng phần code](docs/THANH_VIEN_A_HUONG_DAN.md).
-- [Kết quả kiểm chứng mới nhất](docs/FINAL_VALIDATION.md), [mốc kiểm thử trước đây](docs/THANH_VIEN_A_KIEM_THU.md).
-- [Bàn giao cho T/B: tích hợp JSON và so sánh baseline/optimized](docs/THANH_VIEN_A_BAN_GIAO.md).
+**Cấu hình server:**
 
-Server mặc định dùng baseline. Từ thư mục `server/`, kiểm tra cả hai cấu hình:
+| Tham số | Mặc định | Ý nghĩa |
+| --- | --- | --- |
+| Đối số đầu tiên | `7777` | Cổng TCP |
+| `-Dsync.mode` | `baseline` (cách B, C) / `optimized` (cách A) | Chế độ đồng bộ |
+| `-Ddemo.map` hoặc biến môi trường `DEMO_MAP` | rỗng (ngẫu nhiên) | Khóa bản đồ Đấu nhanh khi demo |
 
-```powershell
-mvn clean test "-Dsync.mode=baseline"
-mvn test "-Dsync.mode=optimized"
-```
+### Bước 3 — Chạy client
 
-Chạy server bằng `mvn compile exec:java "-Dexec.args=7777" "-Dsync.mode=baseline"`. Unity có nút tạo phòng Đấu nhanh và Chiếm Mảnh Tim Lửa. Chế độ `optimized` gửi geometry một lần ở GAME_START và lọc snapshot theo viewer; đây là đồng bộ chọn lọc, chưa phải delta từng trường giữa hai snapshot.
+**Cách A — dùng bản build Windows có sẵn:**
 
-Để khóa map cho buổi demo Đấu nhanh, thêm `"-Ddemo.map=meadow"` (hoặc `crossroads`, `crater`). Khi deploy có thể dùng biến môi trường `DEMO_MAP`. Server gửi `syncMode` và `demoMap` trong `WELCOME`; nhấn **F3** trong trận để xem endpoint, cấu hình đồng bộ và map demo đang dùng.
+1. Mở thư mục bản build đi kèm bài nộp (ví dụ `builds/windows-final/`) và chạy `Bomb Me Baby.exe`. Khi gửi cho người khác, phải gửi **cả thư mục**, không chỉ file `.exe`.
+2. Chỉ định server bằng một trong ba cách:
+   - Tạo file `server.txt` cạnh file `.exe`, dòng đầu là `HOST:PORT`, ví dụ `192.168.1.20:7777`;
+   - Chạy kèm tham số: `"Bomb Me Baby.exe" --server=192.168.1.20:7777`;
+   - Nhập trong game ở mục **Cài đặt mạng nâng cao**. Client sẽ nhớ địa chỉ đã nhập.
+3. Nhập tên → **Chơi** → chọn chế độ → **Tìm trận** hoặc **Tạo phòng riêng**.
 
-> Bản Unity build chỉ là **client**, không chứa Java server. `127.0.0.1` luôn là máy đang chạy game: nếu gửi build cho người khác mà giữ IP này, game sẽ tìm server trên máy của họ và kết nối thất bại.
+**Cách B — chạy từ Unity Editor:**
 
-Để máy khác kết nối:
+1. Mở Unity Hub → **Add** → chọn thư mục `LTM-Bomb-Me-Baby/`. Hub sẽ yêu cầu cài Unity `6000.3.6f1` nếu máy chưa có.
+2. Chờ import lần đầu (có thể mất vài phút), mở `Assets/Scenes/Main.unity`.
+3. Nếu scene trống, chọn menu **Tools › Bomb Me Baby › Rebuild Main Scene**.
+4. Nhấn **Play**. Mặc định client kết nối `127.0.0.1:7777`.
 
-- Cùng Wi-Fi/LAN: chạy server trên một máy, nhập IPv4 LAN của máy đó (ví dụ `192.168.1.20`) trong game và cho phép TCP `7777` qua firewall.
-- Khác mạng Internet: chạy server trên VPS có IP/domain public, hoặc cấu hình port forwarding TCP `7777` trên router tới máy chạy server. Không dùng IP dạng `192.168.x.x` qua Internet.
-- Có thể đặt một file `server.txt` cạnh file `.exe`, dòng đầu là `HOST:PORT` (ví dụ `game.example.com:7777`), hoặc chạy `BombMeBaby.exe --server=HOST:PORT`. Client cũng ghi nhớ địa chỉ đã nhập.
-
-Kiểm tra từ máy người chơi trước khi mở game (PowerShell):
-
-```powershell
-Test-NetConnection HOST -Port 7777
-```
-
-`TcpTestSucceeded: False` nghĩa là lỗi nằm ở việc server chưa chạy, IP/port sai, firewall hoặc port forwarding; build Unity chưa thể tự khắc phục các phần mạng này.
-
-## Chạy Unity client
-
-1. Cài Unity `6000.3.6f1` bằng Unity Hub, sau đó mở thư mục `LTM-Bomb-Me-Baby/` và chờ Unity import xong.
-2. Mở `Assets/Scenes/Main.unity`. Nếu scene chưa có hierarchy `Bomb Me Baby`, chọn **Tools > Bomb Me Baby > Rebuild Main Scene**.
-3. Nhấn Play, nhập tên rồi chọn **Chơi**. Client dùng server đã lưu hoặc được cấu hình bằng `server.txt`; IP/port chỉ nằm trong **Cài đặt mạng nâng cao** dành cho chủ phòng và kiểm thử.
-4. Chọn chế độ rồi bấm **Tìm trận**: server ghép ngẫu nhiên những người cùng tìm chế độ đó (2–4 người) và vào trận ngay. Muốn chơi riêng với bạn bè thì một người chọn **Tạo phòng riêng**, những người còn lại nhập mã 6 ký tự và **Vào phòng**.
-5. Trong phòng riêng, chọn **Sẵn sàng**; trận bắt đầu khi có ít nhất 2 người và tất cả cùng sẵn sàng (tối đa 10 người). Để chơi nhiều client trên cùng máy, build một bản Windows/Mac rồi chạy cùng lúc với Unity Editor, hoặc chạy nhiều bản build.
-
-Khi người chơi tạo hoặc vào phòng **Chiếm Mảnh Tim Lửa** lần đầu trong phiên, client phát phim mở đầu `Assets/StreamingAssets/story_intro.mp4` với phụ đề tiếng Việt; nhấn **Esc** hoặc **Space** để bỏ qua. Nếu máy không giải mã được MP4, client tự chuyển sang ba khung hình minh hoạ trong `Assets/Resources/Menu/`. Có thể thay video bằng bản dựng H.264 1920×1080 khác, giữ nguyên tên file để không phải sửa code.
-
-Điều khiển: **WASD/phím mũi tên** di chuyển theo hướng màn hình, **giữ Space** nạp và **thả Space** để nổ, **E** bật Shield, **Shift** Boost. Trong Hành Trình Tim Lửa, người đang cầm mảnh không thể nạp/nổ bom và nhấn **Q** để chủ động thả; đối thủ đứng trong bệ và **giữ F** để cướp. Camera bám sát quả bóng của người chơi và chỉ hiển thị một vùng nhỏ của map; sau khi chết tự theo người còn sống, dùng góc nhìn của người đó. Đấu nhanh tối đa 3 phút. Hành trình gồm 3 chương/map; mỗi chương cố định tối đa 6 phút. Người đặt mảnh lên bệ và giữ không bị cướp trong 30 giây thắng chương ngay.
-
-Game có nhạc riêng cho menu và ba map. Nhạc tự hạ khi có tiếng nổ/kết quả; dùng pool 20 giọng SFX với âm lượng/kênh trái phải theo vị trí người chơi để hạn chế chồng âm. Khi mất kết nối trong trận, client hiện cửa sổ reconnect 10 giây và số lần thử lại. Người còn trong phòng thấy tên người mất kết nối và thời gian giữ chỗ; vị trí đang ẩn trong bụi không bị lộ.
-
-**Phòng riêng và tìm nhanh:** người khác bấm Tìm trận **không vào phòng riêng bạn đã tạo**. Gửi mã phòng cho họ; hoặc cả hai cùng bấm Tìm trận ở cùng mode. Server ghép ở tick kế tiếp khi có ít nhất 2 người đang tìm.
-
-## Build Windows
+**Tự build bản Windows:**
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/build_client.ps1 -Isolated
+# Nếu Unity không nằm ở đường dẫn mặc định: thêm -Unity "D:/.../Unity.exe"
 ```
 
-Output: `builds/windows/BombMeBaby.exe`. Build và validation dùng chung `scripts/sync_unity_project.ps1`: đồng bộ cả việc xóa file thừa trong Assets/Packages/ProjectSettings của bản sao, giữ cache Library. Không chạy hai tác vụ đồng thời trên cùng bản sao. `-Isolated` build trong bản sao để bạn có thể giữ Editor đang mở; bỏ cờ nếu build trực tiếp project đã đóng. Truyền `-Unity` nếu Editor nằm ở đường dẫn khác. Trong Editor có **Tools > Bomb Me Baby > Build Windows**. Gửi cả thư mục Windows, không chỉ `.exe`.
+Kết quả nằm tại `builds/windows/BombMeBaby.exe`. Có thể build trong Editor qua **Tools › Bomb Me Baby › Build Windows**. Cờ `-Isolated` build trên một bản sao nên vẫn mở được Editor song song.
 
-## Bật AI trong Unity Editor (tùy chọn)
+### Bước 4 — Chơi nhiều người
 
-Project đang khai báo package preview `com.unity.ai.assistant`. Package này chỉ phục vụ hỗ trợ trong Editor và không thuộc luồng chạy game. Nếu cần dùng:
+| Tình huống | Cách làm |
+| --- | --- |
+| Cùng một máy | Chạy server, rồi mở nhiều cửa sổ bản build (hoặc bản build + Unity Editor), tất cả dùng `127.0.0.1:7777` |
+| Cùng Wi-Fi / LAN | Chạy server trên một máy, lấy IPv4 LAN bằng `ipconfig` (ví dụ `192.168.1.20`), mở firewall cho TCP `7777`; các máy khác nhập địa chỉ này |
+| Khác mạng Internet | Chạy server trên VPS có IP public, hoặc mở port forwarding TCP `7777` trên router. Không dùng IP `192.168.x.x` qua Internet |
+| Thiếu người để test | Thêm bot: `python scripts/bots.py --find QUICK --count 2` hoặc `python scripts/bots.py --room ABC123 --count 3` |
 
-1. Đăng nhập Unity ID trong Unity Hub và liên kết project với một Unity Cloud project.
-2. Nếu nút **AI** chưa hiện, nhấp chuột phải vùng trống trên toolbar rồi chọn **Services > AI**.
-3. Mở **AI**, chấp nhận điều khoản và để Unity hoàn tất cài đặt/kích hoạt package.
-4. Chọn **Open Assistant** để hỏi, sinh hoặc review code C# ngay trong Editor.
+Mở firewall Windows cho server (PowerShell quyền Administrator):
 
-Unity AI Assistant cần kết nối mạng và quyền sử dụng/trial hoặc credits trên tài khoản Unity. Người kiểm tra source không cần kích hoạt AI để mở scene, chạy game hoặc build player.
-
-## Luật prototype
-
-- 100 HP, không hồi sinh trong vòng; người cuối cùng sống thắng sớm. Đấu nhanh hết 180 giây mà còn nhiều người thì xếp hạng: mỗi lần hạ +3 điểm, bằng điểm xét tổng sát thương; chỉ hòa khi bằng nhau mọi tiêu chí. Phút cuối, vị trí mọi người hiện trên minimap. Chiếm Mảnh kết thúc sau 300 giây nếu chưa ai giữ bệ đủ 30 giây. Energy tăng Size 0.12, hồi 1 HP và cho boost tốc độ 12% trong 0.65 giây. Size tối đa 2.6.
-- Nạp tối đa 4 giây, sau đó tự nổ. Sau mỗi lần nổ, bom có cooldown 2.5 giây do server kiểm soát để không thể spam. Bom Size 1 charge đầy gây đúng 80 damage ở tâm nổ; damage nhân theo Size rồi giảm theo khoảng cách. Người nổ không bị sát thương bởi vụ nổ của chính mình; sau nổ Size về Base Size và phần Size đã tiêu hao rơi thành các mảnh Energy quanh vị trí nổ.
-- Shield hoạt động ngay trong 1.5 giây, chặn 100% sát thương nổ và phản 50% về người tấn công; cooldown 9 giây.
-- Boost tăng tốc trong 0.9 giây, tiêu hao tối đa 0.23 Size nhưng không thấp hơn Base Size; chỉ rơi một Energy Orb nếu tiêu hao ít nhất 0.12. Cooldown 5 giây; ở Base Size vẫn tăng tốc được.
-- Đá là vật cản. Bụi không có collision: người chơi có thể đi xuyên vào để ẩn; đối thủ ở ngoài không nhìn thấy người trong bụi, còn người ở cùng bụi vẫn nhìn thấy nhau.
-- Mỗi vòng spawn người chơi ngẫu nhiên, tránh đá/bụi và cách nhau tối thiểu 28 đơn vị. Server chỉ cho thấy đối thủ trong bán kính 26 đơn vị nên không lộ vị trí spawn ở xa.
-- Nhân vật được dựng thành quả bóng có dải màu tương phản; phần bóng xoay theo quãng đường di chuyển để chuyển động lăn đọc được rõ ràng.
-- Khi bị loại, player rơi Core. Người nhặt Core tăng Base Size 0.1, tối đa 1.4.
-- Mất kết nối trong trận có 10 giây để kết nối lại bằng resume token. Quá hạn sẽ bị loại.
-
-Thông số chiến đấu ở `server/src/main/java/bombmebaby/GameRules.java`, thời hạn Đấu nhanh ở `GameRoom.java`, luật Tim Lửa ở `ShardObjective.java`; ba layout map nằm trong `server/src/main/java/bombmebaby/GameMap.java`. Đây là giá trị prototype cụ thể hoá các khoảng gợi ý trong GDD.
-
-## Giao thức và kiểm tra
-
-Xem [docs/PROTOCOL.md](docs/PROTOCOL.md) để biết message JSON. Server không nhận vị trí, HP hoặc sát thương do client tự khai báo; client chỉ gửi hướng và hành động. Mỗi room được khoá riêng khi xử lý input và tick, bảo đảm một Core chỉ được một người nhặt.
-
-Khi server đang chạy:
-
-```sh
-python3 scripts/network_smoke.py
+```powershell
+New-NetFirewallRule -DisplayName "Bomb Me Baby" -Direction Inbound -Protocol TCP -LocalPort 7777 -Action Allow
 ```
 
-Unity client hiển thị RTT, số message gửi/nhận và dùng nội suy vị trí giữa các snapshot. `ACK.processingMicros` là thời gian server xử lý một message. `scripts/load_test.py` và `scripts/run_benchmark.ps1` ghi dữ liệu CSV để so sánh tự động; kết quả và giới hạn phép đo nằm trong [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md).
+Kiểm tra từ máy người chơi:
 
-Lệnh chạy toàn bộ kiểm tra C#/Unity, staging và build được ghi tại [FINAL_VALIDATION.md](docs/FINAL_VALIDATION.md).
+```powershell
+Test-NetConnection 192.168.1.20 -Port 7777     # TcpTestSucceeded phải là True
+```
 
-## Điểm cải tiến và kết quả thực nghiệm
+---
 
-Contribution kỹ thuật chính là **selective state synchronization**:
+## 10. Kiểm thử và đo đạc
 
-- geometry tĩnh được gửi một lần ở `GAME_START` hoặc khi reconnect, thay vì lặp lại trong mọi snapshot;
-- player trong bụi/ở xa và pickup ngoài phạm vi được lọc theo từng viewer;
-- event nổ không gửi tọa độ nguồn cho viewer không được phép nhìn thấy.
+| Lệnh | Mục đích |
+| --- | --- |
+| `cd server; mvn test "-Dsync.mode=baseline"` | 115 test JUnit: kết nối, reconnect, sequence trùng, ghép trận, luật chơi, Hành trình |
+| `cd server; mvn test "-Dsync.mode=optimized"` | Chạy lại toàn bộ test ở chế độ optimized |
+| `python scripts/network_smoke.py [port]` | Smoke test qua TCP thật với 2 client giả lập (server phải đang chạy) |
+| `python scripts/load_test.py --clients 4 --duration 30 --label optimized` | Đo RTT, byte, message, thời gian xử lý với N client |
+| `powershell -ExecutionPolicy Bypass -File scripts/run_benchmark.ps1 -Duration 30 -Repeats 3 -Map meadow` | Chạy toàn bộ ma trận baseline/optimized × 2/4/8 client, ghi CSV vào `experiments/run-<thời gian>/` |
+| `python scripts/summarize_experiments.py --summary <thư mục>/summary.csv` | Tổng hợp bảng kết quả từ CSV |
 
-Phép đo mới ngày 22/10 gồm 18 lượt × 30 giây, cố định map meadow, 2/4/8 client giả lập: `optimized` giảm khoảng **62–78% byte nhận/client/s**, không có lỗi kết nối. Xem [EXPERIMENTS_FINAL.md](docs/EXPERIMENTS_FINAL.md). Đây là bản đo ngày 22/10 theo fingerprint trong báo cáo, không phải phép đo lại source 23/10. Kết quả chưa chứng minh giảm RTT hoặc hiệu năng LAN/Internet. Mốc cũ 19/10 (66–79%, map ngẫu nhiên) vẫn được giữ riêng trong [EXPERIMENTS.md](docs/EXPERIMENTS.md).
+Kiểm tra Unity (Play Mode, build, staging): [docs/FINAL_VALIDATION.md](docs/FINAL_VALIDATION.md). Kịch bản demo trước giảng viên: [docs/DEMO_RUNBOOK.md](docs/DEMO_RUNBOOK.md).
 
-Trạng thái kiểm tra ngày 24/10/2026:
+---
 
-- Windows player đã build bằng Unity `6000.3.6f1`; 16 clip SFX và 4 track nhạc đang dùng, nhạc sảnh giữ nguyên;
-- 12 kiểm tra C# và 111 kiểm tra Unity Play Mode đã qua, gồm một client Unity kết nối Java thật cùng một peer TCP;
-- test Java, lỗi đã sửa và phạm vi kiểm chứng xem [FINAL_VALIDATION.md](docs/FINAL_VALIDATION.md);
-- 107 test Java đã qua ở cả hai chế độ; kiểm tra staging qua. Đã sửa hủy/tìm lại lúc ghép trận, người mới vào chờ lượt sau và audio đối thủ ẩn. Benchmark 18 lượt thuộc bản ngày 22/10, chưa đo lại sau thay đổi gameplay/protocol 23–24/10.
+## 11. Xử lý sự cố
 
-## Giới hạn hiện tại
+| Hiện tượng | Nguyên nhân / cách khắc phục |
+| --- | --- |
+| `mvn` hoặc `java` không nhận lệnh | Chưa cài hoặc chưa thêm vào `PATH`; kiểm tra `JAVA_HOME` trỏ tới JDK 17+ |
+| `Address already in use` khi chạy server | Cổng 7777 đang bị chiếm; tắt server cũ hoặc chạy cổng khác (`-Port 7778`) |
+| Client báo không kết nối được | Server chưa chạy, sai IP/cổng, hoặc firewall chặn. Kiểm tra bằng `Test-NetConnection` |
+| Gửi bản build cho bạn mà họ không vào được | `127.0.0.1` là máy của chính họ; phải nhập IP của máy chạy server |
+| Bấm Tìm trận mà không vào phòng bạn tạo | Tìm trận chỉ ghép người đang tìm; muốn vào phòng riêng phải nhập mã phòng |
+| Không vào được phòng đang chơi | Phòng `PLAYING` từ chối người mới (`ROOM_UNAVAILABLE`); chờ ván sau |
+| Script `.ps1` bị chặn | Chạy kèm `powershell -ExecutionPolicy Bypass -File ...` |
+| `python3` không có trên Windows | Dùng `python` hoặc `py` |
+| Phim mở đầu không phát | Máy không giải mã được MP4; client tự chuyển sang ảnh minh họa |
 
-- `builds/` bị Git ignore; clone source cần chạy script build. Vẫn cần kiểm tra máy sạch và nghe/chơi bằng người thật trước khi nộp.
-- Có matchmaking. Chưa có lưu lịch sử trận, skin hoặc TLS; server dùng TCP thuần cho demo/mạng tin cậy.
-- Benchmark mới vẫn dùng loopback và client giả lập; không thay thế đo LAN, FPS/GC hoặc đánh giá trải nghiệm người chơi.
-- Không có cơ chế chống gian lận toàn diện; server đã giới hạn movement và bỏ qua sequence trùng/cũ.
+---
 
-## Tài liệu và nguồn tham khảo
+## 12. Giới hạn và hướng phát triển
 
-- [Giao thức TCP JSON](docs/PROTOCOL.md)
-- [Thiết lập và kết quả thực nghiệm](docs/EXPERIMENTS.md)
-- [Kết quả kiểm thử server](docs/THANH_VIEN_A_KIEM_THU.md)
-- [Kịch bản Chiếm Mảnh Tim Lửa](docs/STORY_SCRIPT.md)
-- [Nguồn và giấy phép âm thanh](docs/AUDIO_CREDITS.md)
-- [Unity Manual](https://docs.unity3d.com/Manual/index.html), [Java networking API](https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/net/package-summary.html), [Gson](https://github.com/google/gson) và [JUnit 5](https://junit.org/junit5/)
+**Giới hạn hiện tại**
+
+1. Benchmark chạy trên loopback với client giả lập, chưa đo trên LAN/Internet thật, chưa đo FPS của client.
+2. Số liệu đo là của bản code ngày 22/10, chưa đo lại sau các thay đổi gameplay 23–25/10.
+3. TCP thuần, chưa có TLS, đăng nhập hay lưu lịch sử trận; chống gian lận mới ở mức server bỏ qua input bất thường và sequence trùng.
+4. Đồng bộ chọn lọc lọc theo người xem, chưa nén delta từng trường giữa hai snapshot.
+
+**Hướng phát triển**
+
+1. Gửi delta giữa hai snapshot, kết hợp UDP cho dữ liệu vị trí.
+2. Đo trên LAN/Internet có độ trễ và mất gói nhân tạo; thử nhiều client hơn.
+3. Thêm tài khoản, lưu kết quả trận vào database, bảng xếp hạng.
+4. Thêm TLS và client-side prediction để giảm cảm giác trễ.
+
+---
+
+## 13. Tài liệu
+
+| Tài liệu | Nội dung |
+| --- | --- |
+| [docs/PROTOCOL.md](docs/PROTOCOL.md) | Đặc tả đầy đủ protocol TCP JSON |
+| [docs/EXPERIMENTS_FINAL.md](docs/EXPERIMENTS_FINAL.md) | Thiết lập, kết quả, giới hạn thực nghiệm |
+| [docs/REPORT_DRAFT.md](docs/REPORT_DRAFT.md) | Bản nháp báo cáo dạng paper |
+| [docs/FINAL_VALIDATION.md](docs/FINAL_VALIDATION.md) | Kết quả kiểm thử server và Unity |
+| [docs/DEMO_RUNBOOK.md](docs/DEMO_RUNBOOK.md) | Kịch bản demo |
+| [docs/THANH_VIEN_A_HUONG_DAN.md](docs/THANH_VIEN_A_HUONG_DAN.md) | Giải thích code server từng phần |
+| [docs/STORY_SCRIPT.md](docs/STORY_SCRIPT.md) | Kịch bản Hành trình Tim Lửa |
+| [docs/GDD Bomb Me Baby.docx](docs/GDD%20Bomb%20Me%20Baby.docx) | Game Design Document |
+| [docs/ASSET_CREDITS.md](docs/ASSET_CREDITS.md), [docs/AUDIO_CREDITS.md](docs/AUDIO_CREDITS.md) | Nguồn và giấy phép hình ảnh, âm thanh |
+
+**Tham khảo**
+
+1. W. Eddy (ed.), *Transmission Control Protocol (TCP)*, RFC 9293, 2022. https://www.rfc-editor.org/rfc/rfc9293.html
+2. Oracle, *Java SE 17 API – java.net*. https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/net/package-summary.html
+3. Unity Technologies, *Unity 6.3 Manual*. https://docs.unity3d.com/Manual/index.html
+4. G. Fiedler, *Snapshot Interpolation*, 2014. https://gafferongames.com/post/snapshot_interpolation/
+5. Google, *Gson*. https://github.com/google/gson
+6. *JUnit 5 User Guide*. https://junit.org/junit5/
