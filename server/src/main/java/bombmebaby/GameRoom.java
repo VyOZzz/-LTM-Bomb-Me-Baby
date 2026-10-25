@@ -95,8 +95,8 @@ final class GameRoom {
         if (mode == GameMode.JOURNEY && !hasStarted) journeyScores.remove(player.id);
         player.room = null;
         player.ready = false;
-        checkGameOver();
         completeJourneyIfShort(System.currentTimeMillis());
+        checkGameOver();
         broadcast(data("type", "ROOM_STATE", "room", roomInfo()));
     }
 
@@ -140,6 +140,7 @@ final class GameRoom {
             p.hp = 100; p.size = 1; p.baseSize = 1; p.kills = 0;
             p.alive = true; p.charging = false; p.chargeReadyAt = 0; p.shieldUntil = 0;
             p.shieldReadyAt = 0; p.boostUntil = 0; p.boostReadyAt = 0;
+            p.energyBoostUntil = 0;
             p.staggerUntil = 0; p.staggerImmuneUntil = 0;
             p.ready = false;
         }
@@ -164,18 +165,22 @@ final class GameRoom {
         switch (type) {
             case "MOVE" -> {
                 if (!Double.isFinite(dx) || !Double.isFinite(dz)) { reject(p,"INVALID_MOVEMENT"); return; }
+                if ((Math.abs(dx) > 1e-6 || Math.abs(dz) > 1e-6) && objective != null)
+                    objective.cancelInteraction(p);
                 p.lastMoveAt = now;
                 double length = Math.hypot(dx, dz);
                 p.dx = length > 1 ? dx / length : dx;
                 p.dz = length > 1 ? dz / length : dz;
             }
             case "CHARGE_START" -> {
+                if (objective != null) objective.cancelInteraction(p);
                 if (objective != null && objective.carriedBy(p)) reject(p,"CARRYING_SHARD");
                 else if (now < p.chargeReadyAt) reject(p,"BOMB_COOLDOWN");
                 else if (!p.charging) { p.charging = true; p.chargeSince = now; }
                 else reject(p,"ALREADY_CHARGING");
             }
             case "EXPLODE" -> {
+                if (objective != null) objective.cancelInteraction(p);
                 if (objective != null && objective.carriedBy(p)) {
                     p.charging = false;
                     reject(p,"CARRYING_SHARD");
@@ -183,9 +188,11 @@ final class GameRoom {
                 else reject(p,"NOT_CHARGING");
             }
             case "DROP_SHARD" -> {
+                if (objective != null) objective.cancelInteraction(p);
                 if (objective == null || !objective.drop(p, now)) reject(p,"NOT_CARRYING_SHARD");
             }
             case "USE_SHIELD" -> {
+                if (objective != null) objective.cancelInteraction(p);
                 if (now >= p.shieldReadyAt) {
                     p.shieldUntil = now + GameRules.SHIELD_MS;
                     p.shieldReadyAt = now + GameRules.SHIELD_COOLDOWN_MS;
@@ -193,6 +200,7 @@ final class GameRoom {
                 } else reject(p,"SHIELD_COOLDOWN");
             }
             case "USE_BOOST" -> {
+                if (objective != null) objective.cancelInteraction(p);
                 if (now >= p.boostReadyAt) {
                     p.boostUntil = now + GameRules.BOOST_MS;
                     p.boostReadyAt = now + GameRules.BOOST_COOLDOWN_MS;
@@ -204,6 +212,12 @@ final class GameRoom {
                         orbs.add(new Pickup(nextPickupId++, ox, oz));
                     broadcast(data("type", "BOOST_ACTIVATED", "playerId", p.id));
                 } else reject(p,"BOOST_COOLDOWN");
+            }
+            case "INTERACT_START" -> {
+                if (objective == null || !objective.beginSteal(p, now)) reject(p,"INTERACTION_UNAVAILABLE");
+            }
+            case "INTERACT_STOP" -> {
+                if (objective != null) objective.cancelInteraction(p);
             }
             default -> { }
         }
@@ -224,8 +238,8 @@ final class GameRoom {
                 eliminate(p, "disconnect", now);
             }
         }
-        checkGameOver();
         completeJourneyIfShort(now);
+        checkGameOver();
         if (phase != Phase.PLAYING) return;
         if (mode == GameMode.QUICK && now - roundStartedAt >= QUICK_ROUND_MS) {
             finishRound(null, "TIME");
@@ -238,7 +252,9 @@ final class GameRoom {
                     p.dx = 0;
                     p.dz = 0;
                 }
-                double speed = 5.2 / Math.sqrt(p.size) * (now < p.boostUntil ? 1.85 : 1);
+                double speed = 5.2 / Math.sqrt(p.size)
+                    * (now < p.boostUntil ? 1.85 : 1)
+                    * (now < p.energyBoostUntil ? GameRules.ENERGY_SPEED_FACTOR : 1);
                 if (now >= p.staggerUntil) movePlayer(p, p.dx * speed * dt, p.dz * speed * dt, false);
                 pickup(p, now);
             }
@@ -254,9 +270,16 @@ final class GameRoom {
             if (phase != Phase.PLAYING) return;
         }
         pickupCores();
-        if (objective != null && objective.update(now, players)) {
-            finishRound(objective.holder(), "TIME");
-            return;
+        if (objective != null) {
+            boolean timedOut = objective.update(now, players);
+            if (objective.securedWinner() != null) {
+                finishRound(objective.securedWinner(), "CLAIMED");
+                return;
+            }
+            if (timedOut) {
+                finishRound(null, "TIME");
+                return;
+            }
         }
         if (now - lastOrbAt >= 500 && orbs.size() < GameRules.MAX_ORBS) { spawnOrb(); lastOrbAt = now; }
         if (tick % 2 == 0) broadcastSnapshots(now);
@@ -269,7 +292,8 @@ final class GameRoom {
             if (GameRules.distance(p.x,p.z,o.x,o.z) < 0.55 * p.size + 0.35) {
                 orbs.remove(i);
                 p.size = Math.min(GameRules.MAX_SIZE, p.size + 0.12);
-                p.hp = Math.min(100, p.hp + 3);
+                p.hp = Math.min(100, p.hp + GameRules.ENERGY_HEAL);
+                p.energyBoostUntil = Math.max(p.energyBoostUntil, now + GameRules.ENERGY_SPEED_BOOST_MS);
                 broadcast(data("type","ENERGY_PICKED","playerId",p.id,"pickupId",o.id));
             }
         }
@@ -521,7 +545,7 @@ final class GameRoom {
         if (mode == GameMode.JOURNEY && chapterIndex == JOURNEY_MAPS.size() - 1) {
             finalRoundWinnerId = roundWinnerId;
             journeyComplete = true;
-            journeyEndReason = "COMPLETED";
+            journeyEndReason = reason.equals("INSUFFICIENT_PLAYERS") ? reason : "COMPLETED";
             journeyWinnerIds = selectJourneyWinners();
             broadcast(journeyCompleteEvent());
         }
@@ -534,7 +558,11 @@ final class GameRoom {
         long participants = players.stream()
             .filter(p -> p.connected || now - p.disconnectedAt < GameRules.RECONNECT_MS).count();
         if (participants >= GameRules.MIN_PLAYERS) return;
-        if (phase == Phase.PLAYING) return; // checkGameOver resolves the current chapter first.
+        if (phase == Phase.PLAYING) {
+            PlayerState survivor = players.stream().filter(p -> p.alive && p.connected).findFirst().orElse(null);
+            finishRound(survivor, "INSUFFICIENT_PLAYERS");
+            if (journeyComplete) return;
+        }
         journeyComplete = true;
         journeyEndReason = "INSUFFICIENT_PLAYERS";
         journeyWinnerIds = selectJourneyWinners();
@@ -724,7 +752,7 @@ final class GameRoom {
                 "baseSize",p.baseSize,"alive",p.alive,"connected",p.connected,
                 "reconnectRemaining",p.connected ? 0 : Math.max(0,p.disconnectedAt + GameRules.RECONNECT_MS - now)/1000.0,
                 "visible",visible,
-                "charging",p.charging,"charge",p.charging ? GameRules.clamp((now-p.chargeSince)/8000.0,0,1) : 0,
+                "charging",p.charging,"charge",p.charging ? GameRules.clamp((now-p.chargeSince)/(double)GameRules.MAX_CHARGE_MS,0,1) : 0,
                 "chargeCooldown",Math.max(0,p.chargeReadyAt-now)/1000.0,
                 "shield",now < p.shieldUntil,"shieldCooldown",Math.max(0,p.shieldReadyAt-now)/1000.0,
                 "boost",now < p.boostUntil,"boostCooldown",Math.max(0,p.boostReadyAt-now)/1000.0,

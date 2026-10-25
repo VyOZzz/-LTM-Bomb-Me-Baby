@@ -12,11 +12,11 @@ Cập nhật 24/10/2026. Mỗi message là một JSON object trên một dòng U
 ## Kết thúc sớm, đồng hồ và quan sát (23/10)
 
 - QUICK có giới hạn 180 giây. Còn tối đa một người sống thì kết thúc như trước; hết giờ còn nhiều người sống thì `GAME_OVER.reason="TIME"`, `winnerId=""` (hòa). `STATE_UPDATE.roundTimeLeft` là số giây còn lại do server tính; mỗi vòng mới đặt lại 180 giây. JOURNEY tiếp tục dùng `objective.timeLeft`.
-- JOURNEY đã bắt đầu không nhận người thay thế. Khi còn dưới hai người tham gia, kết thúc chương hiện tại theo luật sống sót rồi kết thúc Hành trình sớm. Người mất kết nối vẫn giữ chỗ trong 10 giây; người chết nhưng còn kết nối vẫn là người tham gia chương sau. Chỉ cộng mảnh/điểm của chương đã chơi. Xếp hạng theo số mảnh rồi số lần hạ gục, không dùng ưu tiên người thắng chương cuối nếu chương cuối chưa diễn ra; các thứ hạng bằng nhau được đồng thắng, kể cả điểm đã kiếm được của người rời phòng.
-- `JOURNEY_COMPLETE.reason` và `ROOM_STATE.room.journeyEndReason` là `COMPLETED` khi đủ ba chương, `INSUFFICIENT_PLAYERS` khi kết thúc sớm. `journeyComplete=true` cho cả hai; không cho READY tiếp. Resume vẫn phát lại kết quả, lý do và bảng điểm.
+- JOURNEY đã bắt đầu không nhận người thay thế. Khi còn dưới hai người tham gia, trận kết thúc sớm. Người mất kết nối vẫn giữ chỗ trong 10 giây.
+- `JOURNEY_COMPLETE.reason` và `ROOM_STATE.room.journeyEndReason` là `COMPLETED` khi trận kết thúc bình thường, `INSUFFICIENT_PLAYERS` khi kết thúc sớm. `journeyComplete=true` cho cả hai; không cho READY tiếp. Resume vẫn phát lại kết quả và lý do.
 - `STATE_UPDATE.spectatorTargetId` rỗng khi viewer còn sống; khi đã chết, server chọn người sống đầu tiên trong danh sách phòng, ưu tiên còn kết nối. Tự chọn lại nếu người đó chết/rời phòng/mất kết nối. Camera và điểm nghe âm thanh theo mục tiêu này. Trong OPTIMIZED, tọa độ player, pickup, event nổ/knockback/Core dùng góc nhìn mục tiêu, giữ nguyên luật khoảng cách/bụi. BASELINE vẫn gửi dữ liệu đầy đủ như thiết kế đo so sánh trước đây.
 - Client đã chết hoặc chưa có local state không gửi input gameplay; vẫn gửi PING và nhận snapshot. Hiện quan sát tự động, chưa có chọn mục tiêu thủ công.
-- “Vào vòng” là nhân vật bước vào vòng tròn quanh bệ Tim Lửa, không phải người mới vào trận. Phá ấn chỉ cộng từ tick sau khi quan sát thấy nhân vật hợp lệ trong vòng đó, tối đa 100 ms mỗi tick như giới hạn catch-up của movement. Đồng hồ hết chương vẫn theo thời gian thực, không bị kéo dài bởi server khựng. Sát thương thực tế từ phản khiên cũng reset phá ấn và áp stagger; người được khiên chặn damage không bị reset.
+- “Vào vòng” là nhân vật bước vào vòng tròn quanh bệ Tim Lửa, không phải người mới vào trận. Tiến trình cướp chỉ bắt đầu sau `INTERACT_START`, tối đa 100 ms mỗi tick như giới hạn catch-up của movement. Đồng hồ 30 giây và giới hạn chương vẫn theo thời gian thực, không bị kéo dài bởi server khựng. Damage không reset tương tác.
 
 ## Khôi phục và thứ tự message (22/10)
 
@@ -62,13 +62,15 @@ Khi TCP đứt, client mở socket mới trong vòng 10 giây và gửi HELLO v�
 {"type":"DROP_SHARD","seq":7}
 {"type":"USE_SHIELD","seq":8}
 {"type":"USE_BOOST","seq":9}
-{"type":"LEAVE_ROOM","seq":10}
-{"type":"FIND_MATCH","seq":11,"mode":"QUICK"}
-{"type":"CANCEL_MATCH","seq":12}
+{"type":"INTERACT_START","seq":10}
+{"type":"INTERACT_STOP","seq":11}
+{"type":"LEAVE_ROOM","seq":12}
+{"type":"FIND_MATCH","seq":13,"mode":"JOURNEY"}
+{"type":"CANCEL_MATCH","seq":14}
 {"type":"PING","clientTime":1720000000000}
 ```
 
-`CREATE_ROOM.mode` và `FIND_MATCH.mode` không phân biệt hoa/thường. Thiếu hoặc rỗng mặc định thành `QUICK` để tương thích client cũ. Giá trị khác QUICK/JOURNEY nhận `INVALID_MODE`. Người vào phòng dùng mode do chủ phòng đã chọn.
+`CREATE_ROOM.mode` và `FIND_MATCH.mode` không phân biệt hoa/thường. Thiếu hoặc rỗng mặc định thành `QUICK` để tương thích client cũ. Giá trị khác QUICK/JOURNEY nhận `INVALID_MODE`. Mỗi chương JOURNEY có thời lượng cố định 360 giây trên server.
 
 ## Tìm trận (cập nhật 21/10/2026)
 
@@ -93,25 +95,23 @@ Server trả `ACK` sau request không phải PING. ACK xác nhận server đã x
 - `code`, `phase`, `mapId`, `mapName`, `arenaSize`, `minPlayers`, `maxPlayers`, `players`;
 - `mode`: `QUICK` hoặc `JOURNEY`;
 - `roundIndex`, `roundParticipantIds`, `roundWinnerId`, `roundEndReason`: định danh vòng, người đã tham gia và kết quả; không coi mọi người đang có mặt trong phòng đều đã chơi vòng vừa kết thúc;
-- `chapterIndex`: `-1` cho QUICK; `0`, `1`, `2` cho ba chương JOURNEY;
+- `chapterIndex`: `-1` cho QUICK; `0`, `1`, `2` tương ứng Đồng cỏ, Ngã tư và Núi lửa trong JOURNEY;
 - `scores`: mảng `{playerId,name,points,roundWins,eliminations}`; rỗng trong QUICK. `roundWins` là số mảnh Tim Lửa đã mang về, `eliminations` là số lần loại đối thủ;
 - `journeyComplete`: hành trình đã kết thúc hay chưa.
 
-Ba map JOURNEY luôn theo thứ tự `meadow → crossroads → crater`. Người thắng vòng nhận 3 điểm và tăng `roundWins` thêm 1. Mỗi lần trực tiếp loại đối thủ bằng vụ nổ hoặc sát thương phản khiên nhận 1 điểm. Rời trận/disconnect không cho điểm loại đối thủ, nhưng người sống cuối vẫn nhận điểm thắng vòng.
+JOURNEY gồm ba chương lần lượt trên `meadow`, `crossroads`, `crater`. Sau mỗi chương, mọi người sẵn sàng để chuyển sang map kế tiếp. Người chiếm được mảnh hoặc sống cuối nhận 3 điểm và tăng `roundWins` thêm 1. Mỗi lần trực tiếp loại đối thủ bằng vụ nổ hoặc sát thương phản khiên nhận 1 điểm.
 
-Sau ba vòng, server xếp theo số mảnh (`roundWins`), rồi `eliminations`, rồi ưu tiên người thắng vòng cuối nếu người đó còn nằm trong nhóm hòa. Nếu vẫn hòa, `winnerId` rỗng và `winnerIds` chứa các người đồng hạng. `points` vẫn được gửi để hiển thị nhưng không còn dùng để xếp hạng (thay đổi 20/10/2026).
-
-### Mảnh Tim Lửa và bệ đá (chỉ JOURNEY, cập nhật 21/10/2026)
+### Mảnh Tim Lửa và bệ đá (chỉ JOURNEY, cập nhật 25/10/2026)
 
 Mỗi chương có một mảnh và một bệ đá ở tâm map (`ShardObjective.java`):
 
 1. Mảnh xuất hiện sau 10 giây ở một chỗ trống ngẫu nhiên, cách bệ ít nhất 45% nửa cạnh map.
-2. Người chạm vào mảnh thì cầm mảnh, nhận 2 nấc Khóa Lửa và 2 giây bảo hộ. Người cầm luôn được mọi viewer nhìn thấy, không thể nạp/nổ bom và có thể gửi `DROP_SHARD` (phím Q) để chủ động thả. Một hit chỉ phá một nấc nếu charge ≥ 35%, gây ≥ 10 damage thực tế, không bị Shield chặn và đã hết bảo hộ. Nấc khóa hồi đầy nếu 6 giây không nhận thêm hit hợp lệ.
-3. Vỡ đủ hai nấc làm mảnh văng 2,5 unit theo hướng rời tâm nổ. Mảnh khóa nhặt 0,5 giây; carrier cũ bị khóa 1,3 giây. Carrier disconnect sẽ tự thả sau tối đa 2 giây.
-4. Người cầm bước vào vòng bệ (bán kính 3) thì đặt mảnh và trở thành owner. Bệ được bảo hộ 5 giây. Sau đó mỗi đối thủ sống/kết nối trong vòng tự phá ấn với progress riêng trong 3 giây. Owner trong vòng chỉ giảm tốc còn 50%, không pause.
-5. Damage thực tế reset riêng progress của challenger trúng đòn và stagger 0,45 giây; Shield chặn cả reset lẫn stagger. Rời vòng, chết hoặc disconnect cũng xóa progress riêng.
-6. Challenger hoàn thành đầu tiên làm mảnh bật ra gần mép vòng, được ưu tiên nhặt 0,75 giây. Bệ quá nhiệt 4 giây và không nhận lại mảnh. Priority mất ngay nếu người đó chết/disconnect.
-7. Hết 3 phút, chủ bệ (nếu chưa đặt thì người đang cầm) thắng chương với `reason="TIME"`. Chỉ còn một người sống thì người đó thắng với `reason="LAST_STANDING"`.
+2. Người chạm vào mảnh thì cầm mảnh. Người cầm luôn được mọi viewer nhìn thấy, không thể nạp/nổ bom và có thể gửi `DROP_SHARD` (phím Q). Damage thực tế bào Khóa Lửa 40 HP; về 0 thì mảnh rơi. Khóa hồi sau 3 giây không trúng đòn.
+3. Người cầm bước vào vòng bệ (bán kính 3) thì đặt mảnh và trở thành owner. Server mở đếm ngược 30 giây; hết thời gian, owner thắng ngay với `reason="CLAIMED"`.
+4. Một đối thủ sống, kết nối, đứng yên trong vòng gửi `INTERACT_START` (giữ F) để cướp trong 3 giây. Chỉ một người có thể cướp tại một thời điểm.
+5. Di chuyển chủ động, thả F (`INTERACT_STOP`), dùng bom, khiên, boost, kỹ năng khác, chết hoặc mất kết nối sẽ hủy tiến trình. Damage, bom trúng và knockback không reset tiến trình nếu người cướp còn sống. Khiên bật trước đó tiếp tục hoạt động.
+6. Hoàn thành tương tác chuyển mảnh trực tiếp sang trạng thái `CARRIED` của người cướp; bệ quá nhiệt 4 giây để họ có thể chạy khỏi bệ.
+7. Hết thời lượng chương (mặc định 6 phút) mà chưa ai chiếm thành công thì chương đó hòa với `reason="TIME"`. Chỉ còn một người sống thì người đó thắng với `reason="LAST_STANDING"`.
 
 Mọi `STATE_UPDATE` của JOURNEY có thêm object công khai, không lọc theo viewer kể cả ở OPTIMIZED:
 
@@ -119,7 +119,8 @@ Mọi `STATE_UPDATE` của JOURNEY có thêm object công khai, không lọc the
 "objective": {
   "state":"PLACED", "x":0, "z":0,
   "carrierId":"", "ownerId":"...", "challengerId":"...", "capture":0.4,
-  "fireLock":2, "fireLockMax":2, "carrierProtection":0,
+  "claimTimeLeft":18.0, "claimDuration":30.0, "claimProgress":0.4,
+  "fireLock":40, "fireLockMax":40,
   "pedestalProtection":0, "pedestalOverheat":0,
   "pickupPriorityId":"...", "pickupPriority":0.5, "pickupUnlock":0,
   "sealBreakers":[
@@ -130,7 +131,7 @@ Mọi `STATE_UPDATE` của JOURNEY có thêm object công khai, không lọc the
 }
 ```
 
-`state` là `WAITING`, `GROUND`, `CARRIED` hoặc `PLACED`. `sealBreakers` là progress 0..1, thời gian stagger và cửa sổ feedback reset của từng challenger. `challengerId`/`capture` vẫn được giữ tương thích và trỏ tới người đang dẫn đầu. Các thời gian còn lại dùng giây. QUICK không có trường `objective`. Client so snapshot objective để hiện thông báo/VFX; mọi quyền nhặt, damage và progress vẫn do server quyết định.
+`state` là `WAITING`, `GROUND`, `CARRIED` hoặc `PLACED`. `sealBreakers` chứa tối đa một tương tác giữ F với progress 0..1. `claimTimeLeft` và `claimProgress` là đồng hồ chiếm bệ công khai cho mọi client. Các thời gian còn lại dùng giây. QUICK không có trường `objective`. Server quyết định vị trí, trạng thái sống, tiến trình, người mang/owner và thời điểm thắng.
 
 Mọi mục tiêu nằm trong vụ nổ nhận horizontal impulse server-authoritative. Snapshot vị trí vẫn là nguồn chính thức; event sau chỉ dùng để chạy bounce Y/squash thuần hình ảnh:
 
@@ -169,7 +170,7 @@ Mỗi vòng kết thúc bằng:
 }
 ```
 
-Sau chương 0 hoặc 1, khi còn đủ người và Hành trình chưa kết thúc sớm, người chơi bấm READY lại để sang chương tiếp theo. Server reset HP/Size/cooldown và trạng thái vòng, giữ điểm hành trình. Sau chương 2, server gửi thêm:
+Ngay sau khi trận JOURNEY kết thúc, server gửi thêm:
 
 ```json
 {
@@ -177,14 +178,14 @@ Sau chương 0 hoặc 1, khi còn đủ người và Hành trình chưa kết th
   "reason":"COMPLETED",
   "room":"ABC123",
   "mode":"JOURNEY",
-  "chapterIndex":2,
+  "chapterIndex":0,
   "winnerId":"...",
   "winnerIds":["..."],
-  "scores":[{"playerId":"...","name":"Bom A","points":12,"roundWins":3}]
+  "scores":[{"playerId":"...","name":"Bom A","points":3,"roundWins":1}]
 }
 ```
 
-Kết thúc sớm dùng cùng event trên với reason INSUFFICIENT_PLAYERS và chapterIndex của chương đã chơi. Không thể READY khi journeyComplete=true, kể cả kết thúc sớm, hoặc để tạo vòng thứ tư; server trả `JOURNEY_COMPLETE` dưới dạng mã ERROR.
+Kết thúc sớm dùng cùng event trên với reason INSUFFICIENT_PLAYERS. Không thể READY khi `journeyComplete=true`; server trả `JOURNEY_COMPLETE` dưới dạng mã ERROR.
 
 ## Các event khác
 
@@ -194,7 +195,7 @@ Server là nguồn chính thức: client chỉ gửi hướng/hành động, kh�
 
 ## Luồng input và snapshot
 
-`STATE_UPDATE` là trạng thái chính thức. Client nội suy hình ảnh, dựng layout theo dữ liệu map, không tự tính hit hoặc tự cộng HP. Server giới hạn input hướng về vector dài tối đa 1, tự tích phân vị trí, kiểm tra ranh giới/vật cản và quyết định khả năng nhìn thấy đối thủ. Mỗi phòng chứa tối đa 10 người. TCP message từ client giới hạn 2048 ký tự.
+`STATE_UPDATE` là trạng thái chính thức. Client dự đoán hình ảnh ngắn hạn cho người chơi local, ngoại suy tối đa 120 ms cho người chơi khác và hiệu chỉnh mềm về snapshot; client không tự tính hit hoặc tự cộng HP. Server giới hạn input hướng về vector dài tối đa 1, tự tích phân vị trí, kiểm tra ranh giới/vật cản và quyết định khả năng nhìn thấy đối thủ. Mỗi phòng chứa tối đa 10 người. TCP message từ client giới hạn 2048 ký tự.
 
 ## Luồng input → server → snapshot
 

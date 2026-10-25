@@ -9,7 +9,7 @@ $sources = @('scripts/validation/NetworkRegression.cs', 'LTM-Bomb-Me-Baby/Assets
 $includes = ($sources | ForEach-Object { '<Compile Include="' + [System.Security.SecurityElement]::Escape((Join-Path $repoRoot $_)) + '" />' }) -join "`n"
 $project = @"
 <Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><EnableDefaultCompileItems>false</EnableDefaultCompileItems></PropertyGroup>
+  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net9.0</TargetFramework><EnableDefaultCompileItems>false</EnableDefaultCompileItems></PropertyGroup>
   <ItemGroup>$includes</ItemGroup>
 </Project>
 "@

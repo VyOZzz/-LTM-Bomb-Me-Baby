@@ -181,7 +181,7 @@ sealed class BombHud {
     }
 
     void DrawMatchPill(View v, float W) {
-        string mode = v.journey ? $"CHƯƠNG {v.chapter + 1}/3" : "ĐẤU NHANH";
+        string mode = v.journey ? "CHIẾM MẢNH" : "ĐẤU NHANH";
         if (!string.IsNullOrEmpty(v.mapName)) mode += "  •  " + v.mapName;
         float remaining = v.objective != null && v.objective.Active ? v.objective.timeLeft : v.roundTimeLeft;
         string clock = Clock(remaining);
@@ -256,10 +256,10 @@ sealed class BombHud {
     float DrawObjective(View v, float W) {
         ObjectiveData o = v.objective;
         string text;
-        SealBreakerData mine = o.Breaker(v.myId);
         SealBreakerData leader = o.Breaker(o.challengerId);
-        bool showMine = mine != null;
-        bool showLeader = leader != null && (mine == null || leader.playerId != mine.playerId);
+        bool incompatibleClaimData = o.state == "PLACED" && o.claimDuration <= 0;
+        bool beingStolen = o.state == "PLACED" && !string.IsNullOrEmpty(o.challengerId);
+        float stealProgress = leader != null ? leader.progress : Mathf.Clamp01(o.capture);
         switch (o.state) {
             case "WAITING": text = $"Mảnh Tim Lửa xuất hiện sau {Mathf.CeilToInt(o.spawnIn)}s"; break;
             case "GROUND":
@@ -276,41 +276,34 @@ sealed class BombHud {
                 if (o.pedestalOverheat > 0) text += $"  •  BỆ QUÁ NHIỆT {o.pedestalOverheat:0.0}s";
                 break;
             default:
-                text = o.pedestalProtection > 0
-                    ? $"Bệ của {v.ownerName} đang được bảo hộ • {o.pedestalProtection:0.0}s"
-                    : $"{v.ownerName} đang giữ bệ • đối thủ trong vòng tự phá ấn";
+                text = incompatibleClaimData
+                    ? "Server chưa cập nhật cơ chế chiếm mảnh — cần khởi động lại server"
+                    : beingStolen ? $"{v.challengerName} đang chiếm mảnh"
+                    : $"{v.ownerName} sẽ thắng sau {Mathf.CeilToInt(Mathf.Max(0, o.claimTimeLeft))}s";
                 break;
         }
         float width = Mathf.Min(W - 48, Mathf.Max(380, label.CalcSize(new GUIContent(text)).x / u + 40));
-        int bars = (showMine ? 1 : 0) + (showLeader ? 1 : 0);
+        int bars = beingStolen && !incompatibleClaimData ? 1 : 0;
         float height = 36 + bars * 24;
         Rect chip = R(W / 2 - width / 2, 82, width, height);
         Fill(chip, Panel, RoundSmall);
-        Color stateColor = o.pedestalOverheat > 0 ? Danger : o.pedestalProtection > 0 ? Shield : Core;
+        bool claimUrgent = o.state == "PLACED" && !beingStolen && !incompatibleClaimData && o.claimTimeLeft <= 5;
+        Color stateColor = claimUrgent && Mathf.FloorToInt(Time.unscaledTime * 5) % 2 == 0
+            ? Danger : o.pedestalOverheat > 0 ? Danger : o.pedestalProtection > 0 ? Shield : Core;
         Fill(new Rect(chip.x + S(14), chip.y + S(13), S(10), S(10)), stateColor, Circle);
         label.normal.textColor = stateColor;
         GUI.Label(R(W / 2 - width / 2 + 32, 82, width - 40, 36), text, label);
         label.normal.textColor = TextMuted;
-        int row = 0;
-        if (showMine) {
-            DrawSealBar(R(W / 2 - width / 2 + 16, 82 + 36 + row++ * 24, width - 32, 20),
-                mine, "BẠN PHÁ ẤN", v.myColor);
-        }
-        if (showLeader) {
-            DrawSealBar(R(W / 2 - width / 2 + 16, 82 + 36 + row * 24, width - 32, 20),
-                leader, $"DẪN ĐẦU • {v.challengerName}", v.challengerColor);
+        if (beingStolen && !incompatibleClaimData) {
+            Rect row = R(W / 2 - width / 2 + 16, 82 + 36, width - 32, 20);
+            small.normal.textColor = v.challengerColor;
+            GUI.Label(new Rect(row.x, row.y, row.width * .42f, row.height),
+                $"ĐANG CHIẾM {Mathf.RoundToInt(stealProgress * 100)}%", small);
+            small.normal.textColor = TextMuted;
+            Bar(new Rect(row.x + row.width * .43f, row.y + S(6), row.width * .57f, S(8)),
+                stealProgress, v.challengerColor);
         }
         return 82 + height;
-    }
-
-    void DrawSealBar(Rect row, SealBreakerData breaker, string caption, Color color) {
-        Color feedback = breaker.resetFlash > 0 && Mathf.FloorToInt(Time.unscaledTime * 12) % 2 == 0 ? Danger : color;
-        small.normal.textColor = feedback;
-        GUI.Label(new Rect(row.x, row.y, row.width * .42f, row.height), caption, small);
-        small.normal.textColor = TextMuted;
-        Bar(new Rect(row.x + row.width * .43f, row.y + S(6), row.width * .57f, S(8)), breaker.progress, feedback);
-        if (breaker.stagger > 0)
-            GUI.Label(new Rect(row.x, row.y, row.width - S(6), row.height), "KHỰNG", labelRight);
     }
 
     /// Slides down and fades in whenever a new toast arrives.

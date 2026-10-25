@@ -66,9 +66,9 @@ mvn clean test "-Dsync.mode=baseline"
 mvn test "-Dsync.mode=optimized"
 ```
 
-Chạy server bằng `mvn compile exec:java "-Dexec.args=7777" "-Dsync.mode=baseline"`. Unity có nút tạo phòng Đấu nhanh và Hành trình Ba Mảnh. Chế độ `optimized` gửi geometry một lần ở GAME_START và lọc snapshot theo viewer; đây là đồng bộ chọn lọc, chưa phải delta từng trường giữa hai snapshot.
+Chạy server bằng `mvn compile exec:java "-Dexec.args=7777" "-Dsync.mode=baseline"`. Unity có nút tạo phòng Đấu nhanh và Chiếm Mảnh Tim Lửa. Chế độ `optimized` gửi geometry một lần ở GAME_START và lọc snapshot theo viewer; đây là đồng bộ chọn lọc, chưa phải delta từng trường giữa hai snapshot.
 
-Để khóa map cho buổi demo Đấu nhanh, thêm `"-Ddemo.map=meadow"` (hoặc `crossroads`, `crater`). Khi deploy có thể dùng biến môi trường `DEMO_MAP`. Hành trình vẫn giữ thứ tự ba chương. Server gửi `syncMode` và `demoMap` trong `WELCOME`; nhấn **F3** trong trận để xem endpoint, cấu hình đồng bộ và map demo đang dùng.
+Để khóa map cho buổi demo Đấu nhanh, thêm `"-Ddemo.map=meadow"` (hoặc `crossroads`, `crater`). Khi deploy có thể dùng biến môi trường `DEMO_MAP`. Server gửi `syncMode` và `demoMap` trong `WELCOME`; nhấn **F3** trong trận để xem endpoint, cấu hình đồng bộ và map demo đang dùng.
 
 > Bản Unity build chỉ là **client**, không chứa Java server. `127.0.0.1` luôn là máy đang chạy game: nếu gửi build cho người khác mà giữ IP này, game sẽ tìm server trên máy của họ và kết nối thất bại.
 
@@ -94,9 +94,9 @@ Test-NetConnection HOST -Port 7777
 4. Chọn chế độ rồi bấm **Tìm trận**: server ghép ngẫu nhiên những người cùng tìm chế độ đó (2–4 người) và vào trận ngay. Muốn chơi riêng với bạn bè thì một người chọn **Tạo phòng riêng**, những người còn lại nhập mã 6 ký tự và **Vào phòng**.
 5. Trong phòng riêng, chọn **Sẵn sàng**; trận bắt đầu khi có ít nhất 2 người và tất cả cùng sẵn sàng (tối đa 10 người). Để chơi nhiều client trên cùng máy, build một bản Windows/Mac rồi chạy cùng lúc với Unity Editor, hoặc chạy nhiều bản build.
 
-Khi người chơi tạo hoặc vào phòng **Hành trình Ba Mảnh** lần đầu trong phiên, client phát phim mở đầu `Assets/StreamingAssets/story_intro.mp4` với phụ đề tiếng Việt; nhấn **Esc** hoặc **Space** để bỏ qua. Nếu máy không giải mã được MP4, client tự chuyển sang ba khung hình minh hoạ trong `Assets/Resources/Menu/`. Có thể thay video bằng bản dựng H.264 1920×1080 khác, giữ nguyên tên file để không phải sửa code.
+Khi người chơi tạo hoặc vào phòng **Chiếm Mảnh Tim Lửa** lần đầu trong phiên, client phát phim mở đầu `Assets/StreamingAssets/story_intro.mp4` với phụ đề tiếng Việt; nhấn **Esc** hoặc **Space** để bỏ qua. Nếu máy không giải mã được MP4, client tự chuyển sang ba khung hình minh hoạ trong `Assets/Resources/Menu/`. Có thể thay video bằng bản dựng H.264 1920×1080 khác, giữ nguyên tên file để không phải sửa code.
 
-Điều khiển: **WASD/phím mũi tên** di chuyển theo hướng màn hình, **giữ Space** nạp và **thả Space** để nổ, **E** bật Shield, **Shift** Boost. Trong Hành trình, người đang cầm Mảnh Tim Lửa không thể nạp/nổ bom và nhấn **Q** để chủ động thả mảnh. Camera bám sát quả bóng của người chơi và chỉ hiển thị một vùng nhỏ của map; sau khi chết tự theo người còn sống, dùng góc nhìn của người đó. Đấu nhanh tối đa 3 phút, hết giờ còn nhiều người thì hòa, đổi map ở vòng sau. Hành trình chạy `meadow → crossroads → crater`, giữ điểm qua ba vòng; nếu thiếu người sau thời hạn reconnect 10 giây thì kết thúc sớm, tính kết quả theo các chương đã chơi.
+Điều khiển: **WASD/phím mũi tên** di chuyển theo hướng màn hình, **giữ Space** nạp và **thả Space** để nổ, **E** bật Shield, **Shift** Boost. Trong Hành Trình Tim Lửa, người đang cầm mảnh không thể nạp/nổ bom và nhấn **Q** để chủ động thả; đối thủ đứng trong bệ và **giữ F** để cướp. Camera bám sát quả bóng của người chơi và chỉ hiển thị một vùng nhỏ của map; sau khi chết tự theo người còn sống, dùng góc nhìn của người đó. Đấu nhanh tối đa 3 phút. Hành trình gồm 3 chương/map; mỗi chương cố định tối đa 6 phút. Người đặt mảnh lên bệ và giữ không bị cướp trong 30 giây thắng chương ngay.
 
 Game có nhạc riêng cho menu và ba map. Nhạc tự hạ khi có tiếng nổ/kết quả; dùng pool 20 giọng SFX với âm lượng/kênh trái phải theo vị trí người chơi để hạn chế chồng âm. Khi mất kết nối trong trận, client hiện cửa sổ reconnect 10 giây và số lần thử lại. Người còn trong phòng thấy tên người mất kết nối và thời gian giữ chỗ; vị trí đang ẩn trong bụi không bị lộ.
 
@@ -123,8 +123,8 @@ Unity AI Assistant cần kết nối mạng và quyền sử dụng/trial hoặc
 
 ## Luật prototype
 
-- 100 HP, không hồi sinh trong vòng; người cuối cùng sống thắng sớm. Đấu nhanh hòa nếu hết 180 giây còn nhiều người. Trong Hành trình, hết 180 giây xét chủ bệ/người cầm mảnh; không ai giữ mảnh thì hòa chương. Energy tăng Size 0.12 và hồi 3 HP, tối đa 100 HP. Size tối đa 2.6.
-- Nạp tối đa 8 giây, sau đó tự nổ. Sau mỗi lần nổ, bom có cooldown 2.5 giây do server kiểm soát để không thể spam. Nhấn nhanh tạo vụ nổ nhỏ; bán kính và sát thương tăng mạnh theo đường cong thời gian nạp, Size và khoảng cách. Người nổ không bị sát thương bởi vụ nổ của chính mình; sau nổ Size về Base Size và phần Size đã tiêu hao rơi thành các mảnh Energy quanh vị trí nổ. Bom Size 1 vẫn gây sát thương ở cự ly gần.
+- 100 HP, không hồi sinh trong vòng; người cuối cùng sống thắng sớm. Đấu nhanh hòa nếu hết 180 giây còn nhiều người. Chiếm Mảnh kết thúc sau 300 giây nếu chưa ai giữ bệ đủ 30 giây. Energy tăng Size 0.12, hồi 1 HP và cho boost tốc độ 12% trong 0.65 giây. Size tối đa 2.6.
+- Nạp tối đa 4 giây, sau đó tự nổ. Sau mỗi lần nổ, bom có cooldown 2.5 giây do server kiểm soát để không thể spam. Bom Size 1 charge đầy gây đúng 80 damage ở tâm nổ; damage nhân theo Size rồi giảm theo khoảng cách. Người nổ không bị sát thương bởi vụ nổ của chính mình; sau nổ Size về Base Size và phần Size đã tiêu hao rơi thành các mảnh Energy quanh vị trí nổ.
 - Shield hoạt động ngay trong 1.5 giây, chặn 100% sát thương nổ và phản 50% về người tấn công; cooldown 9 giây.
 - Boost tăng tốc trong 0.9 giây, tiêu hao tối đa 0.23 Size nhưng không thấp hơn Base Size; chỉ rơi một Energy Orb nếu tiêu hao ít nhất 0.12. Cooldown 5 giây; ở Base Size vẫn tăng tốc được.
 - Đá là vật cản. Bụi không có collision: người chơi có thể đi xuyên vào để ẩn; đối thủ ở ngoài không nhìn thấy người trong bụi, còn người ở cùng bụi vẫn nhìn thấy nhau.
@@ -178,6 +178,6 @@ Trạng thái kiểm tra ngày 24/10/2026:
 - [Giao thức TCP JSON](docs/PROTOCOL.md)
 - [Thiết lập và kết quả thực nghiệm](docs/EXPERIMENTS.md)
 - [Kết quả kiểm thử server](docs/THANH_VIEN_A_KIEM_THU.md)
-- [Kịch bản Hành trình Ba Mảnh](docs/STORY_SCRIPT.md)
+- [Kịch bản Chiếm Mảnh Tim Lửa](docs/STORY_SCRIPT.md)
 - [Nguồn và giấy phép âm thanh](docs/AUDIO_CREDITS.md)
 - [Unity Manual](https://docs.unity3d.com/Manual/index.html), [Java networking API](https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/net/package-summary.html), [Gson](https://github.com/google/gson) và [JUnit 5](https://junit.org/junit5/)

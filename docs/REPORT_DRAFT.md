@@ -24,7 +24,7 @@ TCP cung cấp luồng byte có thứ tự và độ tin cậy; ứng dụng v�
 
 [Unity JSON serialization](https://docs.unity3d.com/6000.3/Documentation/Manual/json-serialization.html) cho phép ánh xạ JSON có cấu trúc vào các lớp dữ liệu. DTO của dự án tách `ServerMessage` với `RoomEnvelope`, vì trường room của ROOM_STATE là object, trong khi một số event dùng mã phòng dạng chuỗi.
 
-Tài liệu [Snapshot Interpolation của Glenn Fiedler](https://gafferongames.com/post/snapshot_interpolation/) mô tả việc tái dựng hình ảnh từ trạng thái được gửi qua mạng và các đánh đổi về băng thông/độ mượt. Client của dự án dùng làm mượt vị trí tới snapshot gần nhất; chưa triển khai đầy đủ bộ đệm thời gian nội suy, dự đoán input và reconciliation. Vì vậy không gọi cách hiện tại là lag compensation hoàn chỉnh.
+Tài liệu [Snapshot Interpolation của Glenn Fiedler](https://gafferongames.com/post/snapshot_interpolation/) mô tả việc tái dựng hình ảnh từ trạng thái được gửi qua mạng và các đánh đổi về băng thông/độ mượt. Client của dự án dự đoán hình ảnh ngắn hạn cho người chơi local, ngoại suy có giới hạn giữa hai snapshot cho người chơi khác và hiệu chỉnh mềm về trạng thái server. Cơ chế này chưa phải lag compensation hoàn chỉnh vì không tua lại lịch sử va chạm hoặc sát thương trên server.
 
 ## 3. Problem Definition
 
@@ -153,7 +153,7 @@ Nhóm không tuyên bố phát minh TCP, snapshot hay interest management. Đi�
 
 ## 12. Limitations và Future Work
 
-Chưa có TLS/tài khoản, lưu lịch sử, chống gian lận toàn diện hoặc rate limit theo client. Một người gửi rất nhanh vẫn có thể tiêu tốn CPU; giới hạn connection/frame/queue không thay thế rate limit. Client chưa có prediction/reconciliation; quan sát sau khi chết hiện tự chọn mục tiêu, chưa có chuyển mục tiêu thủ công. Map seed chưa được khóa để so sánh hai mode trên cảnh giống hệt.
+Chưa có TLS/tài khoản, lưu lịch sử, chống gian lận toàn diện hoặc rate limit theo client. Một người gửi rất nhanh vẫn có thể tiêu tốn CPU; giới hạn connection/frame/queue không thay thế rate limit. Client chỉ có prediction/reconciliation hình ảnh ngắn hạn, không dự đoán hit, pickup hoặc sát thương; quan sát sau khi chết hiện tự chọn mục tiêu, chưa có chuyển mục tiêu thủ công. Map seed chưa được khóa để so sánh hai mode trên cảnh giống hệt.
 
 Cần tiếp tục: playtest 2–4 Windows client, đo FPS/GC trên máy yếu, kiểm tra LAN hai máy và tình huống mạng kém; bổ sung rate limit nếu public server; thử nghiệm seed cố định và các mức latency có kiểm soát. Nếu mở rộng số phòng lớn, đánh giá NIO hoặc mô hình reader khác dựa trên profiling.
 

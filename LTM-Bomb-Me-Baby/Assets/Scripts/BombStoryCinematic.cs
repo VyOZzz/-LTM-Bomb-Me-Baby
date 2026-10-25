@@ -10,13 +10,13 @@ public sealed class BombStoryCinematic : MonoBehaviour {
     const float Duration = 16f;
     readonly string[] titles = {
         "TRÁI TIM LỬA",
-        "BA MẢNH THẤT LẠC",
+        "MẢNH TIM LỬA",
         "HÀNH TRÌNH BẮT ĐẦU"
     };
     readonly string[] narration = {
         "Thuở xa xưa, Tim Lửa giữ cho các đấu trường luôn rực sáng và bình yên.",
-        "Một cơn bão ma thuật đã xé trái tim thành ba mảnh, cuốn chúng tới Đồng Cỏ, Ngã Tư và Miệng Núi Lửa.",
-        "Hãy vượt qua ba chương, tranh lấy từng mảnh và đưa chúng trở về bệ đá trước khi ngọn lửa tắt hẳn."
+        "Một cơn bão ma thuật đã cuốn ba Mảnh Tim Lửa tới Đồng Cỏ, Ngã Tư và Núi Lửa.",
+        "Hãy vượt qua ba chương, đưa mảnh của mỗi vùng về bệ đá và bảo vệ trong 30 giây."
     };
 
     VideoPlayer player;
@@ -102,7 +102,7 @@ public sealed class BombStoryCinematic : MonoBehaviour {
 
         Fill(new Rect(0, 0, Screen.width, 110), new Color(0, 0, 0, .34f), null);
         Fill(new Rect(0, Screen.height - 245, Screen.width, 245), new Color(.015f, .01f, .035f, .9f), null);
-        GUI.Label(new Rect(42, 25, Screen.width - 260, 34), "HÀNH TRÌNH BA MẢNH  •  PHIM MỞ ĐẦU", chapterStyle);
+        GUI.Label(new Rect(42, 25, Screen.width - 260, 34), "CHIẾM MẢNH TIM LỬA  •  PHIM MỞ ĐẦU", chapterStyle);
         GUI.Label(new Rect(54, Screen.height - 202, Screen.width - 108, 52), titles[scene], titleStyle);
         GUI.Label(new Rect(56, Screen.height - 145, Mathf.Min(980, Screen.width - 112), 74), narration[scene], narrationStyle);
 

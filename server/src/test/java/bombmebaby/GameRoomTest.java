@@ -213,7 +213,7 @@ class GameRoomTest {
         }
     }
 
-    @Test void threeFragmentJourneyUsesFixedMapsScoresAndFinalRoundTieBreak() {
+    @Test void journeyRunsAllThreeMapsAndCompletesWithItsWinner() {
         GameRoom room = new GameRoom("STORY3", SyncMode.OPTIMIZED, GameMode.JOURNEY);
         PlayerState a = new PlayerState("A", null);
         PlayerState b = new PlayerState("B", null);
@@ -224,32 +224,31 @@ class GameRoomTest {
         assertEquals("meadow", room.map.id);
         assertEquals(0, room.chapterIndex);
         eliminateTwoAndWin(room, a, b, c);
-        assertScore(room, a, 5, 1);
+        assertFalse(room.journeyComplete);
 
         readyAll(room);
         assertEquals("crossroads", room.map.id);
         assertEquals(1, room.chapterIndex);
-        eliminateTwoAndWin(room, b, a, c);
-        assertScore(room, b, 5, 1);
+        eliminateTwoAndWin(room, a, b, c);
+        assertFalse(room.journeyComplete);
 
         readyAll(room);
         assertEquals("crater", room.map.id);
         assertEquals(2, room.chapterIndex);
-        eliminateTwoAndWin(room, c, a, b);
+        eliminateTwoAndWin(room, a, b, c);
 
         assertTrue(room.journeyComplete);
-        assertScore(room, c, 5, 1);
-        assertEquals(List.of(c.id), room.journeyWinnerIds,
-            "Equal points and round wins must be decided by the final-round winner");
+        assertScore(room, a, 15, 3);
+        assertEquals(List.of(a.id), room.journeyWinnerIds);
         Map<String,Object> event = room.journeyCompleteEvent();
         assertEquals("JOURNEY_COMPLETE", event.get("type"));
-        assertEquals(c.id, event.get("winnerId"));
+        assertEquals(a.id, event.get("winnerId"));
         assertEquals(2, event.get("chapterIndex"));
         assertEquals(room.scores(), event.get("scores"));
 
         room.ready(a, true);
         assertEquals(GameRoom.Phase.FINISHED, room.phase,
-            "A completed journey cannot start a fourth round");
+            "A completed three-chapter journey cannot restart inside the same room");
     }
 
     @Test void journeyStateIsIncludedWhileQuickModeRemainsBackwardCompatible() {

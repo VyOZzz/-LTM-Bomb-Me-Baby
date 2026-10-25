@@ -1,23 +1,22 @@
 package bombmebaby;
 
 import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** Server-authoritative Fire Heart objective for the current Journey chapter. */
+/** Server-authoritative Fire Heart objective for one Journey chapter. */
 final class ShardObjective {
     enum State { WAITING, GROUND, CARRIED, PLACED }
 
     static final long SPAWN_DELAY_MS = 10_000;
-    static final long CHAPTER_MS = 180_000;
-    static final long SEAL_BREAK_MS = 3_000;
-    /** Compatibility alias retained for older tests/tools. */
-    static final long CAPTURE_MS = SEAL_BREAK_MS;
-    static final long PEDESTAL_PROTECTION_MS = 5_000;
+    static final long MATCH_MS = 360_000;
+    static final long CHAPTER_MS = MATCH_MS; // Compatibility alias for tools/tests.
+    static final long CLAIM_MS = 30_000;
+    static final long STEAL_INTERACTION_MS = 3_000;
+    static final long SEAL_BREAK_MS = STEAL_INTERACTION_MS;
+    static final long CAPTURE_MS = STEAL_INTERACTION_MS;
+    static final long PEDESTAL_PROTECTION_MS = 0;
     static final long PEDESTAL_OVERHEAT_MS = 4_000;
-    /** Fire Lock is a health bar on the carried shard: real damage wears it down, at zero it drops. */
     static final double FIRE_LOCK_MAX = 40;
     static final long FIRE_LOCK_REGEN_DELAY_MS = 3_000;
     static final double FIRE_LOCK_REGEN_PER_SECOND = 10;
@@ -28,7 +27,7 @@ final class ShardObjective {
     static final long RESET_FLASH_MS = 450;
     static final double CARRIER_DROP_DISTANCE = 7.0;
     static final double PEDESTAL_DROP_DISTANCE = 3.45;
-    static final double OWNER_DEFENSE_SPEED_FACTOR = 0.5;
+    static final double OWNER_DEFENSE_SPEED_FACTOR = 1.0;
     static final double PEDESTAL_X = 0, PEDESTAL_Z = 0, PEDESTAL_RADIUS = 3.0;
     static final double PICKUP_RANGE = 0.9;
 
@@ -37,7 +36,7 @@ final class ShardObjective {
     State state = State.WAITING;
     double x, z;
     PlayerState carrier, owner;
-    /** Leading breaker, retained for the compact/legacy DTO fields. */
+    /** The sole player currently holding Interact to steal the placed shard. */
     PlayerState challenger;
     double fireLock = FIRE_LOCK_MAX;
     long pedestalProtectionUntil, pedestalOverheatUntil;
@@ -45,8 +44,10 @@ final class ShardObjective {
     long pickupPriorityUntil, pickupUnlockAt, formerCarrierBlockedUntil;
     private long fireLockLastHitAt;
     private long lastUpdate;
-    private final Map<PlayerState, Double> sealProgressMs = new LinkedHashMap<>();
-    private final Map<PlayerState, Long> resetFlashUntil = new LinkedHashMap<>();
+    private long claimEndsAt;
+    private long stealStartedAt;
+    private double stealProgressMs;
+    private PlayerState securedWinner;
 
     ShardObjective(long startedAt, double spawnX, double spawnZ) {
         this.startedAt = startedAt;
@@ -55,14 +56,13 @@ final class ShardObjective {
         this.spawnZ = spawnZ;
     }
 
-    /** Advances the objective; returns true once the chapter timer has run out. */
+    /** Advances the objective; returns true once this chapter's configured timer has run out. */
     boolean update(long now, List<PlayerState> players) {
-        // Interaction time follows the simulation's 100 ms catch-up ceiling.
-        // The chapter deadline below deliberately remains on wall time.
-        long dt = Math.min(100, Math.max(0, now - lastUpdate));
+        long previousUpdate = lastUpdate;
+        long dt = Math.min(100, Math.max(0, now - previousUpdate));
         lastUpdate = now;
         clearInvalidPriority(now);
-        regenerateFireLock(now, dt);
+        regenerateFireLock(previousUpdate, now);
         switch (state) {
             case WAITING -> {
                 if (now - startedAt >= SPAWN_DELAY_MS) {
@@ -74,7 +74,7 @@ final class ShardObjective {
             }
             case GROUND -> {
                 PlayerState taker = closestToucher(players, now);
-                if (taker != null) pickUp(taker, now);
+                if (taker != null) pickUp(taker);
             }
             case CARRIED -> {
                 if (carrier == null) break;
@@ -86,74 +86,60 @@ final class ShardObjective {
                 else if (carrier.connected && onPedestal(carrier) && now >= pedestalOverheatUntil)
                     place(now);
             }
-            case PLACED -> updateSealBreakers(players, now, dt);
+            case PLACED -> {
+                if (owner != null && now >= claimEndsAt) {
+                    securedWinner = owner;
+                    cancelInteraction(null);
+                } else updateSteal(now, dt);
+            }
         }
-        return now - startedAt >= CHAPTER_MS;
+        return now - startedAt >= MATCH_MS;
+    }
+
+    PlayerState securedWinner() { return securedWinner; }
+
+    /** Starts the only allowed steal interaction. The server verifies all preconditions. */
+    boolean beginSteal(PlayerState player, long now) {
+        if (state != State.PLACED || player == null || player == owner || !player.alive
+                || !player.connected || !onPedestal(player) || isMoving(player)
+                || now < pedestalProtectionUntil || challenger != null && challenger != player) return false;
+        if (challenger == player) return true;
+        challenger = player;
+        stealStartedAt = now;
+        stealProgressMs = 0;
+        return true;
+    }
+
+    /** Cancels on key release or a voluntary movement/combat action; null cancels whoever is active. */
+    boolean cancelInteraction(PlayerState player) {
+        if (challenger == null || player != null && challenger != player) return false;
+        challenger = null;
+        stealStartedAt = 0;
+        stealProgressMs = 0;
+        return true;
+    }
+
+    boolean isInteracting(PlayerState player) { return challenger == player; }
+
+    private void updateSteal(long now, long dt) {
+        if (challenger == null) return;
+        if (!challenger.alive || !challenger.connected) {
+            cancelInteraction(challenger);
+            return;
+        }
+        // Damage and server knockback deliberately do not cancel or reset this hold.
+        stealProgressMs += Math.min(dt, Math.max(0, now - stealStartedAt));
+        if (stealProgressMs >= STEAL_INTERACTION_MS) completeSteal(challenger, now);
     }
 
     /** Applies objective-specific consequences of an explosion that dealt real damage. */
     boolean onDamaged(PlayerState target, double actualDamage,
                       long now, double safeDropX, double safeDropZ) {
-        boolean reset = false;
-        if (state == State.PLACED && sealProgressMs.containsKey(target)) {
-            sealProgressMs.put(target, 0.0);
-            resetFlashUntil.put(target, now + RESET_FLASH_MS);
-            reset = true;
-        }
-        if (state != State.CARRIED || target != carrier || actualDamage <= 0) return reset;
+        if (state != State.CARRIED || target != carrier || actualDamage <= 0) return false;
         fireLock = Math.max(0, fireLock - actualDamage);
         fireLockLastHitAt = now;
         if (fireLock <= 0) dropAt(safeDropX, safeDropZ, now);
-        return reset;
-    }
-
-    private void updateSealBreakers(List<PlayerState> players, long now, long dt) {
-        boolean ownerPresent = owner != null && owner.alive && owner.connected && onPedestal(owner);
-        long activeDt = Math.min(dt, Math.max(0, now - pedestalProtectionUntil));
-        Iterator<Map.Entry<PlayerState, Double>> iterator = sealProgressMs.entrySet().iterator();
-        while (iterator.hasNext()) {
-            PlayerState p = iterator.next().getKey();
-            if (!p.alive || !p.connected || !onPedestal(p) || p == owner) {
-                iterator.remove();
-                resetFlashUntil.remove(p);
-            }
-        }
-        if (now < pedestalProtectionUntil) {
-            sealProgressMs.clear();
-            challenger = null;
-            return;
-        }
-        for (PlayerState p : players) {
-            if (p == owner || !p.alive || !p.connected || !onPedestal(p)) continue;
-            double progress = sealProgressMs.getOrDefault(p, 0.0);
-            // A newly observed entrant has not spent the preceding interval inside.
-            long playerDt = sealProgressMs.containsKey(p)
-                ? Math.min(activeDt, Math.max(0, now - p.staggerUntil)) : 0;
-            if (playerDt > 0)
-                progress += playerDt * (ownerPresent ? OWNER_DEFENSE_SPEED_FACTOR : 1.0);
-            sealProgressMs.put(p, progress);
-        }
-        chooseLeader();
-        PlayerState winner = null;
-        double best = -1;
-        for (Map.Entry<PlayerState, Double> entry : sealProgressMs.entrySet()) {
-            if (entry.getValue() >= SEAL_BREAK_MS && entry.getValue() > best) {
-                winner = entry.getKey();
-                best = entry.getValue();
-            }
-        }
-        if (winner != null) breakSeal(winner, now);
-    }
-
-    private void chooseLeader() {
-        challenger = null;
-        double lead = -1;
-        for (Map.Entry<PlayerState, Double> entry : sealProgressMs.entrySet()) {
-            if (entry.getValue() > lead) {
-                challenger = entry.getKey();
-                lead = entry.getValue();
-            }
-        }
+        return false;
     }
 
     private void place(long now) {
@@ -162,39 +148,35 @@ final class ShardObjective {
         state = State.PLACED;
         x = PEDESTAL_X;
         z = PEDESTAL_Z;
-        pedestalProtectionUntil = now + PEDESTAL_PROTECTION_MS;
-        sealProgressMs.clear();
-        resetFlashUntil.clear();
+        pedestalProtectionUntil = now;
+        claimEndsAt = now + CLAIM_MS;
         challenger = null;
+        stealProgressMs = 0;
         fireLock = FIRE_LOCK_MAX;
     }
 
-    private void breakSeal(PlayerState winner, long now) {
-        double dx = winner.x - PEDESTAL_X;
-        double dz = winner.z - PEDESTAL_Z;
-        double length = Math.hypot(dx, dz);
-        if (length < 0.001) { dx = 1; dz = 0; length = 1; }
-        state = State.GROUND;
-        x = PEDESTAL_X + dx / length * PEDESTAL_DROP_DISTANCE;
-        z = PEDESTAL_Z + dz / length * PEDESTAL_DROP_DISTANCE;
-        carrier = null;
+    /** A completed hold transfers the shard directly so the thief can run immediately. */
+    private void completeSteal(PlayerState winner, long now) {
+        state = State.CARRIED;
+        carrier = winner;
         owner = null;
         challenger = null;
-        sealProgressMs.clear();
-        resetFlashUntil.clear();
+        stealProgressMs = 0;
+        claimEndsAt = 0;
         pedestalOverheatUntil = now + PEDESTAL_OVERHEAT_MS;
-        pickupPriority = winner;
-        pickupPriorityUntil = now + BREAKER_PICKUP_PRIORITY_MS;
-        pickupUnlockAt = now;
+        fireLock = FIRE_LOCK_MAX;
+        fireLockLastHitAt = 0;
+        winner.charging = false;
     }
 
-    private void pickUp(PlayerState taker, long now) {
+    private void pickUp(PlayerState taker) {
         state = State.CARRIED;
         carrier = taker;
-        // Carrying the objective replaces bomb combat. Cancel a charge that may
-        // have started just before the pickup was resolved by the game tick.
         taker.charging = false;
         owner = null;
+        challenger = null;
+        stealProgressMs = 0;
+        claimEndsAt = 0;
         fireLock = FIRE_LOCK_MAX;
         fireLockLastHitAt = 0;
         pickupPriority = null;
@@ -208,6 +190,9 @@ final class ShardObjective {
         state = State.GROUND;
         carrier = null;
         owner = null;
+        challenger = null;
+        stealProgressMs = 0;
+        claimEndsAt = 0;
         x = dropX;
         z = dropZ;
         fireLock = FIRE_LOCK_MAX;
@@ -219,23 +204,20 @@ final class ShardObjective {
         formerCarrierBlockedUntil = now + FORMER_CARRIER_LOCKOUT_MS;
     }
 
-    /** Drops the shard voluntarily. Returns false when the player is not its carrier. */
     boolean drop(PlayerState player, long now) {
         if (state != State.CARRIED || carrier != player) return false;
         dropAt(player.x, player.z, now);
         return true;
     }
 
-    boolean carriedBy(PlayerState player) {
-        return state == State.CARRIED && carrier == player;
-    }
+    boolean carriedBy(PlayerState player) { return state == State.CARRIED && carrier == player; }
 
-    /** Refills the lock gradually once the carrier has gone FIRE_LOCK_REGEN_DELAY_MS without a hit. */
-    private void regenerateFireLock(long now, long dt) {
+    private void regenerateFireLock(long previousUpdate, long now) {
         if (state != State.CARRIED || fireLock >= FIRE_LOCK_MAX) return;
-        long regenFrom = fireLockLastHitAt + FIRE_LOCK_REGEN_DELAY_MS;
-        long regenMs = Math.min(dt, now - regenFrom);
-        if (regenMs > 0) fireLock = Math.min(FIRE_LOCK_MAX, fireLock + regenMs * FIRE_LOCK_REGEN_PER_SECOND / 1000.0);
+        long regenFrom = Math.max(previousUpdate, fireLockLastHitAt + FIRE_LOCK_REGEN_DELAY_MS);
+        long regenMs = now - regenFrom;
+        if (regenMs > 0)
+            fireLock = Math.min(FIRE_LOCK_MAX, fireLock + regenMs * FIRE_LOCK_REGEN_PER_SECOND / 1000.0);
     }
 
     private void clearInvalidPriority(long now) {
@@ -246,40 +228,39 @@ final class ShardObjective {
         }
     }
 
-    void onEliminated(PlayerState p, long now) {
-        if (p == carrier) dropAt(p.x, p.z, now);
-        if (p == owner) owner = null;
-        sealProgressMs.remove(p);
-        resetFlashUntil.remove(p);
-        if (p == challenger) chooseLeader();
-        if (p == pickupPriority) {
+    void onEliminated(PlayerState player, long now) {
+        if (player == carrier) dropAt(player.x, player.z, now);
+        if (player == challenger) cancelInteraction(player);
+        if (player == owner && state == State.PLACED) {
+            state = State.GROUND;
+            owner = null;
+            claimEndsAt = 0;
+            x = PEDESTAL_X;
+            z = PEDESTAL_Z;
+            pickupUnlockAt = now + GROUND_NEUTRAL_MS;
+        }
+        if (player == pickupPriority) {
             pickupPriority = null;
             pickupPriorityUntil = 0;
         }
     }
 
-    /** Player who keeps the current chapter shard if the timer ended now. */
-    PlayerState holder() {
-        return state == State.PLACED ? owner : state == State.CARRIED ? carrier : null;
-    }
-
-    boolean reveals(PlayerState p) { return p != null && p == carrier; }
+    boolean reveals(PlayerState player) { return player != null && player == carrier; }
 
     Map<String,Object> data(long now) {
         List<Map<String,Object>> breakers = new ArrayList<>();
-        for (Map.Entry<PlayerState, Double> entry : sealProgressMs.entrySet()) {
-            PlayerState p = entry.getKey();
-            breakers.add(GameRoom.data(
-                "playerId", p.id,
-                "progress", Math.min(1.0, entry.getValue() / SEAL_BREAK_MS),
-                "stagger", Math.max(0, p.staggerUntil - now) / 1000.0,
-                "resetFlash", Math.max(0, resetFlashUntil.getOrDefault(p, 0L) - now) / 1000.0));
-        }
-        double lead = challenger == null ? 0 : sealProgressMs.getOrDefault(challenger, 0.0);
+        if (challenger != null) breakers.add(GameRoom.data(
+            "playerId", challenger.id,
+            "progress", Math.min(1.0, stealProgressMs / STEAL_INTERACTION_MS),
+            "stagger", 0,
+            "resetFlash", 0));
+        double claimLeft = state == State.PLACED ? remaining(claimEndsAt, now) : 0;
         return GameRoom.data(
             "state", state.name(), "x", x, "z", z,
             "carrierId", id(carrier), "ownerId", id(owner), "challengerId", id(challenger),
-            "capture", Math.min(1.0, lead / SEAL_BREAK_MS), "sealBreakers", breakers,
+            "capture", Math.min(1.0, stealProgressMs / STEAL_INTERACTION_MS), "sealBreakers", breakers,
+            "claimTimeLeft", claimLeft, "claimDuration", CLAIM_MS / 1000.0,
+            "claimProgress", state == State.PLACED ? 1 - claimLeft / (CLAIM_MS / 1000.0) : 0,
             "fireLock", fireLock, "fireLockMax", FIRE_LOCK_MAX,
             "pedestalProtection", remaining(pedestalProtectionUntil, now),
             "pedestalOverheat", remaining(pedestalOverheatUntil, now),
@@ -287,7 +268,7 @@ final class ShardObjective {
             "pickupPriority", remaining(pickupPriorityUntil, now),
             "pickupUnlock", remaining(pickupUnlockAt, now),
             "pedestalX", PEDESTAL_X, "pedestalZ", PEDESTAL_Z, "pedestalRadius", PEDESTAL_RADIUS,
-            "timeLeft", Math.max(0, CHAPTER_MS - (now - startedAt)) / 1000.0,
+            "timeLeft", Math.max(0, MATCH_MS - (now - startedAt)) / 1000.0,
             "spawnIn", Math.max(0, SPAWN_DELAY_MS - (now - startedAt)) / 1000.0);
     }
 
@@ -296,26 +277,30 @@ final class ShardObjective {
         clearInvalidPriority(now);
         PlayerState best = null;
         double bestDistance = Double.POSITIVE_INFINITY;
-        for (PlayerState p : players) {
-            if (!p.alive || !p.connected) continue;
-            if (pickupPriority != null && p != pickupPriority) continue;
-            if (p == formerCarrier && now < formerCarrierBlockedUntil) continue;
-            double distance = GameRules.distance(p.x, p.z, x, z);
-            if (distance < 0.55 * p.size + PICKUP_RANGE && distance < bestDistance) {
-                best = p;
+        for (PlayerState player : players) {
+            if (!player.alive || !player.connected) continue;
+            if (pickupPriority != null && player != pickupPriority) continue;
+            if (player == formerCarrier && now < formerCarrierBlockedUntil) continue;
+            double distance = GameRules.distance(player.x, player.z, x, z);
+            if (distance < 0.55 * player.size + PICKUP_RANGE && distance < bestDistance) {
+                best = player;
                 bestDistance = distance;
             }
         }
         return best;
     }
 
-    static boolean onPedestal(PlayerState p) {
-        return GameRules.distance(p.x, p.z, PEDESTAL_X, PEDESTAL_Z) <= PEDESTAL_RADIUS;
+    static boolean onPedestal(PlayerState player) {
+        return GameRules.distance(player.x, player.z, PEDESTAL_X, PEDESTAL_Z) <= PEDESTAL_RADIUS;
+    }
+
+    private static boolean isMoving(PlayerState player) {
+        return Math.abs(player.dx) > 1e-6 || Math.abs(player.dz) > 1e-6;
     }
 
     private static double remaining(long until, long now) {
         return Math.max(0, until - now) / 1000.0;
     }
 
-    private static String id(PlayerState p) { return p == null ? "" : p.id; }
+    private static String id(PlayerState player) { return player == null ? "" : player.id; }
 }

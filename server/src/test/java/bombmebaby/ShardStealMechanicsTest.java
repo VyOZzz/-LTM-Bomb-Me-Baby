@@ -30,6 +30,7 @@ class ShardStealMechanicsTest {
         long active = placed.time + ShardObjective.PEDESTAL_PROTECTION_MS;
         park(placed.a, 20, 0);
         park(placed.b, 1, 0);
+        placed.room.action(placed.b, "INTERACT_START", 0, 0, active);
         placed.room.update(active, 0);
         advance(placed.room, active, active + 1_500);
         double before = progress(placed.shard, placed.b, active + 1_500);
@@ -85,54 +86,56 @@ class ShardStealMechanicsTest {
         assertEquals(0, breakers(f.shard, f.time).size());
     }
 
-    @Test void ownerOnlyHalvesProgressAndMultipleChallengersAdvanceIndependently() {
+    @Test void onlyOneExplicitChallengerCanProgressAtATime() {
         Fixture f = placed();
         park(f.a, -1, 0);
         park(f.b, 1, 0);
         park(f.c, 0, 2);
         long active = f.time + ShardObjective.PEDESTAL_PROTECTION_MS;
+        f.room.action(f.b, "INTERACT_START", 0, 0, active);
+        f.room.action(f.c, "INTERACT_START", 0, 0, active);
         f.room.update(active, 0);
         advance(f.room, active, active + 2_000);
 
-        assertEquals(1.0 / 3.0, progress(f.shard, f.b, active + 2_000), .02);
-        assertEquals(1.0 / 3.0, progress(f.shard, f.c, active + 2_000), .02);
+        assertEquals(2.0 / 3.0, progress(f.shard, f.b, active + 2_000), .02);
+        assertEquals(0, progress(f.shard, f.c, active + 2_000), .02);
         assertEquals(ShardObjective.State.PLACED, f.shard.state);
     }
 
-    @Test void realDamageResetsOnlyThatBreakerAndAppliesStagger() {
+    @Test void realDamageDoesNotResetBreakerOrApplyStagger() {
         Fixture f = placed();
         park(f.a, 20, 0);
         park(f.b, 1, 0);
         park(f.c, -2, 0);
         long active = f.time + ShardObjective.PEDESTAL_PROTECTION_MS;
+        f.room.action(f.b, "INTERACT_START", 0, 0, active);
         f.room.update(active, 0);
         advance(f.room, active, active + 1_200);
-        double otherProgress = progress(f.shard, f.c, active + 1_200);
+        double before = progress(f.shard, f.b, active + 1_200);
 
         // Use the owner as a source outside the ring so C remains an independent breaker.
         park(f.a, 4.5, 0);
         fullyCharge(f.a, active + 1_300);
         f.room.action(f.a, "EXPLODE", 0, 0, active + 1_300);
 
-        assertEquals(0, progress(f.shard, f.b, active + 1_300), .001);
-        assertTrue(f.b.staggerUntil > active + 1_300);
-        assertEquals(otherProgress, progress(f.shard, f.c, active + 1_300), .001);
+        assertEquals(before, progress(f.shard, f.b, active + 1_300), .001);
+        assertEquals(0, f.b.staggerUntil);
     }
 
-    @Test void leavingDeathAndDisconnectRemoveOnlyAffectedProgress() {
+    @Test void movementDeathAndDisconnectCancelTheActiveHold() {
         Fixture f = placed();
         park(f.a, 20, 0);
         park(f.b, 1, 0);
         park(f.c, 2, 0);
         long active = f.time + ShardObjective.PEDESTAL_PROTECTION_MS;
+        f.room.action(f.b, "INTERACT_START", 0, 0, active);
         f.room.update(active, 0);
         f.room.update(active + 500, 0);
 
-        park(f.b, 10, 0);
-        f.room.update(active + 600, 0);
+        f.room.action(f.b, "MOVE", 1, 0, active + 600);
         assertNull(findBreaker(f.shard, f.b, active + 600));
-        assertNotNull(findBreaker(f.shard, f.c, active + 600));
-
+        f.room.action(f.b, "MOVE", 0, 0, active + 601);
+        f.room.action(f.c, "INTERACT_START", 0, 0, active + 602);
         f.c.connected = false;
         f.c.disconnectedAt = active + 600;
         f.room.update(active + 700, 0);
@@ -140,6 +143,7 @@ class ShardStealMechanicsTest {
 
         f.b.alive = true;
         park(f.b, 1, 0);
+        f.room.action(f.b, "INTERACT_START", 0, 0, active + 800);
         f.room.update(active + 800, 0);
         f.room.update(active + 900, 0);
         assertNotNull(findBreaker(f.shard, f.b, active + 900));
@@ -148,47 +152,42 @@ class ShardStealMechanicsTest {
         assertNull(findBreaker(f.shard, f.b, active + 1_000));
     }
 
-    @Test void completedSealBouncesShardGrantsPriorityAndOverheatsPedestal() {
+    @Test void completedHoldTransfersShardAndOverheatsPedestal() {
         Fixture f = placed();
         park(f.a, 20, 0);
         park(f.b, 2.5, 0);
         park(f.c, 20, 20);
         long active = f.time + ShardObjective.PEDESTAL_PROTECTION_MS;
+        f.room.action(f.b, "INTERACT_START", 0, 0, active);
         f.room.update(active, 0);
         long broken = active + ShardObjective.SEAL_BREAK_MS;
         advance(f.room, active, broken);
 
-        assertEquals(ShardObjective.State.GROUND, f.shard.state);
-        assertSame(f.b, f.shard.pickupPriority);
-        assertTrue(Math.hypot(f.shard.x, f.shard.z) > ShardObjective.PEDESTAL_RADIUS);
+        assertEquals(ShardObjective.State.CARRIED, f.shard.state);
+        assertSame(f.b, f.shard.carrier);
         assertEquals(ShardObjective.PEDESTAL_OVERHEAT_MS,
             f.shard.pedestalOverheatUntil - broken);
 
-        park(f.b, f.shard.x, f.shard.z);
-        f.room.update(broken + 50, 0);
-        assertSame(f.b, f.shard.carrier);
         park(f.b, 0, 0);
-        f.room.update(broken + 100, 0);
+        f.room.update(broken + 50, 0);
         assertEquals(ShardObjective.State.CARRIED, f.shard.state,
             "Overheated pedestal cannot accept the shard");
         f.room.update(broken + ShardObjective.PEDESTAL_OVERHEAT_MS, 0);
         assertEquals(ShardObjective.State.PLACED, f.shard.state);
     }
 
-    @Test void deadOrDisconnectedPriorityHolderLosesPriorityImmediately() {
+    @Test void disconnectedThiefCannotCompleteTheHold() {
         Fixture f = placed();
         park(f.a, 20, 0);
         park(f.b, 1, 0);
         long active = f.time + ShardObjective.PEDESTAL_PROTECTION_MS;
+        f.room.action(f.b, "INTERACT_START", 0, 0, active);
         f.room.update(active, 0);
-        long broken = active + ShardObjective.SEAL_BREAK_MS;
-        advance(f.room, active, broken);
         f.b.connected = false;
-        f.b.disconnectedAt = broken;
-        park(f.c, f.shard.x, f.shard.z);
-        f.room.update(broken + 10, 0);
-        assertSame(f.c, f.shard.carrier);
-        assertNull(f.shard.pickupPriority);
+        f.b.disconnectedAt = active;
+        f.room.update(active + 10, 0);
+        assertEquals(ShardObjective.State.PLACED, f.shard.state);
+        assertNull(f.shard.challenger);
     }
 
     @Test void carrierDisconnectDropsWithinTwoSeconds() {

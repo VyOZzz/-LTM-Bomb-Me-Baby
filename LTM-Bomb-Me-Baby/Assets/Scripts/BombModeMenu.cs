@@ -27,10 +27,10 @@ sealed class BombModeMenu {
             tooltip = "Phím 1  •  Một trận sinh tồn, hợp để làm quen", accent = Charge
         },
         new Card {
-            mode = "JOURNEY", key = "2", tag = "3 CHƯƠNG  •  TRANH MẢNH", title = "HÀNH TRÌNH BA MẢNH",
-            description = "Mỗi chương một mảnh Tim Lửa. Cướp mảnh, đặt lên bệ đá giữa map và giữ bệ đến hết 3 phút.",
-            rows = new[,] { { "Lộ trình", "Đồng cỏ • Ngã tư • Núi lửa" }, { "Thắng", "Mang về nhiều mảnh nhất" } },
-            tooltip = "Phím 2  •  Ba chương liên tiếp, có lời dẫn truyện", accent = Core
+            mode = "JOURNEY", key = "2", tag = "3 CHƯƠNG  •  TRANH MẢNH", title = "HÀNH TRÌNH TIM LỬA",
+            description = "Giành Mảnh Tim Lửa ở cả ba chương. Đặt mảnh lên bệ và bảo vệ 30 giây để thắng chương.",
+            rows = new[,] { { "Lộ trình", "Đồng cỏ • Ngã tư • Núi lửa" } },
+            tooltip = "Phím 2  •  Ba chương tranh Mảnh Tim Lửa", accent = Core
         }
     };
 
@@ -301,7 +301,11 @@ sealed class BombModeMenu {
 
         Rect art = new Rect(panel.x + 12, panel.y + 12, panel.width - 24, Mathf.Min(150, panel.height * .36f));
         Fill(art, Color.Lerp(Night, card.accent, .2f), RoundBig);
-        if (index == 0) DrawBombArt(art, lift); else DrawShardArt(art, lift);
+        // Artwork owns a clipped coordinate space so animated decoration can never cover copy below.
+        GUI.BeginGroup(art);
+        Rect artContent = new Rect(0, 0, art.width, art.height);
+        if (index == 0) DrawBombArt(artContent, lift); else DrawShardArt(artContent, lift);
+        GUI.EndGroup();
 
         Rect key = new Rect(art.xMax - 40, art.y + 12, 28, 28);
         Fill(key, new Color(0, 0, 0, .35f), RoundSmall);
@@ -380,26 +384,27 @@ sealed class BombModeMenu {
         Fill(Centered(fuseBase + new Vector2(14, -18), spark), new Color(1, .9f, .55f), Circle);
     }
 
-    /// Three Core-like crystals, one per chapter, tinted with that arena's accent.
+    /// One Core-like crystal per arena, laid out safely for any journey length.
     void DrawShardArt(Rect art, float lift) {
-        float step = art.width / 3.4f;
-        float startX = art.center.x - step;
-        for (int i = 0; i < 3; i++) {
+        int count = Mathf.Min(JourneyMaps.Length, JourneyNames.Length);
+        if (count <= 0) return;
+
+        float step = count > 1 ? art.width / (count + .4f) : 0;
+        float startX = count > 1 ? art.center.x - step * (count - 1) * .5f : art.center.x;
+        for (int i = 0; i < count; i++) {
             Color color = MapAccent(JourneyMaps[i]);
             float bob = Mathf.Sin(Time.unscaledTime * 2.2f + i * 1.3f) * (3 + 3 * lift);
             Vector2 c = new Vector2(startX + i * step, art.center.y - 10 + bob);
-            if (i < 2)
+            if (i < count - 1)
                 for (float t = .28f; t < .74f; t += .11f)
                     Fill(Centered(new Vector2(c.x + step * t, art.center.y - 10), 5), new Color(1, 1, 1, .25f), Circle);
             Fill(Centered(c, 70), WithAlpha(Core, .22f + .12f * lift), Circle);
-            Matrix4x4 saved = GUI.matrix;
-            GUIUtility.RotateAroundPivot(45, c);
-            Fill(Centered(c + new Vector2(3, 4), 44), new Color(0, 0, 0, .35f), RoundSmall);
-            Fill(Centered(c, 44), color, RoundSmall);
-            Fill(Centered(c - new Vector2(8, 8), 14), new Color(1, 1, 1, .4f), RoundSmall);
-            GUI.matrix = saved;
+            Fill(Centered(c + new Vector2(3, 4), 46), new Color(0, 0, 0, .35f), Circle);
+            Fill(Centered(c, 46), color, Circle);
+            Fill(Centered(c - new Vector2(8, 8), 14), new Color(1, 1, 1, .4f), Circle);
             mapLabel.normal.textColor = Color.Lerp(color, Text, .4f);
-            Label(new Rect(c.x - 50, art.yMax - 34, 100, 20), $"{i + 1}. {JourneyNames[i]}", mapLabel);
+            string mapName = count > 1 ? $"{i + 1}. {JourneyNames[i]}" : JourneyNames[i];
+            Label(new Rect(c.x - 70, art.yMax - 34, 140, 20), mapName, mapLabel);
         }
     }
 
@@ -429,9 +434,9 @@ sealed class BombModeMenu {
         tagStyle = TextStyle(Px(13), FontStyle.Bold, Text);
         cardTitle = TextStyle(Px(28), FontStyle.Bold, Text);
         cardTitle.wordWrap = true;
-        bodyText = TextStyle(Px(16), FontStyle.Normal, TextMuted);
+        bodyText = TextStyle(Px(16), FontStyle.Normal, Color.Lerp(TextMuted, Text, .28f));
         bodyText.wordWrap = true;
-        rowLabel = TextStyle(Px(14), FontStyle.Normal, TextFaint, TextAnchor.MiddleLeft);
+        rowLabel = TextStyle(Px(14), FontStyle.Normal, Color.Lerp(TextFaint, TextMuted, .55f), TextAnchor.MiddleLeft);
         rowValue = TextStyle(Px(16), FontStyle.Bold, Text, TextAnchor.MiddleLeft);
         cta = TextStyle(Px(18), FontStyle.Bold, Night, TextAnchor.MiddleCenter);
         keycap = TextStyle(Px(15), FontStyle.Bold, WithAlpha(Text, .55f), TextAnchor.MiddleCenter);

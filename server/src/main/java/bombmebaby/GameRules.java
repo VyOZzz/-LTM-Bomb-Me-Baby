@@ -15,7 +15,8 @@ final class GameRules {
     static final double PLAYER_RADIUS = 0.40;
     static final double MAX_SIZE = 2.6;
     static final double MAX_BASE = 1.4;
-    static final long MAX_CHARGE_MS = 8_000;
+    /** Full charge is intentionally short enough to keep fights decisive. */
+    static final long MAX_CHARGE_MS = 4_000;
     static final long BOMB_COOLDOWN_MS = 2_500;
     static final long SHIELD_MS = 1_500;
     static final long SHIELD_COOLDOWN_MS = 9_000;
@@ -25,6 +26,14 @@ final class GameRules {
     static final long CONNECTION_TIMEOUT_MS = 6_000;
     static final long WRITE_STALL_MS = 3_000;
     static final long MOVEMENT_STALE_MS = 500;
+    static final double ENERGY_HEAL = 1;
+    static final long ENERGY_SPEED_BOOST_MS = 650;
+    static final double ENERGY_SPEED_FACTOR = 1.12;
+    /** One balance knob for every normal explosion in every game mode. */
+    static final double GLOBAL_DAMAGE_MULTIPLIER = 1.0;
+    /** A size-1 bomb at full charge and point-blank range removes exactly 80 HP. */
+    static final double FULL_CHARGE_DAMAGE = 80.0;
+    static final double TAP_DAMAGE = 12.0;
 
     // Server-authoritative explosion impulse. Values are velocities in world units/second;
     // exponential decay keeps an ordinary blast displacement around 1-2.5 world units.
@@ -54,7 +63,8 @@ final class GameRules {
     static double damage(double size, double charge, double distance, double radius) {
         if (distance > radius) return 0;
         double chargedPower = Math.pow(clamp(charge, 0, 1), 1.35);
-        double power = 7 + 25 * (size - 1) + 34 * chargedPower;
+        double power = (TAP_DAMAGE + (FULL_CHARGE_DAMAGE - TAP_DAMAGE) * chargedPower)
+            * Math.max(1, size) * GLOBAL_DAMAGE_MULTIPLIER;
         return Math.max(0, power * (1 - 0.75 * distance / radius));
     }
 

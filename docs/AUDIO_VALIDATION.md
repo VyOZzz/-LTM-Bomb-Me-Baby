@@ -1,5 +1,12 @@
 # Kiểm tra âm thanh
 
+## Bản sửa ngày 25/10/2026
+
+- Thay ba tiếng nổ bằng ba bản phối Kenney CC0 dài 1,25–1,55 giây, mỗi bản gồm lớp blast và lớp trầm; tăng gain theo kích thước bom nhưng vẫn đi qua giới hạn tổng voice.
+- Thay âm thắng bằng jingle ba lớp Kenney CC0 và phát âm kết quả ở cuối từng chương Journey, không chỉ cuối toàn bộ hành trình.
+- Thay click 10 ms bằng click 94 ms; xóa toàn bộ âm hover ở chuột, focus bàn phím và slider. Âm chỉ phát khi control thực sự được kích hoạt.
+- Nguồn, giấy phép và mức đo mới được cập nhật tại [AUDIO_CREDITS.md](AUDIO_CREDITS.md) và [AUDIO_LEVELS.csv](AUDIO_LEVELS.csv).
+
 ## Sửa vị trí âm thanh ngày 24/10/2026
 
 `BombGame` chỉ phát SFX gắn player khi có avatar đang hiển thị, rồi áp khoảng cách nghe. Đối thủ chưa từng thấy hoặc đã khuất tầm nhìn không phát tiếng tại `(0,0,0)`/vị trí cũ. Không thay file audio, mức mix hoặc nhạc. `BombValidation` có thêm 23 kiểm tra: bảy loại event với người chưa thấy/đã ẩn/ở gần, thêm kiểm tra ngoài tầm nghe và âm local. Tổng bộ Unity hiện tại là 111; chi tiết build và kết quả tại [FINAL_VALIDATION.md](FINAL_VALIDATION.md). Đây là kiểm tra tham số phát trong Unity, chưa thay thế nghe thử loa/tai nghe.

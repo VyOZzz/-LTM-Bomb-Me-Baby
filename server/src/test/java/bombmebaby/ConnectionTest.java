@@ -238,27 +238,28 @@ class ConnectionTest {
         assertSame(host.player.room, right.player.room);
     }
 
-    @Test void journeyCompleteEventIsBroadcastAfterThreeTcpRounds() throws Exception {
+    @Test void journeyCompleteEventIsBroadcastAfterThirdChapter() throws Exception {
         Peer a = hello(), b = hello();
         a.request("type", "CREATE_ROOM", "seq", 1, "mode", "JOURNEY");
         GameRoom room = a.player.room;
         b.request("type", "JOIN_ROOM", "seq", 1, "code", room.code);
 
-        long aSeq = 2, bSeq = 2;
-        for (int chapter = 0; chapter < 3; chapter++) {
-            a.request("type", "READY", "seq", aSeq++, "ready", true);
-            b.request("type", "READY", "seq", bSeq++, "ready", true);
-            synchronized (room) {
-                a.player.x = 0; a.player.z = 0;
-                b.player.x = .5; b.player.z = 0; b.player.hp = 1;
-            }
-            a.request("type", "CHARGE_START", "seq", aSeq++);
-            a.request("type", "EXPLODE", "seq", aSeq++);
-            JsonObject gameOver = b.until("GAME_OVER");
-            assertEquals(chapter, gameOver.get("chapterIndex").getAsInt());
-            assertEquals(a.player.id, gameOver.get("winnerId").getAsString());
+        a.request("type", "READY", "seq", 2, "ready", true);
+        b.request("type", "READY", "seq", 2, "ready", true);
+        synchronized (room) {
+            a.player.x = 0; a.player.z = 0;
+            b.player.x = .5; b.player.z = 0; b.player.hp = 1;
         }
+        a.request("type", "CHARGE_START", "seq", 3);
+        a.request("type", "EXPLODE", "seq", 4);
+        JsonObject gameOver = b.until("GAME_OVER");
+        assertEquals(0, gameOver.get("chapterIndex").getAsInt());
+        assertEquals(a.player.id, gameOver.get("winnerId").getAsString());
 
+        finishJourneyChapter(room, a.player, b.player, 200_000);
+        assertEquals(1, b.until("GAME_OVER").get("chapterIndex").getAsInt());
+        finishJourneyChapter(room, a.player, b.player, 300_000);
+        assertEquals(2, b.until("GAME_OVER").get("chapterIndex").getAsInt());
         JsonObject complete = b.until("JOURNEY_COMPLETE");
         assertEquals(2, complete.get("chapterIndex").getAsInt());
         assertEquals(a.player.id, complete.get("winnerId").getAsString());
@@ -400,34 +401,27 @@ class ConnectionTest {
         assertSame(room, old.player.room, "Results remain resumable until the deadline");
     }
 
-    @Test void journeyResultResumesBetweenChaptersAndAtFinale() throws Exception {
+    @Test void journeyResultResumesBetweenChapters() throws Exception {
         Peer a = hello();
         a.request("type", "CREATE_ROOM", "seq", 1, "mode", "JOURNEY");
         Peer b = readyOpponent(a);
         a.request("type", "READY", "seq", 2, "ready", true);
         GameRoom room = a.player.room;
-        for (int chapter = 0; chapter < 3; chapter++) {
-            a.disconnect();
-            synchronized (room) {
-                b.player.alive = false;
-                room.update(System.currentTimeMillis(), 0);
-            }
-            Peer resumed = connect();
-            resumed.send("type", "HELLO", "resumeToken", a.player.resumeToken);
-            resumed.until("WELCOME");
-            assertEquals(chapter, resumed.until("ROOM_STATE").getAsJsonObject("room").get("chapterIndex").getAsInt());
-            assertEquals(a.player.id, resumed.until("GAME_OVER").get("winnerId").getAsString());
-            if (chapter == 2) assertEquals(a.player.id,
-                resumed.until("JOURNEY_COMPLETE").getAsJsonArray("winnerIds").get(0).getAsString());
-            resumed.until("ACK");
-            resumed.player = a.player; a = resumed;
-            if (chapter < 2) {
-                b.request("type", "READY", "seq", 10 + chapter, "ready", true);
-                a.request("type", "READY", "seq", 10 + chapter, "ready", true);
-            }
-        }
         a.disconnect();
-        assertSame(room, a.player.room, "Final journey results also survive disconnect");
+        synchronized (room) {
+            b.player.alive = false;
+            room.update(System.currentTimeMillis(), 0);
+        }
+        Peer resumed = connect();
+        resumed.send("type", "HELLO", "resumeToken", a.player.resumeToken);
+        resumed.until("WELCOME");
+        assertEquals(0, resumed.until("ROOM_STATE").getAsJsonObject("room").get("chapterIndex").getAsInt());
+        assertEquals(a.player.id, resumed.until("GAME_OVER").get("winnerId").getAsString());
+        assertFalse(room.journeyComplete);
+        resumed.until("ACK");
+        resumed.player = a.player; a = resumed;
+        a.disconnect();
+        assertSame(room, a.player.room, "Between-chapter results also survive disconnect");
     }
 
     @Test void oversizedUnterminatedFrameClosesWithoutWaitingForNewline() throws Exception {
@@ -660,6 +654,15 @@ class ConnectionTest {
         readyOpponent(peer);
         peer.request("type", "READY", "seq", 2, "ready", true);
         return peer;
+    }
+
+    private static void finishJourneyChapter(GameRoom room, PlayerState winner, PlayerState loser, long now) {
+        synchronized (room) {
+            room.ready(winner, true);
+            room.ready(loser, true);
+            loser.alive = false;
+            room.update(now, 0);
+        }
     }
 
     /** Rooms need two players to start: a second, already ready player for the host's room. */

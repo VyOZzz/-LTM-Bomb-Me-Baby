@@ -5,7 +5,7 @@ using UnityEngine;
 /// a tiled ground per map, a ring of rocks as the arena edge, rock obstacles and bush clusters
 /// sized to the server's collision circles, and light non-blocking decoration. Every piece falls
 /// back to the old coloured primitives when its art is missing, so the game runs without it.
-sealed class BombMapView {
+public sealed class BombMapView {
     sealed class Style {
         public string ground;
         public float tile;
@@ -63,14 +63,16 @@ sealed class BombMapView {
     const float BorderWidth = 24;
 
     GameObject root;
+    bool ownsRoot;
     readonly List<Renderer[]> bushRenderers = new List<Renderer[]>();
     readonly List<Material[][]> bushMaterials = new List<Material[][]>();
     int fadedBush = -1;
 
     public GameObject Build(string mapId, float arenaSize, ObstacleData[] obstacles, BushData[] bushes,
-                            string rootName = "Runtime Map - ", Transform parent = null) {
+            Transform parent = null, string rootName = null) {
         Clear();
-        root = new GameObject(rootName + mapId);
+        root = new GameObject(string.IsNullOrEmpty(rootName) ? "Runtime Map - " + mapId : rootName);
+        ownsRoot = true;
         if (parent != null) root.transform.SetParent(parent, false);
         Style style = mapId == "crater" ? Crater : mapId == "crossroads" ? Crossroads : Meadow;
         int seed = 17;
@@ -87,12 +89,38 @@ sealed class BombMapView {
         return root;
     }
 
+    public GameObject Build(string mapId, float arenaSize, ObstacleData[] obstacles, BushData[] bushes,
+            string rootNamePrefix, Transform parent) =>
+        Build(mapId, arenaSize, obstacles, bushes, parent, rootNamePrefix + mapId);
+
     public void Clear() {
-        if (root != null) BombArt.Discard(root);
+        if (root != null) {
+            if (ownsRoot) BombArt.Discard(root);
+            else root.SetActive(false);
+        }
         root = null;
+        ownsRoot = false;
         bushRenderers.Clear();
         bushMaterials.Clear();
         fadedBush = -1;
+    }
+
+    /// Uses an authored scene preview as the live map. This keeps the Scene view and Game view
+    /// identical and lets artists adjust the generated hierarchy without a duplicate runtime copy.
+    public void UseExisting(GameObject existingRoot) {
+        Clear();
+        root = existingRoot;
+        ownsRoot = false;
+        if (root == null) return;
+        root.SetActive(true);
+        foreach (Transform child in root.transform) {
+            if (child.name != "Bush") continue;
+            Renderer[] renderers = child.GetComponentsInChildren<Renderer>();
+            var materials = new Material[renderers.Length][];
+            for (int i = 0; i < renderers.Length; i++) materials[i] = renderers[i].sharedMaterials;
+            bushRenderers.Add(renderers);
+            bushMaterials.Add(materials);
+        }
     }
 
     /// Fades the bush the local player is hiding in so they can still see their bomb; -1 restores all.
@@ -353,6 +381,15 @@ sealed class BombMapView {
     }
 
     static int Seed(float x, float z) => Mathf.RoundToInt(x * 73.856f) * 19349663 ^ Mathf.RoundToInt(z * 19.349f) * 83492791;
+    static void DestroyObject(Object target) {
+        if (target == null) return;
+#if UNITY_EDITOR
+        if (!Application.isPlaying) Object.DestroyImmediate(target);
+        else Object.Destroy(target);
+#else
+        Object.Destroy(target);
+#endif
+    }
     static float Range(System.Random random, float min, float max) => min + (float)random.NextDouble() * (max - min);
     static string Pick(string[] options, System.Random random) => options[random.Next(options.Length)];
     static float Sq(float v) => v * v;

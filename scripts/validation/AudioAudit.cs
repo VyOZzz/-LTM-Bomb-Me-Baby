@@ -31,7 +31,8 @@ public static class AudioAudit {
                 Check(Resources.Load<AudioClip>("Audio/" + name) == null, "Retired layer still ships: " + name);
             foreach (string name in new[] { "mix_explosion_1", "mix_explosion_2", "mix_explosion_3", "mix_shield", "mix_shield_hit", "mix_boost" }) {
                 AudioClip clip = Resources.Load<AudioClip>("Audio/" + name);
-                Check(clip != null && clip.length < .85f, "Soft cue is missing or too long: " + name);
+                float maxLength = name.StartsWith("mix_explosion_") ? 1.7f : .85f;
+                Check(clip != null && clip.length < maxLength, "Soft cue is missing or too long: " + name);
                 var importer = (AudioImporter)AssetImporter.GetAtPath(AssetDatabase.GetAssetPath(clip));
                 Check(importer.defaultSampleSettings.compressionFormat == AudioCompressionFormat.PCM,
                     "Short cue must not be compressed a second time: " + name);
@@ -43,7 +44,8 @@ public static class AudioAudit {
                     if (float.IsNaN(sample) || float.IsInfinity(sample)) throw new Exception("Invalid sample: " + name);
                     peak = Mathf.Max(peak, Mathf.Abs(sample));
                 }
-                Check(peak > .01f && peak < .40f, "Silent or excessive imported peak: " + name + " " + peak);
+                float maxPeak = name.StartsWith("mix_explosion_") ? .60f : .40f;
+                Check(peak > .01f && peak < maxPeak, "Silent or excessive imported peak: " + name + " " + peak);
                 Check(Mathf.Abs(samples[0]) < .01f && Mathf.Abs(samples[samples.Length - 1]) < .01f,
                     "Cue edges can click: " + name);
             }

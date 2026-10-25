@@ -31,10 +31,11 @@ class ReviewFixesTest {
         assertFalse(r.join(new PlayerState("Replacement", null)));
     }
 
-    @Test void leavingBetweenChaptersAlsoConcludesJourney() {
+    @Test void timeoutAdvancesToNextChapterAndLeavingThenConcludesJourney() {
         GameRoom r = room(GameMode.JOURNEY, 2);
         r.update(100_000 + ShardObjective.CHAPTER_MS, .05);
         assertFalse(r.journeyComplete);
+        assertEquals(GameRoom.Phase.FINISHED, r.phase);
         r.leave(r.players.get(1));
         assertTrue(r.journeyComplete);
         assertEquals(0, r.journeyScores.values().stream().mapToInt(s -> s.roundWins).sum());
@@ -76,8 +77,10 @@ class ReviewFixesTest {
 
     private static GameRoom placed() {
         GameRoom r = room(GameMode.JOURNEY, 3);
-        r.objective.state = ShardObjective.State.PLACED;
-        r.objective.owner = r.players.get(0);
+        r.objective.state = ShardObjective.State.CARRIED;
+        r.objective.carrier = r.players.get(0);
+        r.players.get(0).x = 0;
+        r.objective.update(100_000, r.players);
         r.players.get(0).x = 15;
         r.players.get(1).x = 1;
         return r;
@@ -99,25 +102,29 @@ class ReviewFixesTest {
         r.update(104_000, .1);
         assertTrue(b.x < 3);
         assertEquals(0, progress(r, b, 104_000));
+        r.action(b, "MOVE", 0, 0, 104_001);
+        r.action(b, "INTERACT_START", 0, 0, 104_002);
         r.update(108_000, .1);
         assertEquals(100.0 / 3_000, progress(r, b, 108_000), .0001);
         assertEquals(ShardObjective.State.PLACED, r.objective.state);
-        r.update(280_000, .1);
+        r.update(400_000, .1);
         assertEquals(GameRoom.Phase.FINISHED, r.phase, "Wall-time deadline must not stretch after a stall");
     }
 
-    @Test void reflectionResetsSealAndAppliesStaggerOnlyOnRealDamage() {
+    @Test void realDamageDoesNotResetStealOrApplyStagger() {
         GameRoom r = placed();
-        PlayerState owner = r.players.get(0), breaker = r.players.get(1);
-        owner.x = 0;
-        r.update(100_000, .05); r.update(100_100, .05);
+        PlayerState owner = r.players.get(0), breaker = r.players.get(1), attacker = r.players.get(2);
+        breaker.x = 0; attacker.x = .5;
+        r.action(breaker, "INTERACT_START", 0, 0, 100_001);
+        r.update(100_100, .05);
         assertTrue(progress(r, breaker, 100_100) > 0);
-        owner.shieldUntil = 110_000;
-        r.action(breaker, "CHARGE_START", 0, 0, 100_100);
-        r.action(breaker, "EXPLODE", 0, 0, 100_200);
+        double before = progress(r, breaker, 100_100);
+        attacker.charging = true;
+        attacker.chargeSince = 100_200 - GameRules.MAX_CHARGE_MS;
+        r.action(attacker, "EXPLODE", 0, 0, 100_200);
         assertTrue(breaker.hp < 100 && breaker.hp > 0);
-        assertEquals(0, progress(r, breaker, 100_200));
-        assertEquals(100_200 + GameRules.SEAL_STAGGER_MS, breaker.staggerUntil);
+        assertEquals(before, progress(r, breaker, 100_200), .0001);
+        assertEquals(0, breaker.staggerUntil);
         assertEquals(100, owner.hp);
     }
 

@@ -16,6 +16,7 @@ sealed class BombOverlay {
         ("THẢ SPACE", "Kích nổ"),
         ("E", "Bật khiên"),
         ("SHIFT", "Tăng tốc"),
+        ("GIỮ F", "Cướp mảnh trên bệ (phải đứng yên)"),
     };
     static readonly (string key, string action)[] JourneyKeys = {
         ("Q", "Thả Mảnh Tim Lửa đang mang"),
@@ -136,11 +137,10 @@ sealed class BombOverlay {
     void MoveFocus(int step) {
         if (itemCount == 0) return;
         focus = (focus + step + itemCount) % itemCount;
-        BombAudio.UiHover();
     }
 
     Action DrawPause(bool inRoom, bool inMatch) {
-        Rect card = Card(420, inRoom ? 490 : 410, Charge);
+        Rect card = Card(420, inRoom ? 420 : 410, Charge);
         GUI.Label(Row(card, 26, 48), "TẠM DỪNG", title);
         GUI.Label(Row(card, 72, 24), inMatch ? "Trận vẫn tiếp diễn với những người chơi khác" : "Nhấn Esc để quay lại", subtitle);
         TitleRule(card, 104);
@@ -152,14 +152,14 @@ sealed class BombOverlay {
         if (Button(Row(card, y, 54, 28), "HƯỚNG DẪN", Secondary, Text, "Phím điều khiển và cách chơi")) Go(Page.Help);
         y += 70;
         if (inRoom) {
-            string hint = inMatch ? "Rời trận đang chơi và quay về chọn chế độ" : "Rời phòng và quay về chọn chế độ";
-            if (Button(Row(card, y, 54, 28), "VỀ MENU CHÍNH", Secondary, Text, hint)) {
+            string hint = inMatch ? "Rời trận đang chơi và quay về sảnh game" : "Rời phòng và quay về sảnh game";
+            if (Button(Row(card, y, 54, 28), "VỀ SẢNH GAME", Secondary, Text, hint)) {
                 if (inMatch) Go(Page.ConfirmLeave);
                 else { Go(Page.None); return Action.LeaveRoom; }
             }
             y += 70;
         }
-        if (Button(Row(card, y, 54, 28), "THOÁT GAME", Secondary, Danger)) return Action.QuitGame;
+        if (!inRoom && Button(Row(card, y, 54, 28), "THOÁT GAME", Secondary, Danger)) return Action.QuitGame;
         return Action.None;
     }
 
@@ -224,7 +224,7 @@ sealed class BombOverlay {
         TitleRule(card, 104);
         float y = 116;
         y = KeySection(card, y, "TRONG TRẬN", MatchKeys);
-        y = KeySection(card, y, "HÀNH TRÌNH BA MẢNH", JourneyKeys);
+        y = KeySection(card, y, "CHIẾM MẢNH TIM LỬA", JourneyKeys);
         y = KeySection(card, y, "KHÁC", OtherKeys);
         GUI.Label(Row(card, y + 2, 22), "Mẹo: nấp trong bụi cỏ để đối thủ không nhìn thấy bạn.", note);
         if (Button(Row(card, 600, 54, 28), "ĐÃ HIỂU", Energy, Night)) Back();
@@ -301,7 +301,6 @@ sealed class BombOverlay {
             if (keyStep != 0) {
                 value = Mathf.Clamp01(Mathf.Round((value + keyStep * .05f) * 20) / 20);
                 keyStep = 0;
-                BombAudio.UiHover();
             }
         }
         Vector2 thumb = new Vector2(track.x + track.width * value, track.center.y);

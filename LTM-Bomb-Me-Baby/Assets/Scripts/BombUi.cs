@@ -156,8 +156,8 @@ static class BombUi {
     }
 
     /// Chunky button shared by every screen, drawn with the Kenney UI Pack "depth" buttons:
-    /// brightens on hover, sinks onto its lip while pressed, greys out when disabled, ticks on
-    /// hover and clicks on press. Falls back to the procedural rounded button without the art.
+    /// brightens on hover, sinks onto its lip while pressed, greys out when disabled, and clicks
+    /// only when activated. Falls back to the procedural rounded button without the art.
     /// Returns true on click.
     public static bool Button(Rect rect, string text, Color face, Color ink, GUIStyle textStyle,
                               bool enabled = true, string tooltip = null) {
@@ -227,8 +227,7 @@ static class BombUi {
     /// Kenney text-field background (white with a grey rim), or null without the art.
     public static Texture2D InputBackground => BombArt.Ui("Extra", "input_rectangle");
 
-    /// Plays the hover tick once when the pointer enters a control and remembers its tooltip.
-    /// Call from custom controls that do not go through Button.
+    /// Remembers pointer state for custom controls that do not go through Button.
     public static void TrackHover(int id, bool hover, Rect rect, string tooltip = null) {
         if (Event.current.type != EventType.Repaint) return;
         hover &= GUI.enabled;
@@ -236,7 +235,6 @@ static class BombUi {
             if (hoveredButton != id) {
                 hoveredButton = id;
                 hoverStartedAt = Time.unscaledTime;
-                BombAudio.UiHover();
             }
             if (!string.IsNullOrEmpty(tooltip)) {
                 pendingTooltip = tooltip;

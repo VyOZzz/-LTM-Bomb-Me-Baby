@@ -13,6 +13,7 @@ final class PlayerState {
     boolean ready, alive = true, charging;
     volatile boolean connected = true;
     long chargeSince, chargeReadyAt, shieldUntil, shieldReadyAt, boostUntil, boostReadyAt, disconnectedAt;
+    long energyBoostUntil;
     long staggerUntil, staggerImmuneUntil;
     long lastSeq = -1;
     long lastMoveAt;

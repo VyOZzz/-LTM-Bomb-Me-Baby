@@ -32,40 +32,37 @@ class ShardObjectiveTest {
         assertNull(shard.carrier);
     }
 
-    @Test void ownerInRingOnlySlowsIndependentSealBreaking() {
+    @Test void explicitStealHoldTransfersShardEvenWhileOwnerDefends() {
         GameRoom room = journeyRoom();
         PlayerState a = room.players.get(0), b = room.players.get(1);
         long t = placeShard(room, a);
 
         park(a, -1, 0);
         park(b, 1, 0);
-        room.update(t + ShardObjective.PEDESTAL_PROTECTION_MS, 0);
+        room.action(b, "INTERACT_START", 0, 0, t + 1);
+        room.update(t + 1, 0);
         assertSame(b, room.objective.challenger);
-        for (long now = t + ShardObjective.PEDESTAL_PROTECTION_MS + 50;
-                now <= t + ShardObjective.PEDESTAL_PROTECTION_MS + 3_000; now += 50) room.update(now, .05);
-        assertEquals(ShardObjective.State.PLACED, room.objective.state,
-            "Owner presence slows seal breaking instead of pausing it");
-        for (long now = t + ShardObjective.PEDESTAL_PROTECTION_MS + 3_050;
-                now <= t + ShardObjective.PEDESTAL_PROTECTION_MS + 6_000; now += 50) room.update(now, .05);
-        assertEquals(ShardObjective.State.GROUND, room.objective.state);
-        assertSame(b, room.objective.pickupPriority);
+        for (long now = t + 51; now <= t + ShardObjective.STEAL_INTERACTION_MS + 1; now += 50)
+            room.update(now, .05);
+        assertEquals(ShardObjective.State.CARRIED, room.objective.state);
+        assertSame(b, room.objective.carrier);
     }
 
-    @Test void leavingTheRingResetsTheCapture() {
+    @Test void voluntaryMovementCancelsTheStealHold() {
         GameRoom room = journeyRoom();
         PlayerState a = room.players.get(0), b = room.players.get(1);
         long t = placeShard(room, a);
         park(a, 20, 0);
 
         park(b, 1, 0);
-        room.update(t, 0);
+        room.action(b, "INTERACT_START", 0, 0, t + 1);
         room.update(t + 2_500, 0);
-        park(b, 10, 0);
-        room.update(t + 2_600, 0);
-        park(b, 1, 0);
-        room.update(t + 2_700, 0);
+        room.action(b, "MOVE", 1, 0, t + 2_600);
+        assertFalse(room.objective.isInteracting(b));
+        room.action(b, "MOVE", 0, 0, t + 2_601);
+        room.action(b, "INTERACT_START", 0, 0, t + 2_602);
         room.update(t + 4_000, 0);
-        assertSame(a, room.objective.owner, "Capture time must restart after leaving the ring");
+        assertSame(a, room.objective.owner, "A new hold must restart from zero");
     }
 
     @Test void carrierOnlyDropsTheShardWhenEliminated() {
@@ -96,17 +93,29 @@ class ShardObjectiveTest {
         assertEquals(20, shard.z, 1e-9);
     }
 
-    @Test void pedestalOwnerWinsTheChapterWhenTimeRunsOut() {
+    @Test void fiveMinuteTimeoutIsADrawWhenNobodySecuresTheShard() {
         GameRoom room = journeyRoom();
         PlayerState a = room.players.get(0);
-        placeShard(room, a);
         park(a, 25, 25);
 
         room.update(room.objective.startedAt + ShardObjective.CHAPTER_MS, 0);
         assertEquals(GameRoom.Phase.FINISHED, room.phase);
+        assertEquals("", room.roundWinnerId);
         Map<String,Object> score = room.scores().stream()
             .filter(item -> item.get("playerId").equals(a.id)).findFirst().orElseThrow();
-        assertEquals(1, score.get("roundWins"));
+        assertEquals(0, score.get("roundWins"));
+    }
+
+    @Test void placedShardOwnerWinsExactlyAfterThirtyUncontestedSeconds() {
+        GameRoom room = journeyRoom();
+        PlayerState owner = room.players.get(0);
+        long placedAt = placeShard(room, owner);
+        room.update(placedAt + ShardObjective.CLAIM_MS - 1, 0);
+        assertEquals(GameRoom.Phase.PLAYING, room.phase);
+        room.update(placedAt + ShardObjective.CLAIM_MS, 0);
+        assertEquals(GameRoom.Phase.FINISHED, room.phase);
+        assertEquals(owner.id, room.roundWinnerId);
+        assertEquals("CLAIMED", room.roundEndReason);
     }
 
     @Test void carrierIsVisibleToEveryoneAndObjectiveIsInEverySnapshot() {
