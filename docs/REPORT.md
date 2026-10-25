@@ -520,11 +520,4 @@ Phần việc dưới đây được tổng hợp từ lịch sử commit trên 
 - Bản đồ và giao diện (22/10): nhập asset CC0 của Kenney cho bản đồ, nhân vật, hiệu ứng và nút bấm; dựng lại ba bản đồ bằng asset; làm mới HUD, menu, overlay và VFX.
 - Gameplay và công cụ test (23/10): Khóa Lửa dạng thanh máu trong `ShardObjective.java`, kèm test; bot thêm người chơi (`scripts/bots.py`, `BombDevBots.cs`); công cụ test trong Editor.
 - Mẫu ghi nguồn âm thanh (`AUDIO_CREDITS.md`) và phiếu playtest bản đồ (`PLAYTEST_MAPS.md`).
-
-**Phân công viết báo cáo** (theo `docs/TEAM_PLAN.md`):
-
-| Phần | Người viết |
-| --- | --- |
-| Giới thiệu, gameplay, kiến trúc tổng thể, Unity client, kết quả demo | Vỹ |
-| Giao thức, server, thread và khóa, reconnect, đồng bộ chọn lọc, kiểm thử tự động | Tiên |
-| Thiết kế bản đồ, thực nghiệm và đánh giá, tài nguyên sử dụng, ghép và định dạng báo cáo | Phương |
+- Viết toàn bộ báo cáo.

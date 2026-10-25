@@ -459,14 +459,6 @@ Tổng hợp từ lịch sử commit và [docs/TEAM_PLAN.md](docs/TEAM_PLAN.md).
 | 22/10 | Nhập asset CC0 của Kenney; dựng lại 3 bản đồ bằng asset; làm mới HUD, menu, overlay, VFX |
 | 23/10 | Khóa Lửa dạng thanh máu (`ShardObjective.java`) kèm test; bot thêm người chơi (`scripts/bots.py`, `BombDevBots.cs`); công cụ test trong Editor |
 
-### Phân công viết báo cáo
-
-| Phần báo cáo | Người viết |
-| --- | --- |
-| Giới thiệu, gameplay, kiến trúc tổng thể, Unity client, kết quả demo | Vỹ |
-| Giao thức, server, thread và khóa, reconnect, selective sync, kiểm thử tự động | Tiên |
-| Thiết kế bản đồ, thực nghiệm và đánh giá, tài nguyên sử dụng, ghép và định dạng báo cáo | Phương |
-
 ---
 
 ## 14. Tài liệu
