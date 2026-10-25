@@ -65,10 +65,21 @@ static class BombUi {
     }
 
     /// Rounded progress bar with a darker track; value is clamped to 0..1.
-    public static void Bar(Rect rect, float value, Color color) {
-        Fill(rect, new Color(0, 0, 0, .45f), RoundSmall);
-        float width = Mathf.Max(rect.height, rect.width * Mathf.Clamp01(value));
-        if (value > .001f) Fill(new Rect(rect.x, rect.y, width, rect.height), color, RoundSmall);
+    /// Progress bar drawn with the Kenney slider groove and fill. The neutral Grey set is tinted
+    /// with the exact palette colour, so Core stays magenta instead of snapping to a Kenney set.
+    /// `ghost` (0..1) draws a pale trailing segment behind the fill, e.g. HP just lost.
+    public static void Bar(Rect rect, float value, Color color, float ghost = 0) {
+        GUIStyle groove = Skin("Grey", "slide_horizontal_grey", 8, 8, 0, 0);
+        GUIStyle fill = Skin("Grey", "slide_horizontal_color", 8, 8, 0, 0);
+        if (groove == null || fill == null) {
+            groove = fill = RoundSmall;
+            Fill(rect, new Color(0, 0, 0, .45f), groove);
+        } else Fill(rect, new Color(.32f, .28f, .42f), groove);
+        if (ghost > value + .001f)
+            Fill(new Rect(rect.x, rect.y, Mathf.Max(rect.height, rect.width * Mathf.Clamp01(ghost)), rect.height),
+                WithAlpha(Text, .7f), fill);
+        if (value > .001f)
+            Fill(new Rect(rect.x, rect.y, Mathf.Max(rect.height, rect.width * Mathf.Clamp01(value)), rect.height), color, fill);
     }
 
     public static GUIStyle TextStyle(int size, FontStyle weight, Color color, TextAnchor anchor = TextAnchor.UpperLeft) {

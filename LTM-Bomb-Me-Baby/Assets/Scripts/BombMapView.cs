@@ -67,9 +67,11 @@ sealed class BombMapView {
     readonly List<Material[][]> bushMaterials = new List<Material[][]>();
     int fadedBush = -1;
 
-    public void Build(string mapId, float arenaSize, ObstacleData[] obstacles, BushData[] bushes) {
+    public GameObject Build(string mapId, float arenaSize, ObstacleData[] obstacles, BushData[] bushes,
+                            string rootName = "Runtime Map - ", Transform parent = null) {
         Clear();
-        root = new GameObject("Runtime Map - " + mapId);
+        root = new GameObject(rootName + mapId);
+        if (parent != null) root.transform.SetParent(parent, false);
         Style style = mapId == "crater" ? Crater : mapId == "crossroads" ? Crossroads : Meadow;
         int seed = 17;
         foreach (char c in mapId) seed = seed * 31 + c;   // string.GetHashCode is not stable across runs
@@ -82,10 +84,11 @@ sealed class BombMapView {
         BuildDecor(style, arenaSize, obstacles, bushes, random);
         if (style.lava) BuildLava(arenaSize, random);
         BombMaterialOwner.Capture(root);
+        return root;
     }
 
     public void Clear() {
-        if (root != null) Object.Destroy(root);
+        if (root != null) BombArt.Discard(root);
         root = null;
         bushRenderers.Clear();
         bushMaterials.Clear();
@@ -127,7 +130,7 @@ sealed class BombMapView {
     static void ReplaceGroundMaterial(GameObject target, Material material) {
         Renderer renderer = target.GetComponent<Renderer>();
         // Primitive allocated a fallback material which is no longer referenced.
-        Object.Destroy(renderer.sharedMaterial);
+        BombArt.Discard(renderer.sharedMaterial);
         renderer.sharedMaterial = material;
     }
 
@@ -250,7 +253,7 @@ sealed class BombMapView {
             direction /= Mathf.Max(Mathf.Abs(direction.x), Mathf.Abs(direction.z));
             GameObject pool = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
             pool.name = "Lava pool";
-            Object.Destroy(pool.GetComponent<Collider>());
+            BombArt.Discard(pool.GetComponent<Collider>());
             pool.transform.SetParent(root.transform, false);
             pool.transform.position = direction * distance + Vector3.up * -.09f;
             float size = Range(random, 3, 7);
@@ -270,11 +273,11 @@ sealed class BombMapView {
         t.rotation = Quaternion.Euler(0, yaw, 0);
         t.localScale = Vector3.one;
         Renderer[] renderers = item.GetComponentsInChildren<Renderer>();
-        if (renderers.Length == 0) { Object.Destroy(item); return false; }
+        if (renderers.Length == 0) { BombArt.Discard(item); return false; }
         Bounds bounds = renderers[0].bounds;
         for (int i = 1; i < renderers.Length; i++) bounds.Encapsulate(renderers[i].bounds);
         float size = Mathf.Max(bounds.size.x, bounds.size.z);
-        if (size < .0001f) { Object.Destroy(item); return false; }
+        if (size < .0001f) { BombArt.Discard(item); return false; }
         float scale = footprint / size;
         float height = bounds.size.y * scale;
         float scaleY = height > maxHeight ? scale * maxHeight / height : scale;
@@ -291,7 +294,7 @@ sealed class BombMapView {
     GameObject Primitive(string name, PrimitiveType type, Vector3 position, Vector3 scale, Color color, Transform parent = null) {
         GameObject item = GameObject.CreatePrimitive(type);
         item.name = name;
-        Object.Destroy(item.GetComponent<Collider>());
+        BombArt.Discard(item.GetComponent<Collider>());
         item.transform.SetParent(parent != null ? parent : root.transform, false);
         item.transform.position = position;
         item.transform.localScale = scale;

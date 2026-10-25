@@ -34,7 +34,9 @@ sealed class BombShardView {
         shard.SetActive(o.state != "WAITING");
         carrierAura.SetActive(o.state == "CARRIED" && carrier != null);
         for (int i = 0; i < lockCracks.Length; i++)
-            if (lockCracks[i] != null) lockCracks[i].SetActive(o.state == "CARRIED" && o.fireLock <= i);
+            // Cracks appear as the Fire Lock drops below 2/3, then below 1/3.
+            if (lockCracks[i] != null) lockCracks[i].SetActive(o.state == "CARRIED"
+                && o.fireLock < o.fireLockMax * (1 - (i + 1f) / (lockCracks.Length + 1)));
         switch (o.state) {
             case "GROUND": shardTarget = new Vector3(o.x, .9f, o.z); break;
             case "PLACED": shardTarget = pedestal + Vector3.up * 1.7f; break;

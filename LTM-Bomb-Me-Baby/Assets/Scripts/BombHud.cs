@@ -163,12 +163,8 @@ sealed class BombHud {
         GUI.Label(R(128, 58, 250, 18), $"{Mathf.CeilToInt(me.hp)} / 100", labelRight);
         Rect track = R(128, 78, 250, 12);
         float hp01 = Mathf.Clamp01(me.hp / 100f), ghost01 = Mathf.Clamp01(Mathf.Max(ghostHp, me.hp) / 100f);
-        Fill(track, new Color(0, 0, 0, .45f), RoundSmall);
-        if (ghost01 > hp01 + .001f)
-            Fill(new Rect(track.x, track.y, Mathf.Max(track.height, track.width * ghost01), track.height), WithAlpha(Text, .7f), RoundSmall);
         Color hpColor = me.hp < 30 ? Danger : me.hp < 60 ? Charge : Health;
-        if (hp01 > .001f)
-            Fill(new Rect(track.x, track.y, Mathf.Max(track.height, track.width * hp01), track.height), hpColor, RoundSmall);
+        Bar(track, hp01, hpColor, ghost01);
 
         float x = Chip(24, 124, v.inBush ? "ẨN TRONG BỤI" : $"KÍCH THƯỚC ×{me.size:0.00}", v.inBush ? Health : TextMuted);
         if (me.kills > 0) Chip(x + 8, 124, $"HẠ {me.kills}", Charge);
@@ -275,9 +271,8 @@ sealed class BombHud {
                 break;
             case "CARRIED":
                 text = o.carrierId == v.myId
-                    ? $"Bạn đang cầm mảnh — không thể tấn công • Q để thả • Khóa Lửa {o.fireLock}/{Mathf.Max(2, o.fireLockMax)}"
-                    : $"{v.carrierName} đang cầm mảnh — Khóa Lửa {o.fireLock}/{Mathf.Max(2, o.fireLockMax)}";
-                if (o.carrierProtection > 0) text += $"  •  BẢO HỘ {o.carrierProtection:0.0}s";
+                    ? $"Bạn đang cầm mảnh — không thể tấn công • Q để thả • Khóa Lửa {o.fireLock:0}/{o.fireLockMax:0}"
+                    : $"{v.carrierName} đang cầm mảnh — nổ trúng để phá Khóa Lửa {o.fireLock:0}/{o.fireLockMax:0}";
                 if (o.pedestalOverheat > 0) text += $"  •  BỆ QUÁ NHIỆT {o.pedestalOverheat:0.0}s";
                 break;
             default:
@@ -453,12 +448,14 @@ sealed class BombHud {
         float d = S(84);
         Fill(Centered(c, d + S(10)), Panel, Circle);
         float ready = Mathf.Clamp01(1 - cooldown / total);
-        Fill(Centered(c, d), WithAlpha(color, .18f), Circle);
-        // Liquid fill: clip the colored disc to the recovered fraction, rising from the bottom.
+        // Kenney round button, Grey set tinted with the ability colour; plain discs without the art.
+        GUIStyle face = Skin("Grey", "button_round_depth_gradient", 0, 0, 0, 0) ?? Circle;
+        Fill(Centered(c, d), Color.Lerp(color, Night, .72f), face);
+        // Liquid fill: clip the coloured button to the recovered fraction, rising from the bottom.
         Rect disc = Centered(c, d);
         float visible = d * ready;
         GUI.BeginClip(new Rect(disc.x, disc.yMax - visible, d, visible));
-        Fill(new Rect(0, visible - d, d, d), WithAlpha(color, cooldown > 0 ? .55f : 1f), Circle);
+        Fill(new Rect(0, visible - d, d, d), cooldown > 0 ? Color.Lerp(color, Night, .35f) : color, face);
         GUI.EndClip();
         if (active) Fill(Centered(c, d + S(14) + Mathf.PingPong(Time.unscaledTime * 30, S(8))), color, Ring);
         if (flash > 0) {
@@ -505,7 +502,7 @@ sealed class BombHud {
     /// The pill is kept inside the screen and the name gets a drop shadow so it reads over any floor.
     public void DrawNameTag(Vector2 screenTop, string playerName, float hp, bool isMe,
                             bool connected, float reconnectRemaining,
-                            bool isCarrier, int fireLock, int fireLockMax) {
+                            bool isCarrier, float fireLock, float fireLockMax) {
         EnsureStyles();
         string shownName = connected ? playerName : $"{playerName}  •  MẤT KẾT NỐI {Mathf.CeilToInt(reconnectRemaining)}s";
         float width = tagName.CalcSize(new GUIContent(shownName)).x + S(18);
@@ -520,13 +517,10 @@ sealed class BombHud {
         tagName.normal.textColor = !connected ? Danger : isMe ? Charge : Text;
         GUI.Label(pill, shownName, tagName);
 
-        if (isCarrier) {
-            int maxLocks = Mathf.Max(2, fireLockMax);
-            float pip = S(8), gap = S(4);
-            float total = maxLocks * pip + (maxLocks - 1) * gap;
-            for (int i = 0; i < maxLocks; i++)
-                Fill(new Rect(cx - total / 2 + i * (pip + gap), pill.y - S(12), pip, S(7)),
-                    i < fireLock ? Core : WithAlpha(Danger, .35f), RoundSmall);
+        // Fire Lock: the shard's own health bar above the carrier's name.
+        if (isCarrier && fireLockMax > 0) {
+            float lockWidth = Mathf.Clamp(width, S(68), S(104));
+            Bar(new Rect(cx - lockWidth / 2, pill.y - S(12), lockWidth, S(7)), fireLock / fireLockMax, Core);
         }
 
         if (isMe) return;

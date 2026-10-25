@@ -323,7 +323,7 @@ final class GameRoom {
                 target.hp = Math.max(0, target.hp - damage);
                 double actualDamage = hpBefore - target.hp;
                 broadcast(data("type","PLAYER_DAMAGED","playerId",target.id,"by",source.id,"amount",damage));
-                applyDamageConsequences(target, source, charge, actualDamage, now);
+                applyDamageConsequences(target, source, actualDamage, now);
                 if (target.hp <= 0) {
                     source.kills++;
                     awardElimination(source);
@@ -334,7 +334,7 @@ final class GameRoom {
         double sourceHpBefore = source.hp;
         source.hp = Math.max(0, source.hp - damageDone);
         if (lastReflector != null)
-            applyDamageConsequences(source, lastReflector, charge, sourceHpBefore - source.hp, now);
+            applyDamageConsequences(source, lastReflector, sourceHpBefore - source.hp, now);
         dropExplosionEnergy(source, sizeBeforeExplosion);
         source.size = source.baseSize;
         broadcastExplosion(source, radius);
@@ -349,10 +349,10 @@ final class GameRoom {
     }
 
     private void applyDamageConsequences(PlayerState target, PlayerState source,
-                                         double charge, double actualDamage, long now) {
+                                         double actualDamage, long now) {
         if (target.hp <= 0 || actualDamage <= 0 || objective == null) return;
         double[] drop = safeShardDrop(target, source.x, source.z);
-        if (objective.onDamaged(target, charge, actualDamage, now, drop[0], drop[1])
+        if (objective.onDamaged(target, actualDamage, now, drop[0], drop[1])
                 && now >= target.staggerImmuneUntil) {
             target.staggerUntil = now + GameRules.SEAL_STAGGER_MS;
             target.staggerImmuneUntil = now + GameRules.SEAL_STAGGER_IMMUNITY_MS;
