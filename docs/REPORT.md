@@ -4,10 +4,10 @@
 
 | | |
 | --- | --- |
-| Nhóm | `[cần điền số nhóm]` |
+| Nhóm | 07 |
 | Chủ đề | Chủ đề 2 – Phát triển game mạng (`final-project/Topics.md`) |
 | Giảng viên | Thầy Ngô Văn Quyền |
-| Thành viên | Vỹ (trưởng nhóm), Tiên, Phương. Họ tên đầy đủ, MSSV và phần việc xem [mục 19](#19-thành-viên-và-phân-công) |
+| Thành viên | Phạm Văn Vỹ (trưởng nhóm), Giang Thủy Tiên, Trần Đỗ Lan Phương. MSSV và phần việc xem [mục 19](#19-thành-viên-và-phân-công) |
 | Mã nguồn | https://github.com/VyOZzz/-LTM-Bomb-Me-Baby |
 | Ngày cập nhật | 25/10/2026 |
 
@@ -492,11 +492,11 @@ Phần việc dưới đây được tổng hợp từ lịch sử commit trên 
 
 | STT | MSSV | Họ tên | Vai trò | Đóng góp |
 | --- | --- | --- | --- | ---: |
-| 1 | `[cần điền]` | Vỹ | Trưởng nhóm, Unity client, gameplay | `...%` |
-| 2 | `[cần điền]` | Tiên | Java server, đồng bộ chọn lọc, kết nối, kiểm thử | `...%` |
-| 3 | `[cần điền]` | Phương | Ghép trận, công cụ đo và thực nghiệm, bản đồ và giao diện | `...%` |
+| 1 | B23DCCN954 | Phạm Văn Vỹ | Trưởng nhóm, Unity client, gameplay | `...%` |
+| 2 | B23DCCN814 | Giang Thủy Tiên | Java server, đồng bộ chọn lọc, kết nối, kiểm thử | `...%` |
+| 3 | B23DCCN667 | Trần Đỗ Lan Phương | Ghép trận, công cụ đo và thực nghiệm, bản đồ và giao diện, viết báo cáo | `...%` |
 
-**Vỹ**
+**Phạm Văn Vỹ**
 
 - Dựng prototype ban đầu (12–13/10): Java server TCP JSON, game loop 20 Hz, snapshot 10 Hz, va chạm, nhặt đồ, sát thương; Unity client và scene `Main`; ba bản đồ; hỗ trợ 10 người mỗi phòng.
 - Lưu yêu cầu đồ án, lập kế hoạch phân công đầu tiên, vẽ concept arena và HUD, phác thảo cốt truyện Ba Mảnh Tim Lửa.
@@ -504,7 +504,7 @@ Phần việc dưới đây được tổng hợp từ lịch sử commit trên 
 - Unity: menu chọn chế độ, HUD, minimap, lời dẫn đọc từ `story.json`, cooldown bom, màn mở đầu bằng video có ảnh dự phòng, bảng điểm và màn kết quả.
 - Hoàn thiện bản cuối (25/10): bố cục bản đồ (`BombMapLayouts.cs`), chế độ thử cục bộ, bảng xếp hạng Đấu nhanh khi hết giờ, dọn asset không dùng, viết lại README.
 
-**Tiên**
+**Giang Thủy Tiên**
 
 - Đóng góp kỹ thuật chính (15–17/10): cơ chế đồng bộ chọn lọc `SyncMode` baseline và optimized; sửa reconnect, token sai hoặc hết hạn, request trùng, dọn phòng khi mất kết nối; viết `ConnectionTest`, `ServerFixesTest` và tài liệu bàn giao `THANH_VIEN_A_*`.
 - Chế độ chơi (20/10): `GameMode` Đấu nhanh và Hành trình, tính điểm, `JOURNEY_COMPLETE`; sửa lỗi lộ vị trí trong bụi qua event nổ, Core và snapshot khôi phục; cập nhật `PROTOCOL.md`.
@@ -512,7 +512,7 @@ Phần việc dưới đây được tổng hợp từ lịch sử commit trên 
 - Âm thanh: `BombAudio`, bộ SFX và nhạc cho sảnh và ba bản đồ, chỉnh lại tiếng bom và khiên.
 - Sửa lỗi bản cuối (23–24/10): luồng trận, phá ấn, quan sát sau khi bị loại, ổn định ghép trận (ticket có generation), script đóng gói `package_project.py`; tổng hợp `EXPERIMENTS_FINAL.md`, `FINAL_VALIDATION.md` và bản nháp báo cáo.
 
-**Phương**
+**Trần Đỗ Lan Phương**
 
 - Kịch bản và tài liệu (15/10): kịch bản Hành trình Ba Mảnh (`STORY_SCRIPT.md`), cập nhật phân công nhóm.
 - Công cụ đo (15–19/10): `load_test.py` đo RTT, byte, message và thời gian xử lý với N client; `run_benchmark.ps1` chạy ma trận đo; `summarize_experiments.py` tổng hợp kết quả; sửa `network_smoke.py` cho chế độ optimized; chạy 18 lượt đo đầu tiên ngày 19/10 (`EXPERIMENTS.md`).

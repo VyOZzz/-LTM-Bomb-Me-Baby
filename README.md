@@ -6,18 +6,19 @@ Người chơi điều khiển một quả bóng lăn trên bản đồ, nhặt 
 
 | | |
 | --- | --- |
+| **Nhóm** | 07 |
 | **Chủ đề** | Chủ đề 2 – Phát triển game mạng (`final-project/Topics.md`) |
 | **Giảng viên** | Thầy Ngô Văn Quyền |
 | **Repository** | https://github.com/VyOZzz/-LTM-Bomb-Me-Baby |
 
 ### Thành viên nhóm
 
-| STT | MSSV | Họ tên | Email | Phụ trách chính | Đóng góp |
-| --- | --- | --- | --- | --- | ---: |
-| 1 | ... | Vỹ (trưởng nhóm) | ... | Prototype server + client ban đầu; Unity client (menu, HUD, minimap, lời dẫn, màn kết quả); luật Mảnh Tim Lửa; hoàn thiện gameplay bản cuối | ...% |
-| 2 | ... | Tiên | ... | Selective sync (novelty); reconnect, heartbeat/timeout, hàng đợi ghi; chế độ Đấu nhanh/Hành trình; test JUnit, kiểm tra Unity; âm thanh | ...% |
-| 3 | ... | Phương | ... | Ghép trận FIND_MATCH; công cụ đo và thực nghiệm baseline/optimized; dựng bản đồ và giao diện bằng asset; Khóa Lửa; bot test; viết báo cáo | ...% |
-| | | | | **Tổng** | **100%** |
+| STT | MSSV | Họ tên | Phụ trách chính | Đóng góp |
+| --- | --- | --- | --- | ---: |
+| 1 | B23DCCN954 | Phạm Văn Vỹ (trưởng nhóm) | Prototype server + client ban đầu; Unity client (menu, HUD, minimap, lời dẫn, màn kết quả); luật Mảnh Tim Lửa; hoàn thiện gameplay bản cuối | ...% |
+| 2 | B23DCCN814 | Giang Thủy Tiên | Selective sync (novelty); reconnect, heartbeat/timeout, hàng đợi ghi; chế độ Đấu nhanh/Hành trình; test JUnit, kiểm tra Unity; âm thanh | ...% |
+| 3 | B23DCCN667 | Trần Đỗ Lan Phương | Ghép trận FIND_MATCH; công cụ đo và thực nghiệm baseline/optimized; dựng bản đồ và giao diện bằng asset; Khóa Lửa; bot test; viết báo cáo | ...% |
+| | | | **Tổng** | **100%** |
 
 Báo cáo đầy đủ: [docs/REPORT.md](docs/REPORT.md).
 
