@@ -19,7 +19,7 @@ Trong game hành động nhiều người, mọi máy phải thấy cùng một 
 
 Nhóm xây dựng **Bomb Me Baby**, một game đấu trường PvP 2.5D gồm Java server và Unity client giao tiếp qua TCP. Server giữ quyền quyết định toàn bộ luật chơi (server-authoritative). Client chỉ gửi ý định điều khiển và hiển thị trạng thái nhận về. Giao thức là JSON theo dòng, có số thứ tự `seq` để chống request trùng, heartbeat, timeout và cơ chế reconnect bằng resume token. Server mô phỏng ở 20 Hz và gửi snapshot ở 10 Hz. Đóng góp chính là cơ chế **đồng bộ trạng thái chọn lọc**: hình học bản đồ chỉ gửi một lần, vật phẩm và đối thủ chỉ được gửi khi người xem được phép thấy.
 
-Trên loopback với 2, 4 và 8 client giả lập (18 lượt × 30 giây, không có lỗi kết nối), chế độ chọn lọc giảm **62,1–78,1%** số byte mỗi client nhận trong một giây so với baseline gửi đầy đủ. Bộ 115 test JUnit bao phủ kết nối, reconnect, ghép trận và luật chơi ở cả hai chế độ đồng bộ.
+Trên loopback với 2, 4 và 8 client giả lập (18 lượt × 30 giây, không có lỗi kết nối), chế độ chọn lọc giảm **62,0–77,8%** số byte mỗi client nhận trong một giây so với baseline gửi đầy đủ. Bộ 115 test JUnit bao phủ kết nối, reconnect, ghép trận và luật chơi ở cả hai chế độ đồng bộ.
 
 ## 2. Keywords
 
@@ -310,7 +310,7 @@ Server có tổng cộng 2 055 dòng Java. Client có khoảng 6 500 dòng C# tr
 
 ### 9.4. Một lỗi concurrency đã tìm thấy và sửa
 
-Watchdog kiểm tra ghi treo từng đọc biến volatile `writeStartedAt` hai lần. Nếu luồng ghi hoàn tất đúng giữa hai lần đọc, lần đọc sau thấy giá trị 0 và watchdog tính tuổi lần ghi từ mốc epoch, nên đóng nhầm một kết nối khỏe. Lỗi này lộ ra trong một lượt benchmark (mục 13.3). Bản sửa chỉ đọc giá trị một lần vào biến cục bộ. Test hai luồng `watchdogDoesNotMisreadAWriteFinishingBetweenVolatileReads` thất bại trên code cũ và chạy qua trên code mới.
+Watchdog kiểm tra ghi treo từng đọc biến volatile `writeStartedAt` hai lần. Nếu luồng ghi hoàn tất đúng giữa hai lần đọc, lần đọc sau thấy giá trị 0 và watchdog tính tuổi lần ghi từ mốc epoch, nên đóng nhầm một kết nối khỏe. Lỗi này lộ ra trong một lượt benchmark ngày 22/10; dữ liệu của lượt lỗi được giữ nguyên ở `experiments/final-2026-10-22/`. Bản sửa chỉ đọc giá trị một lần vào biến cục bộ. Test hai luồng `watchdogDoesNotMisreadAWriteFinishingBetweenVolatileReads` thất bại trên code cũ và chạy qua trên code mới.
 
 ### 9.5. Client
 
@@ -322,9 +322,10 @@ Client dự đoán ngắn hạn vị trí nhân vật của chính mình, nội 
 
 | Mục | Giá trị |
 | --- | --- |
-| Phần cứng | Intel Core i7-11800H @ 2.30 GHz, RAM khoảng 8 GB |
-| Hệ điều hành | Windows 11 (build 22631) |
-| Ngôn ngữ, công cụ | Java 21.0.10 (target Java 17), Maven 3.9.16, Python 3.12.10 |
+| Phần cứng | 13th Gen Intel Core i9-13900H, RAM 16 GB |
+| Hệ điều hành | Windows 11 Home Single Language (build 26200) |
+| Ngôn ngữ, công cụ | Java 26.0.2 (target Java 17), Maven 3.9.9, Python 3.13.14 |
+| Mã nguồn đo | Commit `c35616f` (bản nộp), đo ngày 25/10/2026 |
 | Thư viện | Gson 2.11, JUnit 5; client giả lập chỉ dùng thư viện chuẩn Python |
 | Mạng | Loopback `127.0.0.1:17777` |
 | Bản đồ, chế độ | `meadow` cố định, Đấu nhanh |
@@ -342,7 +343,7 @@ Client dự đoán ngắn hạn vị trí nhân vật của chính mình, nội 
 - *processingMicros*: thời gian server xử lý một request.
 - *Số lỗi kết nối*: độ ổn định.
 
-Số byte tính theo JSON UTF-8 cộng newline, không gồm overhead TCP/IP. Fingerprint SHA-256 của mã nguồn Java và `pom.xml` lúc đo là `698fbcb72a23e47ef29f1413490ae6dbabe9da9599fcc8d346f6175eb4029ab5`. Dữ liệu thô nằm trong `experiments/final-2026-10-22-v2/`.
+Số byte tính theo JSON UTF-8 cộng newline, không gồm overhead TCP/IP. Fingerprint SHA-256 của mã nguồn Java và `pom.xml` lúc đo là `f6a56e39675794c4dd6fa6bb740986625c2087e5cb1e37ceb9f32fbb9052b087`. Dữ liệu thô nằm trong `experiments/final-2026-10-25/`. Một lần đo trước đó (22/10, máy i7-11800H, bản code trước các thay đổi gameplay 23–25/10) được giữ ở `experiments/final-2026-10-22-v2/` để đối chứng.
 
 **Kiểm thử chức năng:** 115 test JUnit trong 9 lớp test (`ConnectionTest`, `GameRoomTest`, `ServerFixesTest`, `ReviewFixesTest`, `ShardStealMechanicsTest`, `ShardObjectiveTest`, `CompletionRegressionTest`, `RequestedGameplayRulesTest`, `ShardCarrierActionTest`). Bộ test chạy được ở cả hai chế độ đồng bộ. Ngoài ra có smoke test TCP thật (`scripts/network_smoke.py`), bot (`scripts/bots.py`) và harness kiểm tra Unity Play Mode (`Assets/Editor/BombValidation.cs`).
 
@@ -356,25 +357,26 @@ Trung bình ba lượt cho mỗi cấu hình (18/18 lượt hoàn tất, tổng 
 
 | Chế độ | Client | Byte nhận/client/s | Byte/snapshot | RTT TB (ms) | RTT p95 (ms) | processingMicros TB (µs) |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| baseline | 2 | 94 850,4 | 9 408,4 | 0,432 | 0,706 | 83,2 |
-| optimized | 2 | 20 777,0 | 2 014,5 | 0,449 | 1,067 | 76,4 |
-| baseline | 4 | 101 530,6 | 10 063,8 | 0,316 | 0,593 | 26,7 |
-| optimized | 4 | 26 110,8 | 2 547,9 | 0,306 | 0,642 | 33,8 |
-| baseline | 8 | 115 042,9 | 11 410,1 | 0,313 | 0,695 | 18,1 |
-| optimized | 8 | 43 546,6 | 4 283,2 | 0,317 | 0,691 | 17,0 |
+| baseline | 2 | 95 981,8 | 9 511,4 | 0,668 | 1,501 | 160,7 |
+| optimized | 2 | 21 316,2 | 2 068,5 | 0,765 | 2,038 | 182,1 |
+| baseline | 4 | 102 304,8 | 10 140,6 | 0,402 | 0,905 | 68,8 |
+| optimized | 4 | 28 005,9 | 2 735,2 | 0,429 | 0,919 | 65,1 |
+| baseline | 8 | 116 644,1 | 11 570,5 | 0,447 | 0,968 | 51,9 |
+| optimized | 8 | 44 364,9 | 4 362,3 | 0,414 | 0,939 | 50,7 |
 
 | Metric | 2 client | 4 client | 8 client |
 | --- | ---: | ---: | ---: |
-| Giảm byte nhận/client/s | **78,1%** | **74,3%** | **62,1%** |
-| Giảm byte/snapshot | 78,6% | 74,7% | 62,5% |
+| Giảm byte nhận/client/s | **77,8%** | **72,6%** | **62,0%** |
+| Giảm byte/snapshot | 78,3% | 73,0% | 62,3% |
+| Giảm byte nhận/client/s, lần đo 22/10 | 78,1% | 74,3% | 62,1% |
 
-Công thức: `(baseline − optimized) / baseline × 100`. Cột p95 là trung bình p95 của từng lượt.
+Công thức: `(baseline − optimized) / baseline × 100`. Cột p95 là trung bình p95 của từng lượt. Dòng cuối là kết quả lần đo 22/10 trên máy khác, đưa vào để so sánh.
 
 ### 11.2. Kiểm thử chức năng
 
 | Lớp kiểm tra | Kết quả | Giới hạn |
 | --- | --- | --- |
-| JUnit server | 115/115 test qua ở baseline và 115/115 ở optimized (chạy lại ngày 25/10 trên commit `07ec70b`) | Chạy trên một máy |
+| JUnit server | 115/115 test qua ở baseline và 115/115 ở optimized (chạy lại ngày 25/10, mã server giống commit `c35616f`) | Chạy trên một máy |
 | Smoke test TCP | 2 client giả lập qua socket thật | Không có rendering |
 | Unity Play Mode | 111 kiểm tra headless qua (theo `docs/FINAL_VALIDATION.md`, 24/10) | Một Unity client cùng peer TCP, chưa phải hai Unity player |
 | Build | Windows player và server JAR tạo thành công | Chưa nghiệm thu trên máy sạch |
@@ -389,19 +391,21 @@ Camera Unity dựng bản đồ crossroads từ snapshot của server khi chạy
 
 ## 12. Discussion
 
-**Vì sao băng thông giảm.** Với 2 client, mỗi snapshot baseline nặng khoảng 9 400 byte, còn optimized khoảng 2 000 byte. Phần chênh lệch khoảng 7 400 byte là hình học tĩnh của bản đồ cùng các vật phẩm và đối thủ ngoài tầm nhìn, vốn bị gửi lại 10 lần mỗi giây ở baseline. Số message không đổi vì tần suất snapshot và `ACK` giữ nguyên. Cải tiến làm nhỏ từng message chứ không giảm số lần gửi.
+**Vì sao băng thông giảm.** Với 2 client, mỗi snapshot baseline nặng khoảng 9 500 byte, còn optimized khoảng 2 100 byte. Phần chênh lệch khoảng 7 400 byte là hình học tĩnh của bản đồ cùng các vật phẩm và đối thủ ngoài tầm nhìn, vốn bị gửi lại 10 lần mỗi giây ở baseline. Số message không đổi vì tần suất snapshot và `ACK` giữ nguyên. Cải tiến làm nhỏ từng message chứ không giảm số lần gửi.
 
 **Vì sao mức giảm nhỏ dần khi tăng số người.** Phần tiết kiệm từ hình học là cố định. Phần trạng thái động (người chơi, vật phẩm trong tầm nhìn) tăng theo số người. Với 8 client trên cùng bản đồ, nhiều người đứng gần nhau hơn nên được nhìn thấy và gửi đầy đủ. Vì vậy tỉ lệ tiết kiệm giảm từ 78% xuống 62%. Với số người lớn hơn nữa, cần nén delta để giảm tiếp.
 
-**RTT.** RTT trung bình ở hai chế độ chênh nhau không đáng kể, và p95 ở 2 client của optimized còn cao hơn. Trên loopback, thời gian truyền gần như bằng 0, nên RTT chủ yếu phản ánh lịch luồng và warm-up JVM. Kết quả **không** chứng minh optimized giảm độ trễ. Nó chỉ cho thấy việc lọc theo người xem không làm tăng độ trễ một cách đo được.
+**Tính lặp lại.** Hai lần đo trên hai máy khác nhau (22/10 trên i7-11800H với Java 21, 25/10 trên i9-13900H với Java 26) cho tỉ lệ giảm gần như trùng nhau: 78,1% so với 77,8% ở 2 client, 62,1% so với 62,0% ở 8 client. Điều này phù hợp với việc mức giảm phụ thuộc vào nội dung snapshot chứ không phụ thuộc phần cứng.
 
-**Bottleneck.** Ở quy mô đã đo, server xử lý một request trong vài chục micro giây, nên CPU server chưa phải điểm nghẽn. Trên mạng thật, băng thông uplink của máy chạy server mới là giới hạn: baseline 8 người cần khoảng 0,9 MB/s chỉ cho snapshot, optimized cần khoảng 0,35 MB/s.
+**RTT.** RTT trung bình ở hai chế độ chênh nhau không đáng kể, và p95 ở 2 client của optimized còn cao hơn (2,04 ms so với 1,50 ms) ở cả hai lần đo. Trên loopback, thời gian truyền gần như bằng 0, nên RTT chủ yếu phản ánh lịch luồng và warm-up JVM. Kết quả **không** chứng minh optimized giảm độ trễ. Nó chỉ cho thấy việc lọc theo người xem không làm tăng độ trễ một cách đo được.
+
+**Bottleneck.** Ở quy mô đã đo, server xử lý một request trong vài chục micro giây, nên CPU server chưa phải điểm nghẽn. Trên mạng thật, băng thông uplink của máy chạy server mới là giới hạn: baseline 8 người cần khoảng 0,93 MB/s chỉ cho snapshot, optimized cần khoảng 0,35 MB/s.
 
 **Hệ thống hoạt động tốt khi** số người mỗi phòng vừa phải, người chơi phân tán trên bản đồ và mạng tin cậy. **Hệ thống còn hạn chế khi** người chơi tập trung một chỗ (lọc ít tác dụng), khi mất gói nhiều (TCP chặn đầu hàng làm giật hình), hoặc khi số kết nối vượt xa 64.
 
 **Lợi ích phụ.** Optimized chặn map hack ngay từ dữ liệu gửi đi: client không nhận được tọa độ người trong bụi, nên không thể hiển thị chúng dù bị sửa đổi.
 
-**Hạn chế của phép đo.** Phép đo chạy trên loopback với client giả lập, không đo FPS Unity. Seed sinh vật phẩm của server không cố định nên cảnh ở hai chế độ không giống hệt nhau. Số liệu là của bản code ngày 22/10. Các thay đổi gameplay ngày 23–25/10 chưa được đo lại.
+**Hạn chế của phép đo.** Phép đo chạy trên loopback với client giả lập, không đo FPS Unity. Seed sinh vật phẩm của server không cố định nên cảnh ở hai chế độ không giống hệt nhau. Baseline luôn chạy trước optimized nên warm-up JVM có thể ảnh hưởng processingMicros.
 
 ---
 
@@ -429,7 +433,7 @@ Bản prototype ban đầu (commit `aaed786`, 12/10) gửi snapshot đầy đủ
 | Vật phẩm | Gửi toàn bộ | Chỉ gửi trong tầm nhìn |
 | Snapshot | Giống nhau cho cả phòng | Riêng cho từng người xem |
 | Chống map hack | Không | Có, ngay từ dữ liệu gửi đi |
-| Băng thông (8 client) | 115 043 B/client/s | 43 547 B/client/s |
+| Băng thông (8 client) | 116 644 B/client/s | 44 365 B/client/s |
 
 Nhóm không tuyên bố phát minh ra TCP, snapshot hay interest management. Đóng góp là triển khai các cơ chế này trong một game cụ thể, đặt cạnh một baseline chạy lại được và đo bằng số liệu thật.
 
@@ -438,13 +442,12 @@ Nhóm không tuyên bố phát minh ra TCP, snapshot hay interest management. Đ
 ## 14. Limitations
 
 1. Benchmark chạy trên loopback với client giả lập, chưa đo trên LAN hoặc Internet thật, chưa đo FPS và GC của client.
-2. Số liệu đo thuộc bản code ngày 22/10, chưa đo lại sau các thay đổi gameplay ngày 23–25/10.
-3. Dùng TCP thuần: chưa có TLS, đăng nhập hay lưu lịch sử trận. Chống gian lận mới ở mức server bỏ qua input bất thường và request trùng.
-4. Chưa có rate limit theo client. Một client gửi rất nhanh vẫn có thể tốn CPU server.
-5. Đồng bộ chọn lọc lọc theo người xem nhưng chưa nén delta từng trường giữa hai snapshot.
-6. Client chỉ dự đoán hình ảnh ngắn hạn, chưa có lag compensation phía server.
-7. Trạng thái nằm trong bộ nhớ, khởi động lại server thì mất mọi phòng.
-8. Chưa có playtest có ghi chép với người chơi thật trên nhiều máy.
+2. Dùng TCP thuần: chưa có TLS, đăng nhập hay lưu lịch sử trận. Chống gian lận mới ở mức server bỏ qua input bất thường và request trùng.
+3. Chưa có rate limit theo client. Một client gửi rất nhanh vẫn có thể tốn CPU server.
+4. Đồng bộ chọn lọc lọc theo người xem nhưng chưa nén delta từng trường giữa hai snapshot.
+5. Client chỉ dự đoán hình ảnh ngắn hạn, chưa có lag compensation phía server.
+6. Trạng thái nằm trong bộ nhớ, khởi động lại server thì mất mọi phòng.
+7. Chưa có playtest có ghi chép với người chơi thật trên nhiều máy.
 
 ## 15. Future Work
 
@@ -473,13 +476,13 @@ Nhóm đã xây dựng một game đấu trường nhiều người qua TCP, tro
 
 - **A. Protocol đầy đủ:** `docs/PROTOCOL.md`.
 - **B. Cấu hình server:** đối số đầu tiên là cổng (mặc định 7777); `-Dsync.mode=baseline|optimized`; `-Ddemo.map=meadow|crossroads|crater` hoặc biến môi trường `DEMO_MAP`.
-- **C. Dữ liệu thực nghiệm:** `docs/EXPERIMENTS_FINAL.md`, `experiments/final-2026-10-22-v2/summary.csv` và 18 file raw. Lượt lỗi trước khi sửa watchdog được giữ nguyên ở `experiments/final-2026-10-22/`.
+- **C. Dữ liệu thực nghiệm:** `docs/EXPERIMENTS_FINAL.md`, `experiments/final-2026-10-25/summary.csv` và 18 file raw. Lần đo đối chứng 22/10 ở `experiments/final-2026-10-22-v2/`. Lượt lỗi trước khi sửa watchdog được giữ nguyên ở `experiments/final-2026-10-22/`.
 - **D. Kiểm thử:** `server/src/test/java/bombmebaby/`, `docs/FINAL_VALIDATION.md`.
 - **E. Chạy lại thực nghiệm:**
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/run_benchmark.ps1 -Duration 30 -Repeats 3 -Map meadow
-python scripts/summarize_experiments.py --summary <thư mục kết quả>/summary.csv
+powershell -ExecutionPolicy Bypass -File scripts/run_benchmark.ps1 -Duration 30 -Repeats 3 -Map meadow -OutDir experiments/final-2026-10-25
+python scripts/summarize_experiments.py --summary experiments/final-2026-10-25/summary.csv
 ```
 
 - **F. Sử dụng AI:** nhóm dùng công cụ AI để hỗ trợ giải thích, gợi ý, debug và cải thiện diễn đạt theo mục 11 của `final-project/Instruction.md`. Ảnh concept trong `docs/concepts/` do AI tạo và không phải ảnh chụp game. Nhóm chịu trách nhiệm về mã nguồn, số liệu và nội dung báo cáo.

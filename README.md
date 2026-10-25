@@ -196,15 +196,15 @@ Chuyển chế độ bằng `-Dsync.mode=baseline|optimized` khi chạy server.
 
 ### Kết quả đo
 
-Đo ngày 22/10/2026: loopback, map `meadow`, 2/4/8 client giả lập, mỗi cấu hình 3 lượt × 30 giây, **18/18 lượt hoàn tất, 0 lỗi kết nối**.
+Đo ngày 25/10/2026 trên bản code nộp: loopback, map `meadow`, 2/4/8 client giả lập, mỗi cấu hình 3 lượt × 30 giây, **18/18 lượt hoàn tất, 0 lỗi kết nối**.
 
 | Client | Byte nhận/client/s (baseline) | Byte nhận/client/s (optimized) | Giảm |
 | ---: | ---: | ---: | ---: |
-| 2 | 94 850 | 20 777 | **78,1%** |
-| 4 | 101 531 | 26 111 | **74,3%** |
-| 8 | 115 043 | 43 547 | **62,1%** |
+| 2 | 95 982 | 21 316 | **77,8%** |
+| 4 | 102 305 | 28 006 | **72,6%** |
+| 8 | 116 644 | 44 365 | **62,0%** |
 
-RTT trung bình ở cả hai chế độ đều khoảng 0,3–0,45 ms trên loopback; kết quả **không** chứng minh được optimized giảm RTT. Số liệu đo trên bản code ngày 22/10, trước các thay đổi gameplay 23–25/10. Cấu hình máy, dữ liệu thô và giới hạn của phép đo: [docs/EXPERIMENTS_FINAL.md](docs/EXPERIMENTS_FINAL.md), [experiments/final-2026-10-22-v2/](experiments/final-2026-10-22-v2/).
+RTT trung bình ở cả hai chế độ đều khoảng 0,4–0,8 ms trên loopback; kết quả **không** chứng minh được optimized giảm RTT. Lần đo trước ngày 22/10 trên máy khác cho tỉ lệ giảm gần như trùng (78,1% / 74,3% / 62,1%). Cấu hình máy, dữ liệu thô và giới hạn của phép đo: [docs/EXPERIMENTS_FINAL.md](docs/EXPERIMENTS_FINAL.md), [experiments/final-2026-10-25/](experiments/final-2026-10-25/).
 
 ---
 
@@ -412,9 +412,8 @@ Kiểm tra Unity (Play Mode, build, staging): [docs/FINAL_VALIDATION.md](docs/FI
 **Giới hạn hiện tại**
 
 1. Benchmark chạy trên loopback với client giả lập, chưa đo trên LAN/Internet thật, chưa đo FPS của client.
-2. Số liệu đo là của bản code ngày 22/10, chưa đo lại sau các thay đổi gameplay 23–25/10.
-3. TCP thuần, chưa có TLS, đăng nhập hay lưu lịch sử trận; chống gian lận mới ở mức server bỏ qua input bất thường và sequence trùng.
-4. Đồng bộ chọn lọc lọc theo người xem, chưa nén delta từng trường giữa hai snapshot.
+2. TCP thuần, chưa có TLS, đăng nhập hay lưu lịch sử trận; chống gian lận mới ở mức server bỏ qua input bất thường và sequence trùng.
+3. Đồng bộ chọn lọc lọc theo người xem, chưa nén delta từng trường giữa hai snapshot.
 
 **Hướng phát triển**
 
