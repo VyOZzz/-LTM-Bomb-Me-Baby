@@ -14,12 +14,12 @@ Người chơi điều khiển một quả bóng lăn trên bản đồ, nhặt 
 
 | STT | MSSV | Họ tên | Email | Phụ trách chính | Đóng góp |
 | --- | --- | --- | --- | --- | ---: |
-| 1 | ... | Vỹ (trưởng nhóm) | ... | Prototype ban đầu, Unity client, gameplay Hành trình, bản cuối | ...% |
-| 2 | ... | Tiên | ... | Java server, selective sync, reconnect/timeout, kiểm thử, âm thanh | ...% |
-| 3 | ... | Phương | ... | Ghép trận, công cụ đo và thực nghiệm, bản đồ và giao diện, bot test | ...% |
+| 1 | ... | Vỹ (trưởng nhóm) | ... | Prototype server + client ban đầu; Unity client (menu, HUD, minimap, lời dẫn, màn kết quả); luật Mảnh Tim Lửa; hoàn thiện gameplay bản cuối | ...% |
+| 2 | ... | Tiên | ... | Selective sync (novelty); reconnect, heartbeat/timeout, hàng đợi ghi; chế độ Đấu nhanh/Hành trình; test JUnit, kiểm tra Unity; âm thanh | ...% |
+| 3 | ... | Phương | ... | Ghép trận FIND_MATCH; công cụ đo và thực nghiệm baseline/optimized; dựng bản đồ và giao diện bằng asset; Khóa Lửa; bot test; viết báo cáo | ...% |
 | | | | | **Tổng** | **100%** |
 
-Công việc cụ thể của từng người: [mục 13](#13-phân-công-công-việc). Báo cáo đầy đủ: [docs/REPORT.md](docs/REPORT.md).
+Báo cáo đầy đủ: [docs/REPORT.md](docs/REPORT.md).
 
 ---
 
@@ -37,8 +37,7 @@ Công việc cụ thể của từng người: [mục 13](#13-phân-công-công-
 10. [Kiểm thử và đo đạc](#10-kiểm-thử-và-đo-đạc)
 11. [Xử lý sự cố](#11-xử-lý-sự-cố)
 12. [Giới hạn và hướng phát triển](#12-giới-hạn-và-hướng-phát-triển)
-13. [Phân công công việc](#13-phân-công-công-việc)
-14. [Tài liệu](#14-tài-liệu)
+13. [Tài liệu](#13-tài-liệu)
 
 ---
 
@@ -425,43 +424,7 @@ Kiểm tra Unity (Play Mode, build, staging): [docs/FINAL_VALIDATION.md](docs/FI
 
 ---
 
-## 13. Phân công công việc
-
-Tổng hợp từ lịch sử commit và [docs/TEAM_PLAN.md](docs/TEAM_PLAN.md).
-
-### Vỹ — trưởng nhóm, Unity client, gameplay
-
-| Thời gian | Công việc |
-| --- | --- |
-| 12–13/10 | Dựng prototype ban đầu: Java server TCP JSON, game loop 20 Hz, snapshot 10 Hz, va chạm, nhặt đồ, sát thương; Unity client và scene `Main`; 3 bản đồ; hỗ trợ 10 người/phòng |
-| 13–14/10 | Lưu yêu cầu đồ án, kế hoạch phân công đầu tiên, concept arena và HUD, cốt truyện Ba Mảnh Tim Lửa |
-| 20–21/10 | Server: mảnh Tim Lửa và bệ đá, luật mang/cướp/phá ấn mảnh (`ShardObjective.java`, `ShardStealMechanicsTest`), `JOIN_ROOM` kiểm tra chế độ phòng |
-| 20–21/10 | Unity: menu chọn chế độ, HUD, minimap, lời dẫn từ `story.json`, cooldown bom, màn mở đầu bằng video, bảng điểm và màn kết quả |
-| 25/10 | Hoàn thiện gameplay và bố cục bản đồ (`BombMapLayouts.cs`), chế độ thử cục bộ, bảng xếp hạng Đấu nhanh khi hết giờ, dọn asset, viết lại README |
-
-### Tiên — Java server, đồng bộ chọn lọc, kết nối, kiểm thử
-
-| Thời gian | Công việc |
-| --- | --- |
-| 15–17/10 | **Novelty:** selective sync (`SyncMode` baseline/optimized); sửa reconnect, token sai/hết hạn, request trùng, dọn phòng; test `ConnectionTest`, `ServerFixesTest`; tài liệu bàn giao `THANH_VIEN_A_*` |
-| 20/10 | `GameMode` Đấu nhanh và Hành trình, tính điểm, `JOURNEY_COMPLETE`; sửa lộ vị trí trong bụi qua event nổ/Core/snapshot khôi phục; cập nhật `PROTOCOL.md` |
-| 21–22/10 | Heartbeat và timeout hai phía, hàng đợi ghi, đếm ngược reconnect trên Unity; harness kiểm tra Unity (`BombValidation.cs`), script build |
-| 21–23/10 | Âm thanh: `BombAudio`, SFX, nhạc sảnh và 3 bản đồ, chỉnh tiếng bom và khiên |
-| 22–24/10 | Sửa luồng trận, phá ấn, quan sát sau khi bị loại; ổn định ghép trận (ticket có generation); `package_project.py`; tổng hợp `EXPERIMENTS_FINAL.md`, `FINAL_VALIDATION.md` |
-
-### Phương — ghép trận, đo đạc thực nghiệm, bản đồ và giao diện
-
-| Thời gian | Công việc |
-| --- | --- |
-| 15/10 | Kịch bản Hành trình Ba Mảnh (`STORY_SCRIPT.md`); `load_test.py` đo RTT, byte, message và thời gian xử lý với N client |
-| 19/10 | `run_benchmark.ps1`, `summarize_experiments.py`; sửa `network_smoke.py` cho chế độ optimized; chạy 18 lượt đo baseline/optimized với 2/4/8 client (`EXPERIMENTS.md`); mẫu `AUDIO_CREDITS.md`, `PLAYTEST_MAPS.md` |
-| 21/10 | Ghép trận ngẫu nhiên `FIND_MATCH`/`CANCEL_MATCH` trên server (`Matchmaker.java`) kèm test; nút Tìm trận và trạng thái hàng chờ trên Unity |
-| 22/10 | Nhập asset CC0 của Kenney; dựng lại 3 bản đồ bằng asset; làm mới HUD, menu, overlay, VFX |
-| 23/10 | Khóa Lửa dạng thanh máu (`ShardObjective.java`) kèm test; bot thêm người chơi (`scripts/bots.py`, `BombDevBots.cs`); công cụ test trong Editor |
-
----
-
-## 14. Tài liệu
+## 13. Tài liệu
 
 | Tài liệu | Nội dung |
 | --- | --- |
