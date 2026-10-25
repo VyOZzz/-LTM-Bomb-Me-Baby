@@ -14,6 +14,35 @@ final class GameRoom {
     private static final int ROUND_WIN_POINTS = 3;
     private static final int ELIMINATION_POINTS = 1;
     static final long QUICK_ROUND_MS = 180_000;
+    static final int QUICK_KILL_POINTS = 3;
+    /** Final stretch of a Quick round in which every living position is shown on the minimap. */
+    static final long QUICK_REVEAL_MS = 60_000;
+
+    /** Quick-round stats; kept by id so players who leave mid-round still appear in the ranking. */
+    static final class RoundStat {
+        final String playerId;
+        final String name;
+        int kills;
+        double damage;      // HP actually removed from opponents, reflections included
+        boolean alive = true;
+        double hp = 100;
+
+        RoundStat(PlayerState player) {
+            playerId = player.id;
+            name = player.name;
+        }
+
+        int points() { return kills * QUICK_KILL_POINTS; }
+        long roundedDamage() { return Math.round(damage); }
+    }
+
+    /** Points (3 per kill), then damage dealt, then still alive, then remaining HP. */
+    static final java.util.Comparator<RoundStat> QUICK_RANKING = java.util.Comparator
+        .comparingInt(RoundStat::points)
+        .thenComparingLong(RoundStat::roundedDamage)
+        .thenComparing(stat -> stat.alive)
+        .thenComparingLong(stat -> Math.round(stat.hp))
+        .reversed();
 
     static final class ScoreState {
         final String playerId;
@@ -58,6 +87,8 @@ final class GameRoom {
     private long roundStartedAt;
     int roundIndex;
     private List<String> roundParticipantIds = List.of();
+    final Map<String,RoundStat> roundStats = new LinkedHashMap<>();
+    private List<Map<String,Object>> quickLeaderboard = List.of();
     private int nextPickupId = 1;
     private long lastOrbAt;
     private boolean hasStarted;
@@ -131,6 +162,9 @@ final class GameRoom {
         roundParticipantIds = players.stream().map(p -> p.id).toList();
         roundWinnerId = "";
         roundEndReason = "";
+        roundStats.clear();
+        quickLeaderboard = List.of();
+        for (PlayerState p : players) roundStats.put(p.id, new RoundStat(p));
         tick = 0;
         orbs.clear(); cores.clear();
         for (int i = 0; i < players.size(); i++) {
@@ -346,10 +380,12 @@ final class GameRoom {
                 double hpBefore = target.hp;
                 target.hp = Math.max(0, target.hp - damage);
                 double actualDamage = hpBefore - target.hp;
+                recordDamage(source, actualDamage);
                 broadcast(data("type","PLAYER_DAMAGED","playerId",target.id,"by",source.id,"amount",damage));
                 applyDamageConsequences(target, source, actualDamage, now);
                 if (target.hp <= 0) {
                     source.kills++;
+                    recordKill(source);
                     awardElimination(source);
                     eliminate(target, "explosion", now);
                 }
@@ -357,6 +393,7 @@ final class GameRoom {
         }
         double sourceHpBefore = source.hp;
         source.hp = Math.max(0, source.hp - damageDone);
+        if (lastReflector != null) recordDamage(lastReflector, sourceHpBefore - source.hp);
         if (lastReflector != null)
             applyDamageConsequences(source, lastReflector, sourceHpBefore - source.hp, now);
         dropExplosionEnergy(source, sizeBeforeExplosion);
@@ -365,6 +402,7 @@ final class GameRoom {
         if (source.hp <= 0) {
             if (lastReflector != null) {
                 lastReflector.kills++;
+                recordKill(lastReflector);
                 awardElimination(lastReflector);
             }
             eliminate(source, "reflection", now);
@@ -402,6 +440,54 @@ final class GameRoom {
             if (!free(x, z, .2)) { x = source.x; z = source.z; }
             orbs.add(new Pickup(nextPickupId++, x, z));
         }
+    }
+
+    private void recordDamage(PlayerState player, double amount) {
+        RoundStat stat = roundStats.get(player.id);
+        if (stat != null && amount > 0) stat.damage += amount;
+    }
+
+    private void recordKill(PlayerState player) {
+        RoundStat stat = roundStats.get(player.id);
+        if (stat != null) stat.kills++;
+    }
+
+    /** Quick standings for the round that just ended, best first. Players who left count as eliminated. */
+    private List<RoundStat> rankQuickRound() {
+        for (RoundStat stat : roundStats.values()) {
+            PlayerState p = players.stream().filter(player -> player.id.equals(stat.playerId)).findFirst().orElse(null);
+            stat.alive = p != null && p.alive;
+            stat.hp = stat.alive ? p.hp : 0;
+        }
+        return roundStats.values().stream().sorted(QUICK_RANKING).toList();
+    }
+
+    /** Builds the Quick leaderboard; on TIME the unique leader becomes the winner, a full tie stays a draw. */
+    private PlayerState settleQuickRound(PlayerState winner, String reason) {
+        List<RoundStat> ranking = new ArrayList<>(rankQuickRound());
+        if (reason.equals("TIME") && !ranking.isEmpty()
+                && (ranking.size() == 1 || QUICK_RANKING.compare(ranking.get(0), ranking.get(1)) < 0)) {
+            String topId = ranking.get(0).playerId;
+            winner = players.stream().filter(p -> p.id.equals(topId)).findFirst().orElse(null);
+        }
+        // The last one standing tops the board even if someone eliminated had more kills.
+        boolean pinnedWinner = false;
+        if (winner != null && !reason.equals("TIME")) {
+            String winnerId = winner.id;
+            pinnedWinner = ranking.removeIf(stat -> stat.playerId.equals(winnerId));
+            if (pinnedWinner) ranking.add(0, roundStats.get(winnerId));
+        }
+        List<Map<String,Object>> rows = new ArrayList<>();
+        int rank = 0;
+        for (int i = 0; i < ranking.size(); i++) {
+            RoundStat stat = ranking.get(i);
+            // Equal rows share a rank so a tie never looks like a decided placement.
+            if (i == 0 || (pinnedWinner && i == 1) || QUICK_RANKING.compare(ranking.get(i - 1), stat) != 0) rank = i + 1;
+            rows.add(data("rank",rank,"playerId",stat.playerId,"name",stat.name,"kills",stat.kills,
+                "damage",stat.roundedDamage(),"points",stat.points(),"alive",stat.alive));
+        }
+        quickLeaderboard = List.copyOf(rows);
+        return winner;
     }
 
     private void awardElimination(PlayerState player) {
@@ -531,6 +617,7 @@ final class GameRoom {
 
     /** Ends the round; in Journey the winner keeps this chapter's shard (+1 roundWins). */
     private void finishRound(PlayerState winner, String reason) {
+        if (mode == GameMode.QUICK) winner = settleQuickRound(winner, reason);
         if (mode == GameMode.JOURNEY && winner != null) {
             ScoreState score = journeyScores.get(winner.id);
             if (score != null) {
@@ -572,7 +659,8 @@ final class GameRoom {
 
     synchronized Map<String,Object> roundResult() {
         return data("type","GAME_OVER","winnerId",roundWinnerId,"room",code,"reason",roundEndReason,
-            "mode",mode.name(),"roundIndex",roundIndex,"chapterIndex",protocolChapterIndex(),"scores",scores());
+            "mode",mode.name(),"roundIndex",roundIndex,"chapterIndex",protocolChapterIndex(),"scores",scores(),
+            "leaderboard",quickLeaderboard);
     }
 
     /** Most shards wins; ties go to more eliminations, then to the final chapter's winner. */
@@ -707,7 +795,7 @@ final class GameRoom {
             "arenaSize",map.halfSize,"minPlayers",GameRules.MIN_PLAYERS,"maxPlayers",GameRules.MAX_PLAYERS,
             "mode",mode.name(),"chapterIndex",protocolChapterIndex(),"scores",scores(),
             "roundIndex",roundIndex,"roundParticipantIds",roundParticipantIds,
-            "roundWinnerId",roundWinnerId,"roundEndReason",roundEndReason,
+            "roundWinnerId",roundWinnerId,"roundEndReason",roundEndReason,"leaderboard",quickLeaderboard,
             "winnerIds",journeyWinnerIds,"journeyComplete",journeyComplete,"journeyEndReason",journeyEndReason,"players",players.stream().map(p -> data(
             "id",p.id,"name",p.name,"ready",p.ready,"connected",p.connected,
             "reconnectRemaining",p.connected ? 0 : Math.max(0,p.disconnectedAt + GameRules.RECONNECT_MS - System.currentTimeMillis()) / 1000.0)).toList());
@@ -738,15 +826,17 @@ final class GameRoom {
                                              boolean includeStaticGeometry, boolean forceBaselineData) {
         boolean optimized = !forceBaselineData && syncMode == SyncMode.OPTIMIZED;
         PlayerState perspective = perspective(viewer);
+        boolean revealAll = revealsAllPositions(now);
 
         // ---- player states ----
         List<Map<String,Object>> states = new ArrayList<>();
         for (PlayerState p : players) {
             boolean visible = viewer == null || canSee(viewer, p);
             // In optimized mode, hide exact coordinates of invisible players
-            // so the client cannot derive positions it should not know.
-            double px = (!optimized || visible) ? p.x : 0;
-            double pz = (!optimized || visible) ? p.z : 0;
+            // so the client cannot derive positions it should not know. The final Quick minute
+            // shares positions for the minimap only; "visible" still gates the 3D view.
+            double px = (!optimized || visible || revealAll) ? p.x : 0;
+            double pz = (!optimized || visible || revealAll) ? p.z : 0;
             states.add(data(
                 "id",p.id,"name",p.name,"x",px,"z",pz,"hp",p.hp,"size",p.size,
                 "baseSize",p.baseSize,"alive",p.alive,"connected",p.connected,
@@ -777,6 +867,7 @@ final class GameRoom {
             "roomCode",code,"roundIndex",roundIndex,
             "spectatorTargetId",viewer != null && !viewer.alive && perspective != viewer ? perspective.id : "",
             "roundTimeLeft",mode == GameMode.QUICK ? Math.max(0, Math.min(QUICK_ROUND_MS, QUICK_ROUND_MS - (now - roundStartedAt))) / 1000.0 : 0,
+            "revealAll",revealAll,
             "mapId",map.id,"mapName",map.name,"arenaSize",map.halfSize,
             "mode",mode.name(),"chapterIndex",protocolChapterIndex(),"scores",scores(),
             "players",states,"orbs",visibleOrbs,"cores",visibleCores);
@@ -790,6 +881,11 @@ final class GameRoom {
         // The objective is public information: every viewer gets it, also in optimized mode.
         if (objective != null) snap.put("objective", objective.data(now));
         return snap;
+    }
+
+    synchronized boolean revealsAllPositions(long now) {
+        return mode == GameMode.QUICK && phase == Phase.PLAYING
+            && now - roundStartedAt >= QUICK_ROUND_MS - QUICK_REVEAL_MS;
     }
 
     synchronized boolean canSee(PlayerState viewer, PlayerState target) {

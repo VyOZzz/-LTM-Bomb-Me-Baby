@@ -46,6 +46,7 @@ public sealed class BombGame : MonoBehaviour {
     float matchStartedAt;
     string spectatorTargetId = "";
     float roundTimeLeft = 360;
+    bool revealAll;
     /// The result card waits this long after the round ends so the final blast can be seen.
     const float ResultDelaySeconds = 2.5f;
     float finishedAt;
@@ -487,7 +488,7 @@ public sealed class BombGame : MonoBehaviour {
                 journeyCompleteReceived = false;
                 journeyGuideVisible = msg.mode == "JOURNEY" && msg.chapterIndex == 0;
                 matchStartedAt = Time.unscaledTime;
-                spectatorTargetId = ""; roundTimeLeft = msg.mode == "JOURNEY" ? 360 : 180;
+                spectatorTargetId = ""; roundTimeLeft = msg.mode == "JOURNEY" ? 360 : 180; revealAll = false;
                 objective = null;
                 shardView.Clear();
                 toast = "";
@@ -585,9 +586,14 @@ public sealed class BombGame : MonoBehaviour {
                 // Journey's final chapter is followed immediately by JOURNEY_COMPLETE, which
                 // owns the final result cue; earlier chapters still need their own win/loss cue.
                 if (msg.mode != "JOURNEY" || msg.chapterIndex < 2) PlayResultOnce(false);
-                if (msg.mode != "JOURNEY")
-                    status = msg.reason == "TIME" ? "Hết 3 phút — trận đấu hòa."
-                        : winnerId == myId ? "Bạn chiến thắng!" : "Trận đấu kết thúc.";
+                if (room != null && msg.leaderboard != null && msg.leaderboard.Length > 0)
+                    room.leaderboard = msg.leaderboard;
+                if (msg.mode != "JOURNEY" && msg.reason == "TIME")
+                    status = string.IsNullOrEmpty(winnerId) ? "Hết 3 phút — bằng điểm, trận đấu hòa."
+                        : winnerId == myId ? "Hết 3 phút — bạn đứng đầu bảng xếp hạng!"
+                        : $"Hết 3 phút — {NameOf(winnerId)} đứng đầu bảng xếp hạng.";
+                else if (msg.mode != "JOURNEY")
+                    status = winnerId == myId ? "Bạn chiến thắng!" : "Trận đấu kết thúc.";
                 else if (string.IsNullOrEmpty(winnerId))
                     status = "Hết giờ chương — chưa ai chiếm được Mảnh Tim Lửa.";
                 else if (msg.reason == "CLAIMED")
@@ -728,6 +734,8 @@ public sealed class BombGame : MonoBehaviour {
         ApplyMap(snapshot);
         spectatorTargetId = snapshot.spectatorTargetId ?? "";
         roundTimeLeft = snapshot.roundTimeLeft;
+        if (snapshot.revealAll && !revealAll) Toast("Còn 1 phút! Vị trí mọi người đã hiện trên minimap.");
+        revealAll = snapshot.revealAll;
         if (snapshot.players == null) return;
         latestPlayers = snapshot.players;
         TrackReconnectDeadlines(snapshot.players);
@@ -1341,6 +1349,30 @@ public sealed class BombGame : MonoBehaviour {
         cellStyle.normal.textColor = cellRightStyle.normal.textColor = BombUi.Text;
     }
 
+    /// Quick-round ranking: kills (+3 each) first, then damage; eliminated players are dimmed.
+    void DrawLeaderboard(Rect area, QuickRankData[] rows) {
+        float rowH = U(26), rankW = U(34), column = U(56), damageW = U(104);
+        float nameWidth = area.width - rankW - column * 2 - damageW;
+        float killsX = area.x + rankW + nameWidth, damageX = killsX + column, pointsX = damageX + damageW;
+        GUI.Label(new Rect(area.x, area.y, rankW, rowH), "#", sectionStyle);
+        GUI.Label(new Rect(area.x + rankW, area.y, nameWidth, rowH), "NGƯỜI CHƠI", sectionStyle);
+        GUI.Label(new Rect(killsX, area.y, column, rowH), "HẠ", sectionRightStyle);
+        GUI.Label(new Rect(damageX, area.y, damageW, rowH), "SÁT THƯƠNG", sectionRightStyle);
+        GUI.Label(new Rect(pointsX, area.y, column, rowH), "ĐIỂM", sectionRightStyle);
+        float y = area.y + rowH;
+        foreach (QuickRankData row in rows) {
+            Color ink = row.playerId == myId ? BombUi.Charge : row.alive ? BombUi.Text : BombUi.TextMuted;
+            cellStyle.normal.textColor = cellRightStyle.normal.textColor = ink;
+            GUI.Label(new Rect(area.x, y, rankW, rowH), row.rank.ToString(), cellStyle);
+            GUI.Label(new Rect(area.x + rankW, y, nameWidth, rowH), row.alive ? row.name : row.name + " (bị loại)", cellStyle);
+            GUI.Label(new Rect(killsX, y, column, rowH), row.kills.ToString(), cellRightStyle);
+            GUI.Label(new Rect(damageX, y, damageW, rowH), row.damage.ToString(), cellRightStyle);
+            GUI.Label(new Rect(pointsX, y, column, rowH), row.points.ToString(), cellRightStyle);
+            y += rowH;
+        }
+        cellStyle.normal.textColor = cellRightStyle.normal.textColor = BombUi.Text;
+    }
+
     int ReadyCount() {
         int ready = 0;
         if (room?.players != null) foreach (LobbyPlayer player in room.players) if (player.ready) ready++;
@@ -1473,6 +1505,7 @@ public sealed class BombGame : MonoBehaviour {
         bool nextChapter = JourneyHasNextChapter();
         bool ready = IsLocalPlayerReady();
         int scoreRows = room != null && room.mode == "JOURNEY" && room.scores != null ? room.scores.Length : 0;
+        if (room != null && room.mode == "QUICK" && room.leaderboard != null) scoreRows = room.leaderboard.Length;
         Color accent = nextChapter || draw ? BombUi.Core : won ? BombUi.Charge : BombUi.Danger;
         string title = nextChapter ? "SANG CHƯƠNG MỚI" : outcome == MatchOutcome.SharedWin ? "ĐỒNG CHIẾN THẮNG!"
             : draw ? "HÒA!" : won ? "CHIẾN THẮNG!" : "BẠN ĐÃ THUA";
@@ -1488,7 +1521,8 @@ public sealed class BombGame : MonoBehaviour {
         if (completedJourney && room?.journeyEndReason == "INSUFFICIENT_PLAYERS")
             detail = "Kết thúc sớm do thiếu người. Chỉ tính các chương đã chơi; không cộng mảnh của chương chưa diễn ra.";
         else if (room?.mode == "QUICK" && room.roundEndReason == "TIME")
-            detail = "Hết 3 phút mà vẫn còn nhiều người sống: hòa.";
+            detail = "Hết giờ còn nhiều người sống: mỗi lần hạ +3 điểm, bằng điểm thì xét tổng sát thương."
+                + (draw ? " Mọi tiêu chí đều bằng nhau nên trận hòa." : "");
         int count = room?.players == null ? 0 : room.players.Length;
         string readyLine = completedJourney ? "Rời phòng để bắt đầu một hành trình mới."
             : ready ? $"Đã sẵn sàng  •  {ReadyCount()}/{count} người"
@@ -1520,7 +1554,9 @@ public sealed class BombGame : MonoBehaviour {
             GUI.Label(new Rect(x, y, w, detailH), detail, centeredMutedStyle);
             y += detailH;
         }
-        if (scoreRows > 0) DrawScoreTable(new Rect(x, y + U(14), w, (scoreRows + 1) * U(26)), room.scores);
+        if (scoreRows > 0 && room.mode == "QUICK")
+            DrawLeaderboard(new Rect(x, y + U(14), w, (scoreRows + 1) * U(26)), room.leaderboard);
+        else if (scoreRows > 0) DrawScoreTable(new Rect(x, y + U(14), w, (scoreRows + 1) * U(26)), room.scores);
 
         float by = card.yMax - pad - U(44);
         if (BombUi.Button(new Rect(x, by, w, U(44)), "RỜI PHÒNG", QuietFace, BombUi.Text, quietButtonStyle))
@@ -1625,7 +1661,7 @@ public sealed class BombGame : MonoBehaviour {
         room = null; phase = "MENU"; winnerId = ""; activeRoundIndex = 0;
         winnerIds = Array.Empty<string>(); lastResultSound = "";
         journeyGuideVisible = false; journeyCompleteReceived = false; charging = false;
-        spectatorTargetId = ""; roundTimeLeft = 360;
+        spectatorTargetId = ""; roundTimeLeft = 360; revealAll = false;
         gameAudio.StopGameplayLoops(); gameAudio.SetMenuMusic();
         ClearNotices(); ClearActors();
     }
@@ -1990,17 +2026,24 @@ public sealed class BombGame : MonoBehaviour {
     }
 
     /// Players this client is allowed to see: itself, visible opponents and the shard carrier.
+    /// In the final Quick minute the server reveals everyone, including players never rendered.
     BombHud.MapDot[] MinimapDots() {
         var dots = new List<BombHud.MapDot>();
         foreach (KeyValuePair<string, Avatar> entry in avatars) {
             PlayerData s = entry.Value.state;
             bool isMe = entry.Key == myId;
-            if (s == null || !s.alive || (!isMe && !s.visible)) continue;
+            if (s == null || !s.alive || (!isMe && !s.visible && !revealAll)) continue;
             dots.Add(new BombHud.MapDot {
                 x = s.x, z = s.z, color = entry.Value.color, isMe = isMe,
                 isCarrier = objective != null && objective.carrierId == entry.Key
             });
         }
+        if (revealAll)
+            for (int i = 0; i < latestPlayers.Length; i++) {
+                PlayerData p = latestPlayers[i];
+                if (p == null || !p.alive || avatars.ContainsKey(p.id)) continue;
+                dots.Add(new BombHud.MapDot { x = p.x, z = p.z, color = playerColors[i % playerColors.Length] });
+            }
         return dots.ToArray();
     }
 

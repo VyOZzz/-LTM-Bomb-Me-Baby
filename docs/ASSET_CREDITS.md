@@ -13,5 +13,4 @@ Tất cả asset dưới đây đều là **CC0 1.0** (public domain, không b�
 | Nền cỏ — map `meadow` | `Art/Ground/meadow_*.jpg` | Grass 004 | ambientCG | https://ambientcg.com/view?id=Grass004 | CC0 1.0 | Bản 1K, chỉ lấy Color và NormalGL, đổi tên file. |
 | Nền đá lát — map `crossroads` | `Art/Ground/crossroads_*.jpg` | Paving Stones 070 | ambientCG | https://ambientcg.com/view?id=PavingStones070 | CC0 1.0 | Bản 1K, chỉ lấy Color và NormalGL, đổi tên file. |
 | Nền sỏi núi lửa — map `crater` | `Art/Ground/crater_*.jpg` | Gravel 024 | ambientCG | https://ambientcg.com/view?id=Gravel024 | CC0 1.0 | Bản 1K, chỉ lấy Color và NormalGL, đổi tên file. |
-| Đất (dự phòng, viền map) | `Art/Ground/dirt_color.jpg` | Ground 054 | ambientCG | https://ambientcg.com/view?id=Ground054 | CC0 1.0 | Bản 1K, chỉ lấy Color, đổi tên file. |
 | Dung nham trang trí ngoài sân — map `crater` | `Art/Ground/lava_*.jpg` | Lava 004 | ambientCG | https://ambientcg.com/view?id=Lava004 | CC0 1.0 | Bản 1K, chỉ lấy Color và Emission, đổi tên file. |

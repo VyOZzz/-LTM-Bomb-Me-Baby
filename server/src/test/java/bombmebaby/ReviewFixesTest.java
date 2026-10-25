@@ -67,6 +67,83 @@ class ReviewFixesTest {
         assertTrue(remaining > 179 && remaining <= 180);
     }
 
+    @Test void quickTimeoutRanksKillsThenDamageAndCrownsTheLeader() {
+        GameRoom r = room(GameMode.QUICK, 4);
+        PlayerState killer = r.players.get(0), victim = r.players.get(1);
+        PlayerState hitter = r.players.get(2), hit = r.players.get(3);
+        killer.x = 0; victim.x = 0; victim.hp = 10;
+        hitter.x = 30; hit.x = 30;
+        killer.z = victim.z = -15; hitter.z = hit.z = 15;
+        long now = 150_000;
+        for (PlayerState source : List.of(killer, hitter)) {
+            source.charging = true;
+            source.chargeSince = now - GameRules.MAX_CHARGE_MS;
+            r.action(source, "EXPLODE", 0, 0, now);
+        }
+        assertFalse(victim.alive);
+        assertEquals(20, hit.hp, 1e-9);
+
+        r.update(100_000 + GameRoom.QUICK_ROUND_MS, .05);
+        assertEquals("TIME", r.roundResult().get("reason"));
+        assertEquals(killer.id, r.roundResult().get("winnerId"), "A kill (+3) outranks more damage");
+        @SuppressWarnings("unchecked")
+        List<Map<String,Object>> board = (List<Map<String,Object>>) r.roomInfo().get("leaderboard");
+        assertEquals(List.of(killer.id, hitter.id, hit.id, victim.id),
+            board.stream().map(row -> row.get("playerId")).toList());
+        assertEquals(3, board.get(0).get("points"));
+        assertEquals(10L, board.get(0).get("damage"));
+        assertEquals(80L, board.get(1).get("damage"));
+        assertEquals(List.of(1, 2, 3, 4), board.stream().map(row -> row.get("rank")).toList());
+    }
+
+    @Test void finalQuickMinuteRevealsEveryPositionForTheMinimapOnly() {
+        GameRoom r = room(GameMode.QUICK, 2);
+        PlayerState viewer = r.players.get(0), hidden = r.players.get(1);
+        viewer.x = 0; viewer.z = 0; hidden.x = 20; hidden.z = 20;
+        long revealAt = 100_000 + GameRoom.QUICK_ROUND_MS - GameRoom.QUICK_REVEAL_MS;
+
+        Map<String,Object> before = r.snapshot(revealAt - 1, viewer);
+        assertEquals(false, before.get("revealAll"));
+        assertEquals(0.0, otherPlayer(before, hidden.id).get("x"));
+
+        Map<String,Object> after = r.snapshot(revealAt, viewer);
+        assertEquals(true, after.get("revealAll"));
+        assertEquals(20.0, otherPlayer(after, hidden.id).get("x"));
+        assertEquals(false, otherPlayer(after, hidden.id).get("visible"), "3D view stays fogged");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String,Object> otherPlayer(Map<String,Object> snapshot, String id) {
+        return ((List<Map<String,Object>>) snapshot.get("players")).stream()
+            .filter(p -> p.get("id").equals(id)).findFirst().orElseThrow();
+    }
+
+    @Test void lastStandingWinnerTopsQuickBoardEvenWithFewerKills() {
+        GameRoom r = room(GameMode.QUICK, 3);
+        PlayerState killer = r.players.get(0), victim = r.players.get(1), survivor = r.players.get(2);
+        killer.x = 0; victim.x = 0; victim.hp = 10; survivor.x = 30;
+        killer.z = victim.z = -15; survivor.z = 15;
+        killer.charging = true;
+        killer.chargeSince = 150_000 - GameRules.MAX_CHARGE_MS;
+        r.action(killer, "EXPLODE", 0, 0, 150_000);
+        r.leave(killer);
+        assertEquals(survivor.id, r.roundResult().get("winnerId"));
+        @SuppressWarnings("unchecked")
+        List<Map<String,Object>> board = (List<Map<String,Object>>) r.roundResult().get("leaderboard");
+        assertEquals(List.of(survivor.id, killer.id, victim.id),
+            board.stream().map(row -> row.get("playerId")).toList());
+        assertEquals(List.of(1, 2, 3), board.stream().map(row -> row.get("rank")).toList());
+    }
+
+    @Test void quickTimeoutWithoutAnyFightingIsStillADraw() {
+        GameRoom r = room(GameMode.QUICK, 3);
+        r.update(100_000 + GameRoom.QUICK_ROUND_MS, .05);
+        assertEquals("", r.roundResult().get("winnerId"));
+        @SuppressWarnings("unchecked")
+        List<Map<String,Object>> board = (List<Map<String,Object>>) r.roundResult().get("leaderboard");
+        assertEquals(List.of(1, 1, 1), board.stream().map(row -> row.get("rank")).toList());
+    }
+
     @Test void lastStandingStillWinsBeforeQuickDeadline() {
         GameRoom r = room(GameMode.QUICK, 2);
         String id = r.players.get(0).id;

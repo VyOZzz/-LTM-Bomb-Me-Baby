@@ -21,6 +21,7 @@ using System;
     public string roomCode;
     public string spectatorTargetId;
     public float roundTimeLeft;
+    public bool revealAll;          // final Quick minute: every position is real, for the minimap
     public int roundIndex;
     public string[] roundParticipantIds;
     public bool hasRoom;
@@ -57,6 +58,7 @@ using System;
     public bool journeyComplete;
     public string[] winnerIds;
     public ScoreData[] scores;
+    public QuickRankData[] leaderboard;
     public PlayerData[] players;
     public PickupData[] orbs;
     public PickupData[] cores;
@@ -136,6 +138,7 @@ using System;
     public int chapterIndex;
     public bool journeyComplete;
     public ScoreData[] scores;
+    public QuickRankData[] leaderboard;
     public int minPlayers;
     public int maxPlayers;
     public LobbyPlayer[] players;
@@ -168,6 +171,17 @@ public static class BombResult {
     public int points;
     public int roundWins;      // shards brought home
     public int eliminations;
+}
+
+/// One Quick-round leaderboard row, best first: 3 points per kill, then damage dealt.
+[Serializable] public class QuickRankData {
+    public int rank;           // equal rows share a rank
+    public string playerId;
+    public string name;
+    public int kills;
+    public int damage;
+    public int points;
+    public bool alive;
 }
 
 [Serializable] public class PlayerData {

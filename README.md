@@ -123,7 +123,7 @@ Unity AI Assistant cần kết nối mạng và quyền sử dụng/trial hoặc
 
 ## Luật prototype
 
-- 100 HP, không hồi sinh trong vòng; người cuối cùng sống thắng sớm. Đấu nhanh hòa nếu hết 180 giây còn nhiều người. Chiếm Mảnh kết thúc sau 300 giây nếu chưa ai giữ bệ đủ 30 giây. Energy tăng Size 0.12, hồi 1 HP và cho boost tốc độ 12% trong 0.65 giây. Size tối đa 2.6.
+- 100 HP, không hồi sinh trong vòng; người cuối cùng sống thắng sớm. Đấu nhanh hết 180 giây mà còn nhiều người thì xếp hạng: mỗi lần hạ +3 điểm, bằng điểm xét tổng sát thương; chỉ hòa khi bằng nhau mọi tiêu chí. Phút cuối, vị trí mọi người hiện trên minimap. Chiếm Mảnh kết thúc sau 300 giây nếu chưa ai giữ bệ đủ 30 giây. Energy tăng Size 0.12, hồi 1 HP và cho boost tốc độ 12% trong 0.65 giây. Size tối đa 2.6.
 - Nạp tối đa 4 giây, sau đó tự nổ. Sau mỗi lần nổ, bom có cooldown 2.5 giây do server kiểm soát để không thể spam. Bom Size 1 charge đầy gây đúng 80 damage ở tâm nổ; damage nhân theo Size rồi giảm theo khoảng cách. Người nổ không bị sát thương bởi vụ nổ của chính mình; sau nổ Size về Base Size và phần Size đã tiêu hao rơi thành các mảnh Energy quanh vị trí nổ.
 - Shield hoạt động ngay trong 1.5 giây, chặn 100% sát thương nổ và phản 50% về người tấn công; cooldown 9 giây.
 - Boost tăng tốc trong 0.9 giây, tiêu hao tối đa 0.23 Size nhưng không thấp hơn Base Size; chỉ rơi một Energy Orb nếu tiêu hao ít nhất 0.12. Cooldown 5 giây; ở Base Size vẫn tăng tốc được.
