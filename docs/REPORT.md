@@ -158,22 +158,9 @@ Với mỗi người xem `v` trong phòng, ở mỗi chu kỳ snapshot:
 
 ### 7.1. Sơ đồ
 
-```text
- ┌──────────────┐ ┌──────────────┐       ┌──────────────┐
- │ Unity client │ │ Unity client │  ...  │ Unity client │   (2–10 người / phòng)
- └──────┬───────┘ └──────┬───────┘       └──────┬───────┘
-        │   TCP lâu dài, JSON mỗi dòng (port 7777)
-        ▼                ▼                      ▼
- ┌──────────────────────────────────────────────────────────┐
- │                 Java authoritative server                 │
- │  ServerSocket ── thread pool (64) ── Connection/client    │
- │                     │                  └─ writer queue    │
- │       ┌─────────────┼──────────────┐                     │
- │   Matchmaker    GameRoom (lock)  Sessions (resume token)  │
- │                     │                                     │
- │         Game loop 20 Hz ── snapshot 10 Hz ── SyncMode     │
- └──────────────────────────────────────────────────────────┘
-```
+![Kiến trúc hệ thống Bomb Me Baby](images/architecture.png)
+
+*Hình 1. Kiến trúc hệ thống.* Mỗi Unity client giữ một kết nối TCP với server. Trên server, luồng đọc của từng kết nối chuyển request vào `GameRoom` dưới khóa phòng; game loop 20 Hz cập nhật trạng thái, tạo snapshot riêng cho từng người xem theo `SyncMode` rồi đưa vào hàng đợi ghi của từng `Connection`.
 
 ### 7.2. Thành phần
 
@@ -316,6 +303,10 @@ Watchdog kiểm tra ghi treo từng đọc biến volatile `writeStartedAt` hai 
 
 Client dự đoán ngắn hạn vị trí nhân vật của chính mình, nội suy vị trí đối thủ giữa hai snapshot và kéo dần về trạng thái server khi lệch. Người chơi đã bị loại ngừng gửi input gameplay nhưng vẫn gửi heartbeat và nhận snapshot. Camera chuyển sang theo một người còn sống do server chọn.
 
+### 9.6. Tài nguyên đồ họa và âm thanh
+
+Mô hình 3D, giao diện, hiệu ứng hạt và phần lớn hiệu ứng âm thanh lấy từ các gói CC0 của Kenney [7]. Texture nền của ba bản đồ lấy từ ambientCG, cũng theo giấy phép CC0 [8]. Nhạc nền ba bản đồ và âm thanh thua cuộc lấy từ OpenGameArt [9]; hai tác phẩm theo giấy phép CC-BY 4.0 được ghi công trong mục tham khảo. Nhóm chỉ cắt, cân âm lượng và đổi định dạng các file này. Danh sách từng file kèm nguồn nằm trong `docs/ASSET_CREDITS.md` và `docs/AUDIO_CREDITS.md`.
+
 ---
 
 ## 10. Experimental Setup
@@ -326,7 +317,7 @@ Client dự đoán ngắn hạn vị trí nhân vật của chính mình, nội 
 | Hệ điều hành | Windows 11 Home Single Language (build 26200) |
 | Ngôn ngữ, công cụ | Java 26.0.2 (target Java 17), Maven 3.9.9, Python 3.13.14 |
 | Mã nguồn đo | Commit `c35616f` (bản nộp), đo ngày 25/10/2026 |
-| Thư viện | Gson 2.11, JUnit 5; client giả lập chỉ dùng thư viện chuẩn Python |
+| Thư viện | Gson 2.11 [5], JUnit 5 [6]; client giả lập chỉ dùng thư viện chuẩn Python |
 | Mạng | Loopback `127.0.0.1:17777` |
 | Bản đồ, chế độ | `meadow` cố định, Đấu nhanh |
 | Ma trận | baseline/optimized × 2/4/8 client × 3 lượt × 30 giây = 18 lượt |
@@ -345,7 +336,7 @@ Client dự đoán ngắn hạn vị trí nhân vật của chính mình, nội 
 
 Số byte tính theo JSON UTF-8 cộng newline, không gồm overhead TCP/IP. Fingerprint SHA-256 của mã nguồn Java và `pom.xml` lúc đo là `f6a56e39675794c4dd6fa6bb740986625c2087e5cb1e37ceb9f32fbb9052b087`. Dữ liệu thô nằm trong `experiments/final-2026-10-25/`. Một lần đo trước đó (22/10, máy i7-11800H, bản code trước các thay đổi gameplay 23–25/10) được giữ ở `experiments/final-2026-10-22-v2/` để đối chứng.
 
-**Kiểm thử chức năng:** 115 test JUnit trong 9 lớp test (`ConnectionTest`, `GameRoomTest`, `ServerFixesTest`, `ReviewFixesTest`, `ShardStealMechanicsTest`, `ShardObjectiveTest`, `CompletionRegressionTest`, `RequestedGameplayRulesTest`, `ShardCarrierActionTest`). Bộ test chạy được ở cả hai chế độ đồng bộ. Ngoài ra có smoke test TCP thật (`scripts/network_smoke.py`), bot (`scripts/bots.py`) và harness kiểm tra Unity Play Mode (`Assets/Editor/BombValidation.cs`).
+**Kiểm thử chức năng:** 115 test JUnit 5 [6] trong 9 lớp test (`ConnectionTest`, `GameRoomTest`, `ServerFixesTest`, `ReviewFixesTest`, `ShardStealMechanicsTest`, `ShardObjectiveTest`, `CompletionRegressionTest`, `RequestedGameplayRulesTest`, `ShardCarrierActionTest`). Bộ test chạy được ở cả hai chế độ đồng bộ. Ngoài ra có smoke test TCP thật (`scripts/network_smoke.py`), bot (`scripts/bots.py`) và harness kiểm tra Unity Play Mode (`Assets/Editor/BombValidation.cs`).
 
 ---
 
@@ -378,14 +369,15 @@ Công thức: `(baseline − optimized) / baseline × 100`. Cột p95 là trung 
 | --- | --- | --- |
 | JUnit server | 115/115 test qua ở baseline và 115/115 ở optimized (chạy lại ngày 25/10, mã server giống commit `c35616f`) | Chạy trên một máy |
 | Smoke test TCP | 2 client giả lập qua socket thật | Không có rendering |
-| Unity Play Mode | 111 kiểm tra headless qua (theo `docs/FINAL_VALIDATION.md`, 24/10) | Một Unity client cùng peer TCP, chưa phải hai Unity player |
+| Unity Play Mode | 111 kiểm tra headless qua ngày 24/10 (`docs/FINAL_VALIDATION.md`). Lần chạy lại ngày 25/10 dừng ở bước kiểm tra bản đồ vì bài kiểm tra chưa cập nhật theo cách hiển thị bản đồ mới (mục 14) | Một Unity client cùng peer TCP, chưa phải hai Unity player; chưa có kết quả cho bản cuối |
+| Staging Unity | Kiểm tra bản sao project qua ngày 25/10 | Chỉ kiểm tra việc đồng bộ file |
 | Build | Windows player và server JAR tạo thành công | Chưa nghiệm thu trên máy sạch |
 
 ### 11.3. Ảnh minh họa
 
 ![Bản đồ crossroads dựng từ snapshot của Java server](validation/crossroads.png)
 
-Camera Unity dựng bản đồ crossroads từ snapshot của server khi chạy harness kiểm tra. Ảnh dùng tài nguyên thật của dự án nhưng không có HUD và không phải ảnh của một trận người thật. Ảnh hai bản đồ còn lại ở `docs/validation/`.
+*Hình 2. Bản đồ crossroads.* Camera Unity dựng bản đồ từ snapshot của server khi chạy harness kiểm tra. Ảnh dùng tài nguyên thật của dự án nhưng không có HUD và không phải ảnh của một trận người thật. Ảnh hai bản đồ còn lại ở `docs/validation/`.
 
 ---
 
@@ -448,6 +440,7 @@ Nhóm không tuyên bố phát minh ra TCP, snapshot hay interest management. Đ
 5. Client chỉ dự đoán hình ảnh ngắn hạn, chưa có lag compensation phía server.
 6. Trạng thái nằm trong bộ nhớ, khởi động lại server thì mất mọi phòng.
 7. Chưa có playtest có ghi chép với người chơi thật trên nhiều máy.
+8. Từ commit ngày 25/10, client hiển thị bản đồ dựng sẵn trong scene theo bố cục chép trong `BombMapLayouts.cs`, thay vì dựng từ hình học server gửi trong `GAME_START`. Server vẫn là nơi quyết định va chạm, nên bố cục hai bên phải được giữ khớp thủ công với `GameMap.java`. Bộ kiểm tra Unity chưa được cập nhật theo thay đổi này nên chưa chạy lại được trên bản cuối.
 
 ## 15. Future Work
 
@@ -470,7 +463,9 @@ Nhóm đã xây dựng một game đấu trường nhiều người qua TCP, tro
 4. G. Fiedler, *Snapshot Interpolation*, Gaffer On Games, 2014. https://gafferongames.com/post/snapshot_interpolation/
 5. Google, *Gson*. https://github.com/google/gson
 6. The JUnit Team, *JUnit 5 User Guide*. https://junit.org/junit5/
-7. Kenney, *Game assets (CC0)*. https://kenney.nl/assets. Nguồn và giấy phép cụ thể ghi trong `docs/ASSET_CREDITS.md`, `docs/AUDIO_CREDITS.md`.
+7. Kenney, *Nature Kit, Platformer Kit, UI Pack, Particle Pack, Sci-fi Sounds, Interface Sounds, Impact Sounds, RPG Audio, UI Audio, Music Jingles*, CC0 1.0. https://kenney.nl/assets
+8. ambientCG, *Grass004, PavingStones070, Gravel024, Lava004*, CC0 1.0. https://ambientcg.com
+9. OpenGameArt.org: SpiderDave, *A New Day* (CC0); AndyGun11, *Assembly Not Required* (CC-BY 4.0); HydroGene, *JRPG Epic Rock Battle Theme #1* (CC0); Spring/Spring Enterprises, *Fanfares* (CC-BY 4.0). https://opengameart.org
 
 ## 18. Appendix
 
@@ -520,7 +515,7 @@ Phần việc dưới đây được tổng hợp từ lịch sử commit trên 
 - Kịch bản và tài liệu (15/10): kịch bản Hành trình Ba Mảnh (`STORY_SCRIPT.md`), cập nhật phân công nhóm.
 - Công cụ đo (15–19/10): `load_test.py` đo RTT, byte, message và thời gian xử lý với N client; `run_benchmark.ps1` chạy ma trận đo; `summarize_experiments.py` tổng hợp kết quả; sửa `network_smoke.py` cho chế độ optimized; chạy 18 lượt đo đầu tiên ngày 19/10 (`EXPERIMENTS.md`).
 - Ghép trận (21/10): `FIND_MATCH` và `CANCEL_MATCH` trên server (`Matchmaker.java`) kèm test trong `ConnectionTest`; nút Tìm trận và trạng thái hàng chờ trên Unity.
-- Bản đồ và giao diện (22/10): nhập asset CC0 của Kenney cho bản đồ, nhân vật, hiệu ứng và nút bấm; dựng lại ba bản đồ bằng asset; làm mới HUD, menu, overlay và VFX.
+- Bản đồ và giao diện (22/10): nhập asset CC0 của Kenney [7] cho bản đồ, nhân vật, hiệu ứng và nút bấm; dựng lại ba bản đồ bằng asset; làm mới HUD, menu, overlay và VFX.
 - Gameplay và công cụ test (23/10): Khóa Lửa dạng thanh máu trong `ShardObjective.java`, kèm test; bot thêm người chơi (`scripts/bots.py`, `BombDevBots.cs`); công cụ test trong Editor.
 - Mẫu ghi nguồn âm thanh (`AUDIO_CREDITS.md`) và phiếu playtest bản đồ (`PLAYTEST_MAPS.md`).
 - Viết toàn bộ báo cáo.
