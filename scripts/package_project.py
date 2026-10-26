@@ -75,9 +75,10 @@ def main():
     (output / 'Playable/Client/server.txt').write_text('127.0.0.1:7777\n', encoding='ascii')
     report = output / 'Report'
     report.mkdir()
-    for filename in ('REPORT_DRAFT.md', 'FINAL_VALIDATION.md', 'EXPERIMENTS_FINAL.md', 'AUDIO_CREDITS.md', 'ASSET_CREDITS.md'):
+    for filename in ('REPORT.md', 'FINAL_VALIDATION.md', 'EXPERIMENTS_FINAL.md', 'AUDIO_CREDITS.md', 'ASSET_CREDITS.md'):
         shutil.copy2(root / 'docs' / filename, report / filename)
     shutil.copytree(root / 'docs/validation', report / 'validation')
+    shutil.copytree(root / 'docs/images', report / 'images')
     experiment_doc = report / 'EXPERIMENTS_FINAL.md'
     experiment_doc.write_text(experiment_doc.read_text(encoding='utf-8')
         .replace('../experiments/final-2026-10-22-v2/', 'measurements/')

@@ -332,12 +332,17 @@ class ConnectionTest {
         assertEquals(1, server.rooms.size());
     }
 
-    @Test void twoSearchingPlayersAreMatchedImmediatelyAndStartWithoutReady() throws Exception {
+    @Test void twoSearchingPlayersWaitForCountdownThenStartWithoutReady() throws Exception {
         Peer a = searching("QUICK");
         Peer b = searching("QUICK");
-        assertEquals(2, a.until("MATCHMAKING").get("waiting").getAsInt());
-        long now = System.currentTimeMillis();
-        server.matchmake(now);
+        JsonObject queued = a.until("MATCHMAKING");
+        assertEquals(2, queued.get("waiting").getAsInt());
+        assertEquals(GameRules.MATCH_MAX_PLAYERS, queued.get("maxPlayers").getAsInt());
+        long startsIn = queued.get("startsInMs").getAsLong();
+        assertTrue(startsIn > 0 && startsIn <= GameRules.MATCH_WAIT_MS);
+        server.matchmake(System.currentTimeMillis());
+        assertTrue(server.rooms.isEmpty(), "A group smaller than a full lobby waits for the countdown");
+        server.matchmake(afterWait());
         for (Peer peer : List.of(a, b)) {
             JsonObject found = peer.until("MATCH_FOUND");
             assertEquals("QUICK", found.get("mode").getAsString());
@@ -359,6 +364,21 @@ class ConnectionTest {
         for (Peer peer : quick) assertSame(room, peer.player.room);
         assertNull(journey.player.room);
         assertEquals(GameMode.JOURNEY, server.matchmaker.modeOf(journey.player));
+    }
+
+    @Test void countdownStartsWhenTheSecondPlayerJoinsAndExtraPlayersKeepWaiting() throws Exception {
+        Peer first = searching("QUICK");
+        assertEquals(-1, server.matchmaker.startsInMs(GameMode.QUICK, System.currentTimeMillis()), "Alone: no countdown");
+        long joinedAt = System.currentTimeMillis();
+        List<Peer> quick = new ArrayList<>(List.of(first));
+        for (int i = 1; i <= GameRules.MATCH_MAX_PLAYERS; i++) quick.add(searching("QUICK"));
+        server.matchmake(joinedAt + GameRules.MATCH_WAIT_MS - 1_000);
+        assertEquals(1, server.rooms.size(), "Four players start at once without waiting");
+        Peer extra = quick.get(GameRules.MATCH_MAX_PLAYERS);
+        assertNull(extra.player.room);
+        assertEquals(GameMode.QUICK, server.matchmaker.modeOf(extra.player));
+        server.matchmake(afterWait());
+        assertNull(extra.player.room, "One player never starts a match");
     }
 
     @Test void searchingBlocksRoomsAndCancelOrDisconnectLeavesQueue() throws Exception {
@@ -517,7 +537,7 @@ class ConnectionTest {
 
     @Test void selectedMatchCanBeCancelledAndCannotOverrideNewMode() throws Exception {
         Peer a = searching("QUICK"), b = searching("QUICK"), c = searching("QUICK");
-        var selected = server.matchmaker.takeMatches(1000).get(0);
+        var selected = server.matchmaker.takeMatches(afterWait()).get(0);
         a.send("type", "FIND_MATCH", "seq", 2, "mode", "JOURNEY");
         assertEquals("ALREADY_SEARCHING", a.until("ERROR").get("code").getAsString());
         a.until("ACK");
@@ -532,14 +552,14 @@ class ConnectionTest {
         assertEquals(GameRoom.Phase.PLAYING, b.player.room.phase);
         assertEquals(GameMode.QUICK, b.player.room.mode);
         Peer d = searching("JOURNEY");
-        server.matchmake(System.currentTimeMillis());
+        server.matchmake(afterWait());
         assertSame(a.player.room, d.player.room);
         assertEquals(GameMode.JOURNEY, a.player.room.mode);
     }
 
     @Test void cancelledReplacementDoesNotGetSeatedOrRequeuedByOldMatch() throws Exception {
         Peer a = searching("QUICK"), b = searching("QUICK");
-        var selected = server.matchmaker.takeMatches(1000).get(0);
+        var selected = server.matchmaker.takeMatches(afterWait()).get(0);
         a.request("type", "CANCEL_MATCH", "seq", 2);
         a.request("type", "FIND_MATCH", "seq", 3, "mode", "JOURNEY");
         a.request("type", "CANCEL_MATCH", "seq", 4);
@@ -550,19 +570,19 @@ class ConnectionTest {
         assertEquals(GameMode.QUICK, server.matchmaker.modeOf(b.player));
         assertTrue(server.rooms.isEmpty(), "Incomplete group must not publish a temporary room");
         Peer c = searching("QUICK");
-        server.matchmake(System.currentTimeMillis());
+        server.matchmake(afterWait());
         assertSame(b.player.room, c.player.room);
         assertNull(a.player.room);
     }
 
     @Test void sameModeReplacementHasANewTicketAndFallbackKeepsFifo() throws Exception {
         Peer a = searching("QUICK"), b = searching("QUICK");
-        var selected = server.matchmaker.takeMatches(1000).get(0);
+        var selected = server.matchmaker.takeMatches(afterWait()).get(0);
         a.request("type", "CANCEL_MATCH", "seq", 2);
         a.request("type", "FIND_MATCH", "seq", 3, "mode", "QUICK");
         server.formMatch(selected, 1000);
         assertTrue(server.rooms.isEmpty());
-        var replacement = server.matchmaker.takeMatches(1000).get(0);
+        var replacement = server.matchmaker.takeMatches(afterWait()).get(0);
         assertEquals(List.of(b.player, a.player), replacement.players());
         server.formMatch(replacement, System.currentTimeMillis());
         assertSame(a.player.room, b.player.room);
@@ -571,7 +591,7 @@ class ConnectionTest {
 
     @Test void disconnectDuringSelectionDoesNotRequeueExpiredTicket() throws Exception {
         Peer a = searching("QUICK"), b = searching("QUICK");
-        var selected = server.matchmaker.takeMatches(1000).get(0);
+        var selected = server.matchmaker.takeMatches(afterWait()).get(0);
         a.disconnect();
         server.formMatch(selected, 1000);
         assertNull(server.matchmaker.modeOf(a.player));
@@ -582,7 +602,7 @@ class ConnectionTest {
     @Test void concurrentCancelAndCommitHaveOneOutcomeWithoutDeadlock() throws Exception {
         for (int attempt = 0; attempt < 12; attempt++) {
             Peer a = searching("QUICK"), b = searching("QUICK");
-            var selected = server.matchmaker.takeMatches(1000).get(0);
+            var selected = server.matchmaker.takeMatches(afterWait()).get(0);
             var forming = server.gameLoop.submit(() -> server.formMatch(selected, System.currentTimeMillis()));
             a.send("type", "CANCEL_MATCH", "seq", 2);
             forming.get(5, TimeUnit.SECONDS);
@@ -684,6 +704,9 @@ class ConnectionTest {
         opponent.request("type", "READY", "seq", 2, "ready", true);
         return opponent;
     }
+
+    /** A game-loop time at which every ticket queued so far has finished its countdown. */
+    private static long afterWait() { return System.currentTimeMillis() + GameRules.MATCH_WAIT_MS; }
 
     private Peer searching(String mode) throws Exception {
         Peer peer = hello();

@@ -3,8 +3,10 @@ package bombmebaby;
 final class GameRules {
     static final int MAX_PLAYERS = 10;
     static final int MIN_PLAYERS = 2;
-    // Matchmaking starts immediately once MIN_PLAYERS are waiting in the same mode.
+    // Matchmaking starts at once with MATCH_MAX_PLAYERS; a smaller group of at least
+    // MIN_PLAYERS starts once its oldest ticket has waited MATCH_WAIT_MS.
     static final int MATCH_MAX_PLAYERS = 4;
+    static final long MATCH_WAIT_MS = 15_000;
     static final double ENERGY_SIZE_VALUE = 0.12;
     static final int MAX_EXPLOSION_ENERGY_DROPS = 12;
     static final int INITIAL_ORBS = 110;

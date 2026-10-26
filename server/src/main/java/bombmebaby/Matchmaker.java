@@ -11,7 +11,7 @@ import java.util.Map;
  * while holding it, so it adds no edge to the player -> room lock order.
  */
 final class Matchmaker {
-    record Ticket(PlayerState player, GameMode mode, long generation) {}
+    record Ticket(PlayerState player, GameMode mode, long generation, long queuedAt) {}
     record Match(GameMode mode, List<Ticket> tickets) {
         List<PlayerState> players() { return tickets.stream().map(Ticket::player).toList(); }
     }
@@ -22,9 +22,9 @@ final class Matchmaker {
     private long generation;
 
     /** Queues the player; returns everyone now waiting for that mode, or null if already queued. */
-    synchronized List<PlayerState> enqueue(PlayerState player, GameMode mode) {
+    synchronized List<PlayerState> enqueue(PlayerState player, GameMode mode, long now) {
         if (modeOf(player) != null) return null;
-        Ticket ticket = new Ticket(player, mode, ++generation);
+        Ticket ticket = new Ticket(player, mode, ++generation, now);
         requests.put(player, ticket);
         queues.computeIfAbsent(mode, m -> new ArrayList<>()).add(ticket);
         return waiting(mode);
@@ -53,6 +53,21 @@ final class Matchmaker {
         return ticket == null ? null : ticket.mode();
     }
 
+    /** Milliseconds until the head group starts without a full lobby, or -1 while fewer than MIN_PLAYERS wait. */
+    synchronized long startsInMs(GameMode mode, long now) {
+        List<Ticket> queue = queues.get(mode);
+        if (queue == null || queue.size() < GameRules.MIN_PLAYERS) return -1;
+        return Math.max(0, startDeadline(queue) - now);
+    }
+
+    /**
+     * The countdown runs from the moment a minimum group first existed, so a player who waited
+     * alone does not make the next arrival start instantly. Requeued tickets keep their time.
+     */
+    private static long startDeadline(List<Ticket> queue) {
+        return queue.get(GameRules.MIN_PLAYERS - 1).queuedAt() + GameRules.MATCH_WAIT_MS;
+    }
+
     /** Removes the player; returns who is left waiting for that mode, or null if not queued. */
     synchronized List<PlayerState> remove(PlayerState player) {
         Ticket ticket = requests.remove(player);
@@ -65,7 +80,7 @@ final class Matchmaker {
         return queues.get(mode).stream().map(Ticket::player).toList();
     }
 
-    /** Start as soon as the minimum group exists; finding a match must never look stuck. */
+    /** Full groups start at once; a smaller group starts once its countdown has run out. */
     synchronized List<Match> takeMatches(long now) {
         List<Match> matches = new ArrayList<>();
         for (var entry : queues.entrySet()) {
@@ -77,10 +92,10 @@ final class Matchmaker {
                 complete(ticket);
                 return true;
             });
-            while (queue.size() >= GameRules.MIN_PLAYERS) {
-                int count = Math.min(GameRules.MATCH_MAX_PLAYERS, queue.size());
-                matches.add(take(mode, queue, count));
-            }
+            while (queue.size() >= GameRules.MATCH_MAX_PLAYERS)
+                matches.add(take(mode, queue, GameRules.MATCH_MAX_PLAYERS));
+            if (queue.size() >= GameRules.MIN_PLAYERS && now >= startDeadline(queue))
+                matches.add(take(mode, queue, queue.size()));
         }
         return matches;
     }

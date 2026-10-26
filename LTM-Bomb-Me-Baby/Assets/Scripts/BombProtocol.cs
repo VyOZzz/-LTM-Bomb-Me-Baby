@@ -73,6 +73,7 @@ using System;
     public int waiting;
     public int minPlayers;
     public int maxPlayers;
+    public long startsInMs = -1;    // MATCHMAKING: countdown to a start without a full lobby; -1 = none
 }
 
 /// Journey shard objective in STATE_UPDATE. JsonUtility never leaves it null, so an empty

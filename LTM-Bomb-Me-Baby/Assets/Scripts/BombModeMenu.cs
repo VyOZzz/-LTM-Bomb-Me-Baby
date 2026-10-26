@@ -39,8 +39,9 @@ sealed class BombModeMenu {
     int selected;
     // Matchmaking state as last reported by the server (MATCHMAKING messages).
     bool searching;
-    int waiting, minPlayers = 2;
+    int waiting, minPlayers = 2, maxPlayers = 4;
     float searchStartedAt;
+    float startsAt = -1;   // local time the server will start a smaller group; -1 while fewer than minPlayers wait
     Vector2 lastMouse;
     // Layout is in virtual units scaled by GUI.matrix; text is drawn unscaled with
     // font sizes multiplied by s, because IMGUI stretches glyph bitmaps and blurs them.
@@ -60,11 +61,14 @@ sealed class BombModeMenu {
         return true;
     }
 
-    public void ShowSearch(string mode, int waitingPlayers, int requiredPlayers) {
+    public void ShowSearch(string mode, int waitingPlayers, int requiredPlayers, int fullPlayers, long startsInMs) {
         if (!searching) searchStartedAt = Time.unscaledTime;
         searching = true;
         waiting = waitingPlayers;
         if (requiredPlayers > 0) minPlayers = requiredPlayers;
+        if (fullPlayers > 0) maxPlayers = fullPlayers;
+        // Relative to now: the server and this machine do not share a clock.
+        startsAt = startsInMs >= 0 ? Time.unscaledTime + startsInMs / 1000f : -1;
         for (int i = 0; i < cards.Length; i++) if (cards[i].mode == mode) selected = i;
         roomStep = true;
     }
@@ -196,16 +200,17 @@ sealed class BombModeMenu {
             Fill(Centered(beacon, 12), card.accent, Circle);
             Label(new Rect(create.x + 28, create.y + 26, create.width - 56, 18), $"ĐANG TÌM  •  {seconds / 60}:{seconds % 60:00}", tagStyle);
             Label(new Rect(create.x + 28, create.y + 48, create.width - 56, 40), "ĐANG TÌM TRẬN" + dots, cardTitle);
-            Label(new Rect(create.x + 28, create.y + 96, create.width - 56, 80), waiting >= minPlayers
-                ? $"Đã có {waiting} người. Trận sẽ bắt đầu sau vài giây, chờ thêm người vào cùng."
-                : $"{waiting}/{minPlayers} người đang chờ chế độ này. Cần ít nhất {minPlayers} người để bắt đầu.", bodyText);
-            Bar(new Rect(button.x, button.y - 20, button.width, 8), waiting / (float)Mathf.Max(1, minPlayers), card.accent);
+            int startsIn = Mathf.CeilToInt(Mathf.Max(0, startsAt - Time.unscaledTime));
+            Label(new Rect(create.x + 28, create.y + 96, create.width - 56, 80), startsAt >= 0
+                ? $"{waiting}/{maxPlayers} người. Đủ {maxPlayers} người là vào ngay, nếu không trận bắt đầu sau {startsIn} giây."
+                : $"{waiting}/{maxPlayers} người đang chờ chế độ này. Cần ít nhất {minPlayers} người để bắt đầu đếm ngược.", bodyText);
+            Bar(new Rect(button.x, button.y - 20, button.width, 8), waiting / (float)Mathf.Max(1, maxPlayers), card.accent);
             if (BigButton(button, "HỦY TÌM", PanelRaised, Danger, true, "Rời hàng chờ")) choice = Choice.CancelMatch;
         } else {
             Label(new Rect(create.x + 28, create.y + 26, create.width - 56, 18), "GHÉP NGẪU NHIÊN", tagStyle);
             Label(new Rect(create.x + 28, create.y + 48, create.width - 56, 40), "TÌM TRẬN", cardTitle);
             Label(new Rect(create.x + 28, create.y + 96, create.width - 56, 80),
-                "Ghép với người chơi khác cũng đang tìm chế độ này. Đủ người là vào trận ngay.", bodyText);
+                "Ghép với người chơi khác cũng đang tìm chế độ này. Đủ người là vào ngay; ít người hơn thì chờ đếm ngược rồi bắt đầu.", bodyText);
             Rect privateButton = new Rect(button.x, button.y - 66, button.width, 50);
             if (BigButton(privateButton, "TẠO PHÒNG RIÊNG", PanelRaised, Text, true,
                     "Bạn bè vào bằng mã; người tìm trận ngẫu nhiên không vào phòng này"))
