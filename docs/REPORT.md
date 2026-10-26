@@ -17,9 +17,9 @@
 
 Trong game hành động nhiều người, mọi máy phải thấy cùng một trận đấu dù độ trễ mỗi máy khác nhau và kết nối có thể đứt bất kỳ lúc nào. Nếu client tự tính vị trí, máu và sát thương thì trạng thái giữa các máy dễ lệch nhau và người chơi dễ gian lận. Nếu server gửi toàn bộ trạng thái cho mọi người ở mỗi lần cập nhật thì lượng dữ liệu tăng theo số người chơi, đồng thời client biết cả vị trí của đối thủ đang ẩn nấp.
 
-Nhóm xây dựng **Bomb Me Baby**, một game đấu trường PvP 2.5D gồm Java server và Unity client giao tiếp qua TCP. Server giữ quyền quyết định toàn bộ luật chơi (server-authoritative). Client chỉ gửi ý định điều khiển và hiển thị trạng thái nhận về. Giao thức là JSON theo dòng, có số thứ tự `seq` để chống request trùng, heartbeat, timeout và cơ chế reconnect bằng resume token. Server mô phỏng ở 20 Hz và gửi snapshot ở 10 Hz. Đóng góp chính là cơ chế **đồng bộ trạng thái chọn lọc**: hình học bản đồ chỉ gửi một lần, vật phẩm và đối thủ chỉ được gửi khi người xem được phép thấy.
+Nhóm xây dựng **Bomb Me Baby**, một game đấu trường PvP 2.5D gồm Java server và Unity client giao tiếp qua TCP. Server giữ quyền quyết định toàn bộ luật chơi (server-authoritative). Client chỉ gửi ý định điều khiển và hiển thị trạng thái nhận về. Giao thức là JSON theo dòng, có số thứ tự `seq` để chống request trùng, heartbeat, timeout và cơ chế reconnect bằng resume token. Server mô phỏng ở 20 Hz và gửi snapshot ở 10 Hz. Đóng góp chính là cơ chế **đồng bộ trạng thái chọn lọc**: hình học bản đồ chỉ gửi một lần, vật phẩm và đối thủ chỉ được gửi khi người xem được phép thấy. Ngoài ra, hệ thống phục hồi phiên chơi sau mất kết nối mà vẫn giữ đúng thứ tự vòng đời trận, và dùng thứ tự khóa cố định cùng hàng đợi ghi riêng cho từng client để một client chậm không làm chậm cả phòng.
 
-Trên loopback với 2, 4 và 8 client giả lập (18 lượt × 30 giây, không có lỗi kết nối), chế độ chọn lọc giảm **62,0–77,8%** số byte mỗi client nhận trong một giây so với baseline gửi đầy đủ. Bộ 115 test JUnit bao phủ kết nối, reconnect, ghép trận và luật chơi ở cả hai chế độ đồng bộ.
+Trên loopback với 2, 4 và 8 client giả lập (18 lượt × 30 giây, không có lỗi kết nối), chế độ chọn lọc giảm **62,0–77,8%** số byte mỗi client nhận trong một giây so với baseline gửi đầy đủ, trong khi RTT không tăng một cách đo được. Bộ 115 test JUnit bao phủ kết nối, reconnect, ghép trận và luật chơi ở cả hai chế độ đồng bộ.
 
 ## 2. Keywords
 
@@ -160,7 +160,7 @@ Với mỗi người xem `v` trong phòng, ở mỗi chu kỳ snapshot:
 
 ![Kiến trúc hệ thống Bomb Me Baby](images/architecture.png)
 
-*Hình 1. Kiến trúc hệ thống.* Mỗi Unity client giữ một kết nối TCP với server. Trên server, luồng đọc của từng kết nối chuyển request vào `GameRoom` dưới khóa phòng; game loop 20 Hz cập nhật trạng thái, tạo snapshot riêng cho từng người xem theo `SyncMode` rồi đưa vào hàng đợi ghi của từng `Connection`.
+*Hình 1. Kiến trúc hệ thống.* Sơ đồ triển khai (deployment diagram) UML. Mỗi Unity client giữ một kết nối TCP với server. Trên server, luồng đọc của từng kết nối chuyển request vào `GameRoom` dưới khóa phòng; game loop 20 Hz cập nhật trạng thái, tạo snapshot riêng cho từng người xem theo `SyncMode` rồi đưa vào hàng đợi ghi của từng `Connection`.
 
 ### 7.2. Thành phần
 
@@ -178,7 +178,7 @@ Với mỗi người xem `v` trong phòng, ở mỗi chu kỳ snapshot:
 
 ![Luồng một lần cập nhật từ client tới server và ngược lại](images/flow.png)
 
-*Hình 2. Luồng một lần cập nhật.* Bước 1–3 chạy ở client, bước 4–8 ở server, bước 9–11 quay lại client. Màu của mỗi ô cho biết bước đó chạy trên luồng nào.
+*Hình 2. Luồng một lần cập nhật.* Sơ đồ hoạt động (activity diagram) UML chia hai làn: Unity client và Java server. Bước 1–3 chạy ở client, bước 4–8 ở server, bước 9–11 quay lại client; số trong mỗi hành động ứng với số bước trong phần giải thích dưới đây.
 
 **Chiều lên, từ client tới server.** Ở mỗi khung hình, `BombGame.Update()` trên main thread của Unity đọc phím và dự đoán ngay vị trí nhân vật của chính mình, để người chơi không phải chờ server mới thấy nhân vật chạy (bước 1). Hướng di chuyển được gửi bằng `MOVE` mỗi 40 ms. `Send()` gán `seq` tăng dần rồi đưa JSON vào outbox (bước 2). Luồng ghi nền của `BombNetwork` lấy message khỏi outbox và ghi thành một dòng vào socket, nên main thread không bị chặn bởi I/O mạng (bước 3).
 
@@ -238,7 +238,7 @@ Trừ `HELLO` và `PING`, mọi request phải có `seq` lớn hơn mọi `seq` 
 
 ![Trình tự message trong một trận phòng riêng](images/sequence.png)
 
-*Hình 3. Trình tự message của một trận phòng riêng.* Chấm tròn trên đường của server nghĩa là message được gửi cho cả hai client. Riêng `STATE_UPDATE` có nội dung khác nhau cho từng người xem.
+*Hình 3. Trình tự message của một trận phòng riêng.* Sơ đồ tuần tự (sequence diagram) UML. Mũi tên nét liền là message gửi chủ động, mũi tên nét đứt là phản hồi cho một request. `STATE_UPDATE` gửi cho A và cho B có nội dung khác nhau.
 
 Trong trận, client gửi `MOVE` mỗi 40 ms và `PING` mỗi 2 giây. Server trả `ACK` cho mọi request có `seq` và gửi snapshot mỗi 100 ms, độc lập với nhịp gửi của client. Với ghép trận, client gửi `FIND_MATCH`. Khi đủ ít nhất hai người cùng chế độ, server ghép ở tick kế tiếp, gửi `MATCH_FOUND`, `ROOM_STATE` rồi `GAME_START` mà không cần `READY`.
 
