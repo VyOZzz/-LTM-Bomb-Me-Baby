@@ -69,7 +69,7 @@ class Bot(threading.Thread):
         reader = self.sock.makefile("r", encoding="utf-8")
         self.seq = 0
         self.ready = False
-        self.send("HELLO", name=self.name_, resumeToken="")
+        self.send("HELLO", protocolVersion=1, name=self.name_, resumeToken="")
         threading.Thread(target=self.act_loop, daemon=True).start()
         try:
             for line in reader:

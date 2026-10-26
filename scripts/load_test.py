@@ -47,7 +47,7 @@ class Client:
         self.seq = 0
         self.geometry_in_snapshot = None  # True: baseline snapshots carry obstacles/bushes
         self.send_lock = threading.Lock()
-        self.send("HELLO", name=f"Load {index}", resumeToken="")
+        self.send("HELLO", protocolVersion=1, name=f"Load {index}", resumeToken="")
         self.until("WELCOME")
 
     def send(self, kind, **data):

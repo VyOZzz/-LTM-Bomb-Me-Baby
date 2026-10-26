@@ -16,7 +16,7 @@ class Client:
         self.file = self.sock.makefile("r", encoding="utf-8")
         self.seq = 0
 
-        self.send("HELLO", name=name)
+        self.send("HELLO", protocolVersion=1, name=name)
         self.until("WELCOME")
 
     def send(self, kind, **data):

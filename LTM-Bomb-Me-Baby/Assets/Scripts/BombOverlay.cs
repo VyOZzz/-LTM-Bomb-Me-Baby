@@ -6,7 +6,7 @@ using static BombUi;
 /// Every page also works from the keyboard: Up/Down (or Tab) move the highlight, Left/Right change
 /// the highlighted value, Enter activates it or, on a slider, the page's main button.
 sealed class BombOverlay {
-    public enum Page { None, Pause, Settings, ConfirmLeave, Help }
+    public enum Page { None, Pause, Settings, ConfirmLeave, Help, VersionMismatch }
     public enum Action { None, LeaveRoom, QuitGame }
 
     // Keys mirror BombGame.Update/HandleInput; keep both in sync when controls change.
@@ -32,6 +32,7 @@ sealed class BombOverlay {
 
     Page page;
     Page settingsBack;
+    int serverVersion;
     float u = 1, stylesScale;
     float openedAt, pageChangedAt;
     // Keyboard focus: highlighted item on the page and how many items the last pass drew.
@@ -47,6 +48,12 @@ sealed class BombOverlay {
 
     public void OpenPause() => Go(Page.Pause);
 
+    /// Terminal: an outdated build cannot play on this server, so Esc never closes it.
+    public void OpenVersionMismatch(int serverVersion) {
+        this.serverVersion = serverVersion;
+        Go(Page.VersionMismatch);
+    }
+
     public void OpenSettings() {
         settingsBack = page;
         Go(Page.Settings);
@@ -54,6 +61,7 @@ sealed class BombOverlay {
 
     /// Esc: step back one level, closing the overlay from its first page.
     public void Back() {
+        if (page == Page.VersionMismatch) return;
         if (page == Page.Settings) {
             BombSettings.Save();
             Go(settingsBack);
@@ -103,6 +111,7 @@ sealed class BombOverlay {
             case Page.Settings: DrawSettings(); break;
             case Page.ConfirmLeave: result = DrawConfirm(); break;
             case Page.Help: DrawHelp(); break;
+            case Page.VersionMismatch: result = DrawVersionMismatch(); break;
         }
         if (page == drawn) {
             itemCount = nextItem;
@@ -174,6 +183,20 @@ sealed class BombOverlay {
         // Staying is first so Enter never drops a player out of a match by accident.
         if (Button(stay, "Ở LẠI", Secondary, Text)) Go(Page.Pause);
         if (Button(leave, "RỜI TRẬN", Danger, Night)) { Go(Page.None); return Action.LeaveRoom; }
+        return Action.None;
+    }
+
+    Action DrawVersionMismatch() {
+        Rect card = Card(520, 300, Danger);
+        GUI.Label(Row(card, 26, 44), "CẦN CẬP NHẬT", title);
+        GUI.Label(Row(card, 74, 72, 32),
+            "Phiên bản game hiện tại không tương thích với phiên bản máy chủ. "
+            + "Vui lòng cập nhật lên phiên bản mới nhất để tiếp tục chơi.", subtitle);
+        GUI.Label(Row(card, 150, 24, 32),
+            $"Phiên bản của bạn: {BombNetwork.ProtocolVersion}   •   Máy chủ: {serverVersion}", subtitle);
+        TitleRule(card, 188);
+        Rect quit = new Rect(card.x + S(28), card.y + S(212), card.width - S(56), S(54));
+        if (Button(quit, "THOÁT GAME", Danger, Night)) return Action.QuitGame;
         return Action.None;
     }
 

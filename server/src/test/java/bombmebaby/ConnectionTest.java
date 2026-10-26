@@ -37,9 +37,21 @@ class ConnectionTest {
         assertTrue(server.rooms.isEmpty());
     }
 
+    @Test void mismatchedOrMissingProtocolVersionIsRejected() throws Exception {
+        Peer outdated = connect();
+        outdated.send("type", "HELLO", "protocolVersion", BombServer.PROTOCOL_VERSION - 1, "name", "Old");
+        JsonObject error = outdated.until("ERROR");
+        assertEquals("VERSION_MISMATCH", error.get("code").getAsString());
+        assertEquals(BombServer.PROTOCOL_VERSION, error.get("serverVersion").getAsInt());
+        Peer unversioned = connect();
+        unversioned.send("type", "HELLO", "name", "Legacy");
+        assertEquals("VERSION_MISMATCH", unversioned.until("ERROR").get("code").getAsString());
+        assertTrue(server.sessions.isEmpty());
+    }
+
     @Test void unknownTokenFailsWithoutCreatingNewSession() throws Exception {
         Peer peer = connect();
-        peer.send("type", "HELLO", "name", "A", "resumeToken", "missing-token");
+        peer.send("type", "HELLO", "protocolVersion", BombServer.PROTOCOL_VERSION, "name", "A", "resumeToken", "missing-token");
         assertEquals("RESUME_FAILED", peer.until("ERROR").get("code").getAsString());
         assertTrue(server.sessions.isEmpty());
     }
@@ -119,7 +131,7 @@ class ConnectionTest {
         assertFalse(old.player.charging);
         assertSame(room, old.player.room);
         Peer resumed = connect();
-        resumed.send("type", "HELLO", "resumeToken", old.player.resumeToken);
+        resumed.send("type", "HELLO", "protocolVersion", BombServer.PROTOCOL_VERSION, "resumeToken", old.player.resumeToken);
         JsonObject welcome = resumed.read();
         assertEquals("WELCOME", welcome.get("type").getAsString());
         assertEquals(old.player.id, welcome.get("playerId").getAsString());
@@ -147,8 +159,8 @@ class ConnectionTest {
         old.disconnect();
         Peer a = connect(), b = connect();
         CountDownLatch start = new CountDownLatch(1);
-        Future<?> first = server.clients.submit(() -> { start.await(); a.send("type", "HELLO", "resumeToken", old.player.resumeToken); return null; });
-        Future<?> second = server.clients.submit(() -> { start.await(); b.send("type", "HELLO", "resumeToken", old.player.resumeToken); return null; });
+        Future<?> first = server.clients.submit(() -> { start.await(); a.send("type", "HELLO", "protocolVersion", BombServer.PROTOCOL_VERSION, "resumeToken", old.player.resumeToken); return null; });
+        Future<?> second = server.clients.submit(() -> { start.await(); b.send("type", "HELLO", "protocolVersion", BombServer.PROTOCOL_VERSION, "resumeToken", old.player.resumeToken); return null; });
         start.countDown();
         first.get(5, TimeUnit.SECONDS); second.get(5, TimeUnit.SECONDS);
         JsonObject ar = a.read(), br = b.read();
@@ -165,7 +177,7 @@ class ConnectionTest {
 
     @Test void activeSessionCannotBeClaimedAgain() throws Exception {
         Peer active = hello(), other = connect();
-        other.send("type", "HELLO", "resumeToken", active.player.resumeToken);
+        other.send("type", "HELLO", "protocolVersion", BombServer.PROTOCOL_VERSION, "resumeToken", active.player.resumeToken);
         assertEquals("RESUME_FAILED", other.until("ERROR").get("code").getAsString());
         assertSame(active.connection, active.player.connection);
     }
@@ -175,7 +187,7 @@ class ConnectionTest {
         old.disconnect();
         synchronized (old.player) { old.player.disconnectedAt = System.currentTimeMillis() - GameRules.RECONNECT_MS; }
         Peer resumed = connect();
-        resumed.send("type", "HELLO", "resumeToken", old.player.resumeToken);
+        resumed.send("type", "HELLO", "protocolVersion", BombServer.PROTOCOL_VERSION, "resumeToken", old.player.resumeToken);
         assertEquals("RESUME_FAILED", resumed.until("ERROR").get("code").getAsString());
         assertFalse(old.player.connected);
     }
@@ -371,7 +383,7 @@ class ConnectionTest {
         old.request("type", "CREATE_ROOM", "seq", 1);
         old.disconnect();
         Peer resumed = connect();
-        resumed.send("type", "HELLO", "resumeToken", old.player.resumeToken);
+        resumed.send("type", "HELLO", "protocolVersion", BombServer.PROTOCOL_VERSION, "resumeToken", old.player.resumeToken);
         assertFalse(resumed.until("WELCOME").get("hasRoom").getAsBoolean());
         resumed.until("LEFT_ROOM"); resumed.until("ACK");
         resumed.send("type", "LEAVE_ROOM", "seq", 2);
@@ -389,7 +401,7 @@ class ConnectionTest {
             room.update(System.currentTimeMillis(), 0);
         }
         Peer resumed = connect();
-        resumed.send("type", "HELLO", "resumeToken", old.player.resumeToken);
+        resumed.send("type", "HELLO", "protocolVersion", BombServer.PROTOCOL_VERSION, "resumeToken", old.player.resumeToken);
         assertTrue(resumed.until("WELCOME").get("hasRoom").getAsBoolean());
         JsonObject info = resumed.until("ROOM_STATE").getAsJsonObject("room");
         assertEquals(old.player.id, info.get("roundWinnerId").getAsString());
@@ -413,7 +425,7 @@ class ConnectionTest {
             room.update(System.currentTimeMillis(), 0);
         }
         Peer resumed = connect();
-        resumed.send("type", "HELLO", "resumeToken", a.player.resumeToken);
+        resumed.send("type", "HELLO", "protocolVersion", BombServer.PROTOCOL_VERSION, "resumeToken", a.player.resumeToken);
         resumed.until("WELCOME");
         assertEquals(0, resumed.until("ROOM_STATE").getAsJsonObject("room").get("chapterIndex").getAsInt());
         assertEquals(a.player.id, resumed.until("GAME_OVER").get("winnerId").getAsString());
@@ -436,7 +448,7 @@ class ConnectionTest {
         Peer peer = connect();
         peer.writer.println("{broken");
         assertEquals("INVALID_MESSAGE", peer.until("ERROR").get("code").getAsString());
-        peer.send("type", "HELLO", "name", "Recovered");
+        peer.send("type", "HELLO", "protocolVersion", BombServer.PROTOCOL_VERSION, "name", "Recovered");
         peer.until("WELCOME"); peer.until("ACK");
     }
 
@@ -492,7 +504,7 @@ class ConnectionTest {
         assertEquals("INSUFFICIENT_PLAYERS", host.until("JOURNEY_COMPLETE").get("reason").getAsString());
         host.disconnect();
         Peer resumed = connect();
-        resumed.send("type", "HELLO", "resumeToken", host.player.resumeToken);
+        resumed.send("type", "HELLO", "protocolVersion", BombServer.PROTOCOL_VERSION, "resumeToken", host.player.resumeToken);
         resumed.until("WELCOME");
         JsonObject info = resumed.until("ROOM_STATE").getAsJsonObject("room");
         assertTrue(info.get("journeyComplete").getAsBoolean());
@@ -610,7 +622,7 @@ class ConnectionTest {
         newcomer.until("ACK");
         newcomer.disconnect();
         Peer resumed = connect();
-        resumed.send("type", "HELLO", "resumeToken", newcomer.player.resumeToken);
+        resumed.send("type", "HELLO", "protocolVersion", BombServer.PROTOCOL_VERSION, "resumeToken", newcomer.player.resumeToken);
         resumed.until("WELCOME");
         boolean sawRoom = false, sawSnapshot = false;
         for (;;) {
@@ -639,7 +651,7 @@ class ConnectionTest {
 
     private Peer hello() throws Exception {
         Peer peer = connect();
-        peer.send("type", "HELLO", "name", "A");
+        peer.send("type", "HELLO", "protocolVersion", BombServer.PROTOCOL_VERSION, "name", "A");
         JsonObject welcome = peer.until("WELCOME");
         assertEquals("OPTIMIZED", welcome.get("syncMode").getAsString());
         assertTrue(welcome.has("demoMap"));

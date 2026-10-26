@@ -25,6 +25,8 @@ import java.util.concurrent.TimeUnit;
 /** Newline-delimited JSON over persistent TCP. The server owns every gameplay value. */
 public final class BombServer {
     static final Gson JSON = new Gson();
+    /** Bump on any incompatible protocol or rules change; must match BombProtocol.Version in Unity. */
+    static final int PROTOCOL_VERSION = 1;
     final Map<String,GameRoom> rooms = new ConcurrentHashMap<>();
     final Map<String,PlayerState> sessions = new ConcurrentHashMap<>();
     final Set<Connection> connections = ConcurrentHashMap.newKeySet();
@@ -311,6 +313,11 @@ public final class BombServer {
             String type = string(m,"type");
             if (player == null) {
                 if (!"HELLO".equals(type)) { error("HELLO_REQUIRED"); return; }
+                // Builds older than versioning omit the field and are rejected the same way.
+                if (number(m,"protocolVersion",0) != PROTOCOL_VERSION) {
+                    send(GameRoom.data("type","ERROR","code","VERSION_MISMATCH","serverVersion",PROTOCOL_VERSION));
+                    return;
+                }
                 String token = string(m,"resumeToken");
                 PlayerState resumed = token.isEmpty() ? null : sessions.get(token);
                 if (!token.isEmpty()) {
