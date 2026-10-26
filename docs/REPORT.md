@@ -19,7 +19,7 @@ Trong game hành động nhiều người, mọi máy phải thấy cùng một 
 
 Nhóm xây dựng **Bomb Me Baby**, một game đấu trường PvP 2.5D gồm Java server và Unity client giao tiếp qua TCP. Server giữ quyền quyết định toàn bộ luật chơi (server-authoritative). Client chỉ gửi ý định điều khiển và hiển thị trạng thái nhận về. Giao thức là JSON theo dòng, có số thứ tự `seq` để chống request trùng, heartbeat, timeout và cơ chế reconnect bằng resume token. Server mô phỏng ở 20 Hz và gửi snapshot ở 10 Hz. Đóng góp chính là cơ chế **đồng bộ trạng thái chọn lọc**: hình học bản đồ chỉ gửi một lần, vật phẩm và đối thủ chỉ được gửi khi người xem được phép thấy. Ngoài ra, hệ thống phục hồi phiên chơi sau mất kết nối mà vẫn giữ đúng thứ tự vòng đời trận, và dùng thứ tự khóa cố định cùng hàng đợi ghi riêng cho từng client để một client chậm không làm chậm cả phòng.
 
-Trên loopback với 2, 4 và 8 client giả lập (18 lượt × 30 giây, không có lỗi kết nối), chế độ chọn lọc giảm **62,0–77,8%** số byte mỗi client nhận trong một giây so với baseline gửi đầy đủ, trong khi RTT không tăng một cách đo được. Bộ 116 test JUnit bao phủ kết nối, reconnect, ghép trận và luật chơi ở cả hai chế độ đồng bộ.
+Trên loopback với 2, 4 và 8 client giả lập (18 lượt × 30 giây, không có lỗi kết nối), chế độ chọn lọc giảm **62,0–77,8%** số byte mỗi client nhận trong một giây so với baseline gửi đầy đủ, trong khi RTT không tăng một cách đo được. Bộ 117 test JUnit bao phủ kết nối, reconnect, ghép trận và luật chơi ở cả hai chế độ đồng bộ.
 
 ## 2. Keywords
 
@@ -73,7 +73,7 @@ Thiết kế và triển khai một hệ thống client/server cho game đấu t
 
 **Interest management.** Nhiều game chỉ gửi cho mỗi người các thực thể nằm trong vùng quan tâm của họ. Hạn chế của cách gửi đầy đủ là kích thước snapshot tăng theo tổng số thực thể và client biết cả những gì nhân vật không nhìn thấy. Dự án áp dụng ý tưởng này ở mức đơn giản: lọc theo khoảng cách nhìn và bụi. Nhóm không tuyên bố phát minh ra interest management.
 
-**Serialization.** Server dùng Gson [5], client dùng Newtonsoft.Json trong Unity [3]. JSON dễ đọc và dễ debug nhưng tốn byte hơn binary. Đây là đánh đổi có chủ đích cho phạm vi đồ án.
+**Serialization.** Server dùng Gson [5], client dùng `JsonUtility` có sẵn trong Unity [3]. JSON dễ đọc và dễ debug nhưng tốn byte hơn binary. Đây là đánh đổi có chủ đích cho phạm vi đồ án.
 
 ---
 
@@ -92,7 +92,7 @@ Server gửi về: `WELCOME`, `ROOM_STATE`, `MATCHMAKING`, `MATCH_FOUND`, `GAME_
 | Ràng buộc | Giá trị |
 | --- | --- |
 | Số người mỗi phòng riêng | 2–10 |
-| Số người mỗi nhóm ghép trận | 2–4 |
+| Số người mỗi nhóm ghép trận | 2–4 (đủ 4 người thì vào ngay, 2–3 người chờ 15 giây) |
 | Số kết nối đồng thời | Tối đa 64 |
 | Độ dài một frame | Tối đa 2048 ký tự |
 | Cửa sổ reconnect | 10 giây |
@@ -169,7 +169,7 @@ Với mỗi người xem `v` trong phòng, ở mỗi chu kỳ snapshot:
 | Network layer phía client | `BombNetwork.cs` | Socket TCP, luồng ghi nền, inbox giới hạn, heartbeat, tự reconnect |
 | Network layer phía server | `BombServer.java` | Lắng nghe cổng, đọc frame, kiểm tra `seq`, điều phối request, quản lý phiên |
 | Processing | `GameRoom.java`, `ShardObjective.java`, `GameRules.java` | Mô phỏng trận, luật chiến đấu, mục tiêu Hành trình |
-| Service | `Matchmaker.java` | Hàng đợi tìm trận theo chế độ, ghép 2–4 người |
+| Service | `Matchmaker.java` | Hàng đợi tìm trận theo chế độ: đủ 4 người thì vào ngay, nhóm 2–3 người vào sau 15 giây đếm ngược |
 | Đồng bộ | `SyncMode.java` | Chọn `BASELINE` hoặc `OPTIMIZED` |
 | Database | Không có | Trạng thái nằm trong bộ nhớ (xem mục 6.4) |
 
@@ -240,7 +240,7 @@ Nguyên tắc chung là server luôn đúng. Client chỉ đoán trước vị t
 
 *Hình 3. Trình tự message của một trận phòng riêng.* Sơ đồ tuần tự (sequence diagram) UML. Mũi tên nét liền là message gửi chủ động, mũi tên nét đứt là phản hồi cho một request. `STATE_UPDATE` gửi cho A và cho B có nội dung khác nhau.
 
-Trong trận, client gửi `MOVE` mỗi 40 ms và `PING` mỗi 2 giây. Server trả `ACK` cho mọi request có `seq` và gửi snapshot mỗi 100 ms, độc lập với nhịp gửi của client. Với ghép trận, client gửi `FIND_MATCH`. Khi đủ ít nhất hai người cùng chế độ, server ghép ở tick kế tiếp, gửi `MATCH_FOUND`, `ROOM_STATE` rồi `GAME_START` mà không cần `READY`.
+Trong trận, client gửi `MOVE` mỗi 40 ms và `PING` mỗi 2 giây. Server trả `ACK` cho mọi request có `seq` và gửi snapshot mỗi 100 ms, độc lập với nhịp gửi của client. Với ghép trận, client gửi `FIND_MATCH`. Khi đủ 4 người cùng chế độ, server ghép ngay ở tick kế tiếp. Nếu chỉ có 2–3 người, server bắt đầu đếm ngược 15 giây từ lúc người thứ hai vào hàng chờ và báo thời gian còn lại qua trường `startsInMs` của `MATCHMAKING`; hết giờ thì ghép nhóm đó. Sau khi ghép, server gửi `MATCH_FOUND`, `ROOM_STATE` rồi `GAME_START` mà không cần `READY`.
 
 ### 8.4. Reconnect
 
@@ -322,7 +322,7 @@ Mô hình 3D, giao diện, hiệu ứng hạt và phần lớn hiệu ứng âm 
 | Phần cứng | 13th Gen Intel Core i9-13900H, RAM 16 GB |
 | Hệ điều hành | Windows 11 Home Single Language (build 26200) |
 | Ngôn ngữ, công cụ | Java 26.0.2 (target Java 17), Maven 3.9.9, Python 3.13.14 |
-| Mã nguồn đo | Commit `c35616f` (bản ngày 25/10), đo ngày 25/10/2026. Bản cuối chỉ thêm kiểm tra phiên bản ở `HELLO`, chạy một lần lúc kết nối nên không ảnh hưởng số đo |
+| Mã nguồn đo | Commit `c35616f` (bản ngày 25/10), đo ngày 25/10/2026. Bản cuối chỉ thêm kiểm tra phiên bản ở `HELLO` và đếm ngược khi ghép trận; cả hai xảy ra trước `GAME_START`, còn benchmark vào trận bằng phòng riêng, nên không ảnh hưởng số đo |
 | Thư viện | Gson 2.11 [5], JUnit 5 [6]; client giả lập chỉ dùng thư viện chuẩn Python |
 | Mạng | Loopback `127.0.0.1:17777` |
 | Bản đồ, chế độ | `meadow` cố định, Đấu nhanh |
@@ -342,7 +342,7 @@ Mô hình 3D, giao diện, hiệu ứng hạt và phần lớn hiệu ứng âm 
 
 Số byte tính theo JSON UTF-8 cộng newline, không gồm overhead TCP/IP. Fingerprint SHA-256 của mã nguồn Java và `pom.xml` lúc đo là `f6a56e39675794c4dd6fa6bb740986625c2087e5cb1e37ceb9f32fbb9052b087`. Dữ liệu thô nằm trong `experiments/final-2026-10-25/`. Một lần đo trước đó (22/10, máy i7-11800H, bản code trước các thay đổi gameplay 23–25/10) được giữ ở `experiments/final-2026-10-22-v2/` để đối chứng.
 
-**Kiểm thử chức năng:** 116 test JUnit 5 [6] trong 9 lớp test (`ConnectionTest`, `GameRoomTest`, `ServerFixesTest`, `ReviewFixesTest`, `ShardStealMechanicsTest`, `ShardObjectiveTest`, `CompletionRegressionTest`, `RequestedGameplayRulesTest`, `ShardCarrierActionTest`). Bộ test chạy được ở cả hai chế độ đồng bộ. Ngoài ra có smoke test TCP thật (`scripts/network_smoke.py`), bot (`scripts/bots.py`) và harness kiểm tra Unity Play Mode (`Assets/Editor/BombValidation.cs`).
+**Kiểm thử chức năng:** 117 test JUnit 5 [6] trong 9 lớp test (`ConnectionTest`, `GameRoomTest`, `ServerFixesTest`, `ReviewFixesTest`, `ShardStealMechanicsTest`, `ShardObjectiveTest`, `CompletionRegressionTest`, `RequestedGameplayRulesTest`, `ShardCarrierActionTest`). Bộ test chạy được ở cả hai chế độ đồng bộ. Ngoài ra có smoke test TCP thật (`scripts/network_smoke.py`), bot (`scripts/bots.py`) và harness kiểm tra Unity Play Mode (`Assets/Editor/BombValidation.cs`).
 
 ---
 
@@ -373,7 +373,7 @@ Công thức: `(baseline − optimized) / baseline × 100`. Cột p95 là trung 
 
 | Lớp kiểm tra | Kết quả | Giới hạn |
 | --- | --- | --- |
-| JUnit server | 116/116 test qua ở baseline và 116/116 ở optimized (chạy lại ngày 26/10 trên bản cuối, có kiểm tra phiên bản) | Chạy trên một máy |
+| JUnit server | 117/117 test qua ở baseline và 117/117 ở optimized (chạy lại ngày 26/10 trên bản cuối, có kiểm tra phiên bản và đếm ngược ghép trận) | Chạy trên một máy |
 | Smoke test TCP | 2 client giả lập qua socket thật | Không có rendering |
 | Unity Play Mode | 111 kiểm tra headless qua ngày 24/10 (`docs/FINAL_VALIDATION.md`). Lần chạy lại ngày 25/10 dừng ở bước kiểm tra bản đồ vì bài kiểm tra chưa cập nhật theo cách hiển thị bản đồ mới (mục 14) | Một Unity client cùng peer TCP, chưa phải hai Unity player; chưa có kết quả cho bản cuối |
 | Staging Unity | Kiểm tra bản sao project qua ngày 25/10 | Chỉ kiểm tra việc đồng bộ file |
@@ -393,7 +393,7 @@ Các ảnh dưới đây chụp từ bản build Windows kết nối tới Java 
 
 ![Màn hình tìm trận](images/hinh07-tim-tran.png)
 
-*Hình 7.* Ghép trận ngẫu nhiên: client hiển thị trạng thái hàng chờ theo message `MATCHMAKING` từ server.
+*Hình 7.* Ghép trận ngẫu nhiên: client hiển thị số người đang chờ và thời gian đếm ngược theo message `MATCHMAKING` từ server.
 
 ![Hai client trong cùng một trận](images/hinh08-hai-client.png)
 
@@ -403,25 +403,25 @@ Các ảnh dưới đây chụp từ bản build Windows kết nối tới Java 
 
 *Hình 9.* HUD và bảng debug F3: client hiển thị địa chỉ server, chế độ đồng bộ và RTT đo bằng `PING`/`PONG`.
 
-[[ẢNH: Bụi ẩn nấp. 2 cửa sổ cạnh nhau. Người A đứng trong bụi, người B đứng ngoài bụi cách vài bước. Chụp toàn màn hình: màn hình A vẫn thấy B, màn hình B không thấy A.]]
+![Bụi ẩn nấp](images/hinh10-bui.png)
 
 *Hình 10.* Đồng bộ chọn lọc: người chơi trong bụi không xuất hiện trên màn hình đối thủ ở ngoài, vì server không gửi tọa độ của họ cho người đó.
 
-[[ẢNH: Mất kết nối. Trong trận có 2 cửa sổ, tắt hẳn cửa sổ B (Alt + F4). Chụp màn hình A ngay khi hiện thông báo "... mất kết nối — giữ chỗ 10 giây". Nếu chơi qua LAN, có thể tắt Wi-Fi máy B vài giây để chụp banner đếm ngược reconnect trên màn hình B.]]
+![Thông báo mất kết nối](images/hinh11-mat-ket-noi.png)
 
 *Hình 11.* Xử lý mất kết nối: server giữ chỗ người chơi 10 giây và thông báo cho những người còn lại.
 
-[[ẢNH: Hành trình Tim Lửa. Tạo phòng chế độ Hành trình với 2 người, chờ khoảng 10 giây để Mảnh Tim Lửa xuất hiện. Nhặt mảnh, mang tới bệ đá rồi chụp lúc thanh Khóa Lửa đang chạy.]]
+![Chế độ Hành trình Tim Lửa](images/hinh12-hanh-trinh.png)
 
 *Hình 12.* Chế độ Hành trình Tim Lửa: người chơi mang mảnh lên bệ đá và phải giữ đủ thời gian để thắng chương.
 
-[[ẢNH: Kết quả trận. Chơi Đấu nhanh với 2 người, để cả hai còn sống tới khi hết 3 phút. Chụp bảng xếp hạng cuối trận (điểm hạ, sát thương, HP).]]
+![Bảng kết quả Đấu nhanh](images/hinh13-ket-qua.png)
 
-*Hình 13.* Bảng xếp hạng Đấu nhanh khi hết giờ, do server tính và gửi trong `GAME_OVER`.
+*Hình 13.* Bảng kết quả Đấu nhanh khi hết giờ, do server tính và gửi trong `GAME_OVER`. Trong lượt chụp này hai người không hạ nhau và có cùng điểm nên kết quả là hòa.
 
-![Bản đồ crossroads dựng từ snapshot của Java server](validation/crossroads.png)
+![Bản đồ crossroads trong chế độ Hành trình](images/hinh14-crossroads.png)
 
-*Hình 14. Bản đồ crossroads.* Camera Unity dựng bản đồ từ snapshot của server khi chạy harness kiểm tra ngày 22/10. Ảnh dùng tài nguyên thật của dự án nhưng không có HUD.
+*Hình 14. Bản đồ crossroads.* Bản đồ "Ngã tư bỏ hoang" ở chương 2 của chế độ Hành trình Tim Lửa, chụp từ bản build cuối kết nối tới Java server.
 
 ---
 
@@ -581,7 +581,7 @@ Phần việc dưới đây được tổng hợp từ lịch sử commit trên 
 - Lưu yêu cầu đồ án, lập kế hoạch phân công đầu tiên, vẽ concept arena và HUD, phác thảo cốt truyện Ba Mảnh Tim Lửa.
 - Server cho chế độ Hành trình (20–21/10): mảnh Tim Lửa và bệ đá, viết lại luật mang, cướp và phá ấn mảnh trong `ShardObjective.java`, kèm `ShardStealMechanicsTest`; `JOIN_ROOM` kiểm tra chế độ phòng.
 - Unity: menu chọn chế độ, HUD, minimap, lời dẫn đọc từ `story.json`, cooldown bom, màn mở đầu bằng video có ảnh dự phòng, bảng điểm và màn kết quả.
-- Hoàn thiện bản cuối (25–26/10): bố cục bản đồ (`BombMapLayouts.cs`), chế độ thử cục bộ, bảng xếp hạng Đấu nhanh khi hết giờ, kiểm tra phiên bản khi kết nối (`VERSION_MISMATCH`) kèm test, dọn asset và tài liệu không dùng, viết lại README.
+- Hoàn thiện bản cuối (25–26/10): bố cục bản đồ (`BombMapLayouts.cs`), chế độ thử cục bộ, bảng xếp hạng Đấu nhanh khi hết giờ, kiểm tra phiên bản khi kết nối (`VERSION_MISMATCH`) và ghép trận chờ đủ 4 người hoặc đếm ngược 15 giây, kèm test; dọn asset và tài liệu không dùng, viết lại README.
 
 **Giang Thủy Tiên**
 

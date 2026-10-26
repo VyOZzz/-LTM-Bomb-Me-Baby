@@ -89,7 +89,7 @@ Người chơi điều khiển một quả bóng lăn trên bản đồ, nhặt 
 | -------- | ----------- | ------ |
 | Kết nối và phiên | `HELLO`/`WELCOME`, cấp `playerId` và resume token, kiểm tra `protocolVersion` | Done |
 | Phòng riêng | Tạo phòng, vào bằng mã 6 ký tự, bắt đầu khi tất cả bấm Sẵn sàng | Done |
-| Ghép trận | Hàng đợi theo chế độ, ghép 2–4 người và vào trận ngay | Done |
+| Ghép trận | Hàng đợi theo chế độ: đủ 4 người thì vào ngay, nhóm 2–3 người vào sau 15 giây đếm ngược | Done |
 | Đấu nhanh | 3 phút, người sống cuối cùng thắng; hết giờ xếp hạng theo điểm hạ và sát thương | Done |
 | Hành trình Tim Lửa | 3 chương trên 3 bản đồ, tranh Mảnh Tim Lửa và giữ bệ 30 giây | Done |
 | Đồng bộ chọn lọc | Snapshot riêng cho từng người xem, chuyển được giữa `BASELINE` và `OPTIMIZED` | Done |
@@ -400,7 +400,7 @@ Chơi qua LAN: chạy server trên một máy, lấy IPv4 bằng `ipconfig`, m�
 
 ```powershell
 cd server
-mvn test "-Dsync.mode=baseline"     # 116 test JUnit
+mvn test "-Dsync.mode=baseline"     # 117 test JUnit
 mvn test "-Dsync.mode=optimized"    # chạy lại toàn bộ test ở chế độ optimized
 cd ..
 python scripts/network_smoke.py     # smoke test qua TCP thật với 2 client giả lập (server phải đang chạy)
@@ -415,7 +415,7 @@ python scripts/network_smoke.py     # smoke test qua TCP thật với 2 client g
 | 1 | Kết nối, phiên, phiên bản | `HELLO` bắt buộc trước mọi request; lệch hoặc thiếu `protocolVersion` bị từ chối | Passed (`helloRequiredBeforeRoomActions`, `mismatchedOrMissingProtocolVersionIsRejected`) |
 | 2 | Chống request trùng | Request có `seq` trùng hoặc cũ không làm đổi phòng hay hướng di chuyển | Passed (`duplicateAndOlderRequestsDoNotChangeRoomOrMovement`) |
 | 3 | Phòng riêng | Tạo, vào, rời phòng; chỉ bắt đầu khi đủ 2 người và tất cả sẵn sàng | Passed (`requiresTwoReadyPlayersAndResetsRound`, `leaveRoomClearsMembershipAndAllowsCreatingAnotherRoom`) |
-| 4 | Ghép trận | Ghép ngay khi đủ người cùng chế độ, không trộn chế độ, hủy tìm an toàn | Passed (`twoSearchingPlayersAreMatchedImmediatelyAndStartWithoutReady`, `fullQueueMatchesAtOnceAndModesNeverMix`) |
+| 4 | Ghép trận | Đủ 4 người thì vào ngay, 2–3 người vào sau 15 giây đếm ngược; không trộn chế độ, hủy tìm an toàn | Passed (`fullQueueMatchesAtOnceAndModesNeverMix`, `twoSearchingPlayersWaitForCountdownThenStartWithoutReady`, `countdownStartsWhenTheSecondPlayerJoinsAndExtraPlayersKeepWaiting`) |
 | 5 | Reconnect | Khôi phục danh tính, `seq`, phòng và bản đồ; từ chối khi quá hạn | Passed (`resumeRestoresIdentitySequenceRoomAndFullMap`, `resumeAtOrAfterDeadlineIsRejected`) |
 | 6 | Heartbeat, frame, hàng đợi ghi | Đóng kết nối im lặng; frame quá lớn; gộp snapshot nhưng giữ event | Passed (`heartbeatWatchdogClosesASilentConnection`, `oversizedUnterminatedFrameClosesWithoutWaitingForNewline`, `outboundQueueCoalescesSnapshotsButKeepsEvents`) |
 | 7 | Đồng bộ chọn lọc | Ẩn đối thủ ở xa và trong bụi, bỏ hình học tĩnh, snapshot ít byte hơn | Passed (`optimizedHidesBushOpponentButShowsSelfAndSameBush`, `optimizedHidesDistantOpponent`, `optimizedSnapshotUsesFewerUtf8BytesForIdenticalState`) |
@@ -423,7 +423,7 @@ python scripts/network_smoke.py     # smoke test qua TCP thật với 2 client g
 | 9 | Đấu nhanh | Hết giờ xếp hạng theo điểm hạ rồi sát thương; 60 giây cuối lộ vị trí trên minimap | Passed (`quickTimeoutRanksKillsThenDamageAndCrownsTheLeader`, `finalQuickMinuteRevealsEveryPositionForTheMinimapOnly`) |
 | 10 | Hành trình Tim Lửa | Giữ bệ 30 giây để thắng, Khóa Lửa, cướp mảnh, chạy đủ 3 bản đồ | Passed (`placedShardOwnerWinsExactlyAfterThirtyUncontestedSeconds`, `lockRegeneratesGraduallyAfterDelayAndDropsShardWhenEmpty`, `journeyRunsAllThreeMapsAndCompletesWithItsWinner`) |
 
-Toàn bộ 116 test qua ở cả `baseline` và `optimized` (chạy lại ngày 26/10/2026).
+Toàn bộ 117 test qua ở cả `baseline` và `optimized` (chạy lại ngày 26/10/2026).
 
 ---
 
@@ -501,6 +501,10 @@ HUD và bảng debug F3 (địa chỉ server, chế độ đồng bộ, RTT):
 
 ![HUD và F3](docs/images/hinh09-hud-f3.png)
 
+Đồng bộ chọn lọc: Bom B nấp trong bụi nên không xuất hiện trên màn hình Bom A ở bên ngoài, vì server không gửi tọa độ của B cho A:
+
+![Bụi ẩn nấp](docs/images/hinh10-bui.png)
+
 ## 14.2. Performance Results
 
 Trung bình 3 lượt mỗi cấu hình; 18/18 lượt hoàn tất, 0 `ERROR`, 0 `CONNECTION_LOST`.
@@ -532,7 +536,7 @@ Lần đo ngày 22/10 trên máy khác (i7-11800H, Java 21) cho tỉ lệ giảm
 
 # 15. Discussion
 
-1. **Kết quả có đạt mục tiêu không?** Có. Chế độ chọn lọc giảm 62,0–77,8% byte mỗi client nhận trong một giây, không có lỗi kết nối, và 116 test chức năng đều qua ở cả hai chế độ.
+1. **Kết quả có đạt mục tiêu không?** Có. Chế độ chọn lọc giảm 62,0–77,8% byte mỗi client nhận trong một giây, không có lỗi kết nối, và 117 test chức năng đều qua ở cả hai chế độ.
 2. **Vì sao có kết quả như vậy?** Với 2 client, snapshot baseline nặng khoảng 9 500 byte, còn optimized khoảng 2 100 byte. Phần chênh lệch là hình học tĩnh của bản đồ cùng vật phẩm và đối thủ ngoài tầm nhìn, vốn bị gửi lại 10 lần mỗi giây ở baseline. Số message không đổi; cải tiến làm nhỏ từng message chứ không giảm số lần gửi.
 3. **Khi tăng số client thì sao?** Mức giảm nhỏ dần từ 78% xuống 62%. Phần tiết kiệm từ hình học là cố định, còn trạng thái động tăng theo số người; với 8 người trên cùng bản đồ, nhiều người đứng gần nhau hơn nên vẫn phải gửi cho nhau.
 4. **Bottleneck nằm ở đâu?** CPU server chưa phải điểm nghẽn: mỗi request được xử lý trong vài chục micro giây. Trên mạng thật, băng thông uplink của máy chạy server mới là giới hạn: baseline 8 người cần khoảng 0,93 MB/s chỉ cho snapshot, optimized khoảng 0,35 MB/s.
@@ -603,7 +607,7 @@ Các tài liệu được trích dẫn trong nội dung báo cáo khi sử dụn
 
 | Student | Main Contribution | Percentage |
 | --------- | ----------------- | ---------: |
-| Phạm Văn Vỹ | Prototype server và Unity client ban đầu; menu, HUD, minimap, lời dẫn, màn kết quả; luật Mảnh Tim Lửa; bố cục bản đồ, bảng xếp hạng Đấu nhanh, kiểm tra phiên bản | ...% |
+| Phạm Văn Vỹ | Prototype server và Unity client ban đầu; menu, HUD, minimap, lời dẫn, màn kết quả; luật Mảnh Tim Lửa; bố cục bản đồ, bảng xếp hạng Đấu nhanh, kiểm tra phiên bản, ghép trận có đếm ngược | ...% |
 | Giang Thủy Tiên | Đồng bộ chọn lọc `SyncMode`; reconnect, heartbeat, timeout, hàng đợi ghi, watchdog; chế độ Đấu nhanh và Hành trình; test JUnit, harness kiểm tra Unity; âm thanh | ...% |
 | Trần Đỗ Lan Phương | Ghép trận `FIND_MATCH`/`CANCEL_MATCH`; công cụ đo và thực nghiệm; bản đồ, giao diện và VFX bằng asset; Khóa Lửa; bot test; viết báo cáo | ...% |
 | **Total** | | **100%** |
