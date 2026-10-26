@@ -100,7 +100,7 @@ public final class BombServer {
         }
     }
 
-    /** Game-loop thread: turns queued players into rooms that start right away. */
+    /** Game-loop thread: turns full or long-waiting groups into rooms that start right away. */
     void matchmake(long now) {
         for (Matchmaker.Match match : matchmaker.takeMatches(now)) formMatch(match, now);
     }
@@ -135,9 +135,10 @@ public final class BombServer {
         synchronized (players.get(index)) { withPlayers(players, index + 1, action); }
     }
 
-    static void announceQueue(GameMode mode, List<PlayerState> waiting) {
+    void announceQueue(GameMode mode, List<PlayerState> waiting) {
         Object status = GameRoom.data("type","MATCHMAKING","status","SEARCHING","mode",mode.name(),
-            "waiting",waiting.size(),"minPlayers",GameRules.MIN_PLAYERS,"maxPlayers",GameRules.MATCH_MAX_PLAYERS);
+            "waiting",waiting.size(),"minPlayers",GameRules.MIN_PLAYERS,"maxPlayers",GameRules.MATCH_MAX_PLAYERS,
+            "startsInMs",matchmaker.startsInMs(mode, System.currentTimeMillis()));
         for (PlayerState p : waiting) p.send(status);
     }
 
@@ -371,7 +372,7 @@ public final class BombServer {
                     if (mode == null) { error("INVALID_MODE"); return; }
                     synchronized (player) {
                         if (!canEnterRoom()) return;
-                        announceQueue(mode, matchmaker.enqueue(player, mode));
+                        announceQueue(mode, matchmaker.enqueue(player, mode, System.currentTimeMillis()));
                     }
                 }
                 case "CANCEL_MATCH" -> {

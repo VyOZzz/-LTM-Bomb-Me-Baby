@@ -446,7 +446,7 @@ public sealed class BombGame : MonoBehaviour {
             case "MATCHMAKING":
                 if (msg.status == "SEARCHING") {
                     status = "";
-                    modeMenu.ShowSearch(msg.mode, msg.waiting, msg.minPlayers);
+                    modeMenu.ShowSearch(msg.mode, msg.waiting, msg.minPlayers, msg.maxPlayers, msg.startsInMs);
                 } else {
                     modeMenu.StopSearch();
                     status = "Đã hủy tìm trận.";
