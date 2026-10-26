@@ -9,7 +9,7 @@
 | Giảng viên | Thầy Ngô Văn Quyền |
 | Thành viên | Phạm Văn Vỹ (trưởng nhóm), Giang Thủy Tiên, Trần Đỗ Lan Phương. MSSV và phần việc xem [mục 19](#19-thành-viên-và-phân-công) |
 | Mã nguồn | https://github.com/VyOZzz/-LTM-Bomb-Me-Baby |
-| Ngày cập nhật | 25/10/2026 |
+| Ngày cập nhật | 26/10/2026 |
 
 ---
 
@@ -174,21 +174,38 @@ Với mỗi người xem `v` trong phòng, ở mỗi chu kỳ snapshot:
 | Đồng bộ | `SyncMode.java` | Chọn `BASELINE` hoặc `OPTIMIZED` |
 | Database | Không có | Trạng thái nằm trong bộ nhớ (xem mục 6.4) |
 
-### 7.3. Data flow
+### 7.3. Luồng xử lý từ client tới server
 
-```text
-Input (WASD, Space, E, Shift)
-   → BombGame tạo MOVE / CHARGE_START / ...
-   → BombNetwork ghi vào socket
-   → BombServer đọc frame, kiểm tra seq, gọi GameRoom dưới room lock
-   → Game loop cập nhật trạng thái mỗi 50 ms
-   → Mỗi 100 ms tạo snapshot riêng cho từng người xem (lọc theo SyncMode)
-   → Hàng đợi ghi của từng Connection
-   → BombNetwork đọc, đưa vào inbox
-   → BombGame trên main thread áp dụng snapshot và nội suy hình ảnh
-```
+![Luồng một lần cập nhật từ client tới server và ngược lại](images/flow.png)
 
-`BombNetwork` không gọi API dựng hình trên luồng mạng. Main thread của Unity đọc inbox rồi `BombGame` mới cập nhật cảnh.
+*Hình 2. Luồng một lần cập nhật.* Bước 1–3 chạy ở client, bước 4–8 ở server, bước 9–11 quay lại client. Màu của mỗi ô cho biết bước đó chạy trên luồng nào.
+
+**Chiều lên, từ client tới server.** Ở mỗi khung hình, `BombGame.Update()` trên main thread của Unity đọc phím và dự đoán ngay vị trí nhân vật của chính mình, để người chơi không phải chờ server mới thấy nhân vật chạy (bước 1). Hướng di chuyển được gửi bằng `MOVE` mỗi 40 ms. `Send()` gán `seq` tăng dần rồi đưa JSON vào outbox (bước 2). Luồng ghi nền của `BombNetwork` lấy message khỏi outbox và ghi thành một dòng vào socket, nên main thread không bị chặn bởi I/O mạng (bước 3).
+
+**Xử lý ở server.** Luồng đọc của kết nối đọc từng dòng, đóng kết nối khi dòng dài quá 2048 ký tự và trả `DUPLICATE_SEQUENCE` khi `seq` không tăng (bước 4). Request hợp lệ được chuyển vào `GameRoom.action()` dưới khóa phòng. Với `MOVE`, server chỉ ghi lại hướng chứ không dịch chuyển nhân vật ngay, rồi trả `ACK` (bước 5). Việc dịch chuyển thật do game loop thực hiện mỗi 50 ms, cùng với va chạm, nhặt vật phẩm, nổ bom và kiểm tra kết thúc trận. Event như nổ bom hay loại người chơi được đưa vào hàng đợi ghi ngay khi xảy ra (bước 6). Cứ hai tick, server tạo snapshot riêng cho từng người xem theo `SyncMode` (bước 7, chi tiết ở mục 6.2). Luồng ghi riêng của từng kết nối lấy message khỏi hàng đợi và ghi ra socket ngoài khóa phòng (bước 8).
+
+**Chiều xuống, từ server về client.** Luồng đọc nền của client đọc từng dòng và đưa vào inbox. Nếu hai snapshot đứng liền nhau thì chỉ giữ snapshot mới hơn, trừ khi snapshot cũ mang hình học mà snapshot mới không có (bước 9). Đầu mỗi khung hình, main thread lấy hết message khỏi inbox. Snapshot của phòng hoặc vòng khác, hoặc snapshot `PLAYING` đến sau khi trận đã `FINISHED`, bị bỏ qua (bước 10). Snapshot hợp lệ được áp dụng: nhân vật của mình được kéo dần về vị trí server, hoặc đặt thẳng về đó nếu lệch quá 2 đơn vị; đối thủ được nội suy giữa hai snapshot; người có `visible=false` bị ẩn; HUD cập nhật HP, Size và hồi chiêu (bước 11). `BombNetwork` không gọi API dựng hình trên luồng mạng, mọi thay đổi cảnh đều diễn ra trên main thread.
+
+### 7.4. Xử lý khi có cập nhật trạng thái trong trận
+
+Trạng thái trận chỉ do server giữ và thay đổi. Mỗi thay đổi được gửi xuống client bằng một trong bốn loại message. Mỗi loại được server gửi và client xử lý theo cách riêng:
+
+| Loại cập nhật | Message | Server | Client |
+| --- | --- | --- | --- |
+| Trạng thái liên tục: vị trí, HP, Size, hồi chiêu, vật phẩm, đồng hồ | `STATE_UPDATE` | Tạo snapshot đầy đủ cho từng người xem mỗi 100 ms, kể cả khi không có gì thay đổi. Nếu snapshot trước chưa kịp gửi thì thay bằng snapshot mới | Thay trạng thái hiển thị bằng snapshot mới, nội suy đối thủ, kéo nhân vật của mình về vị trí server. Bỏ snapshot sai phòng hoặc sai vòng |
+| Sự kiện tức thời | `PLAYER_EXPLODE`, `PLAYER_DAMAGED`, `ENERGY_PICKED`, `SHIELD_ACTIVATED`, `PLAYER_ELIMINATED`… | Gửi ngay khi xảy ra, không chờ chu kỳ snapshot, không gộp và không bỏ. Bỏ tọa độ nếu người xem không thấy nguồn sự kiện | Chạy hiệu ứng, âm thanh và thông báo, không tự sửa HP hay vị trí. Riêng `PLAYER_ELIMINATED` ẩn nhân vật ngay, vì trận có thể kết thúc trước snapshot kế tiếp |
+| Vòng đời phòng và trận | `ROOM_STATE`, `GAME_START`, `GAME_OVER`, `JOURNEY_COMPLETE`, `PLAYER_DISCONNECTED`, `PLAYER_RECONNECTED` | Gửi dưới khóa phòng ngay khi phòng đổi trạng thái | Đổi `phase` và màn hình. Sau `GAME_OVER`, snapshot `PLAYING` đến muộn bị bỏ |
+| Phản hồi request | `ACK`, `ERROR`, `PONG` | Chỉ gửi cho người đã gửi request | `ACK` và `PONG` dùng để đo thời gian xử lý và RTT. `ERROR` hiện thông báo; trạng thái đúng sẽ có trong snapshot tiếp theo |
+
+Nguyên tắc chung là server luôn đúng. Client chỉ đoán trước vị trí nhân vật của chính mình, còn HP, Size, sát thương và người thắng đều chờ server. Khi phần đoán lệch với snapshot, client sửa theo snapshot.
+
+**Ví dụ: người chơi B nổ bom trúng người chơi A.**
+
+1. B nhấn giữ Space, client B gửi `CHARGE_START`. Server ghi thời điểm bắt đầu tụ lực, hoặc trả `ERROR BOMB_COOLDOWN` nếu bom đang hồi chiêu.
+2. B thả Space, client B gửi `EXPLODE`. Luồng đọc của B gọi `GameRoom.action()` dưới khóa phòng và xử lý ngay, không chờ tick: tính bán kính nổ theo Size và lực tụ, trừ HP từng người trong vùng nổ (người đang bật khiên phản lại một nửa sát thương), đặt hồi chiêu và đưa Size của B về mức gốc.
+3. Ngay trong lần xử lý đó, server đưa vào hàng đợi ghi của từng người lần lượt `PLAYER_DAMAGED` cho A, `PLAYER_ELIMINATED` nếu HP của A về 0, rồi `PLAYER_EXPLODE`. `PLAYER_EXPLODE` có tọa độ với người thấy B và không có tọa độ với người không thấy B.
+4. Client A, B và những người khác nhận event, chạy hiệu ứng nổ, âm thanh và thông báo. Thanh máu chưa đổi.
+5. Trong vòng 100 ms, snapshot kế tiếp mang HP mới của A và Size mới của B, client cập nhật HUD. Vì event đứng trước snapshot trong hàng đợi và hàng đợi không cho snapshot vượt event (mục 6.3), hiệu ứng không bao giờ xuất hiện sau khi con số đã đổi.
 
 ---
 
@@ -219,31 +236,19 @@ Trừ `HELLO` và `PING`, mọi request phải có `seq` lớn hơn mọi `seq` 
 
 ### 8.3. Communication sequence
 
-```text
-Client A (chủ phòng)          Server                   Client B
-   |--- HELLO ---------------->|                          |
-   |<-- WELCOME ---------------|                          |
-   |--- CREATE_ROOM ---------->|                          |
-   |<-- ROOM_STATE(code) ------|                          |
-   |                           |<--------- HELLO ---------|
-   |                           |---------- WELCOME ------>|
-   |                           |<--- JOIN_ROOM(code) -----|
-   |<-- ROOM_STATE ------------|------ ROOM_STATE ------->|
-   |--- READY ---------------->|<--------- READY ---------|
-   |<-- GAME_START + geometry -|-- GAME_START + geometry->|
-   |--- MOVE(seq) ------------>|                          |
-   |<-- ACK(seq) --------------|                          |
-   |<-- STATE_UPDATE (cho A) --|-- STATE_UPDATE (cho B) ->|   mỗi 100 ms
-   |--- PING ----------------->|                          |
-   |<-- PONG ------------------|                          |
-   |<-- GAME_OVER -------------|------- GAME_OVER ------->|
-```
+![Trình tự message trong một trận phòng riêng](images/sequence.png)
 
-Với ghép trận, client gửi `FIND_MATCH`. Khi đủ ít nhất hai người cùng chế độ, server ghép ở tick kế tiếp, gửi `MATCH_FOUND`, `ROOM_STATE` rồi `GAME_START` mà không cần `READY`.
+*Hình 3. Trình tự message của một trận phòng riêng.* Chấm tròn trên đường của server nghĩa là message được gửi cho cả hai client. Riêng `STATE_UPDATE` có nội dung khác nhau cho từng người xem.
+
+Trong trận, client gửi `MOVE` mỗi 40 ms và `PING` mỗi 2 giây. Server trả `ACK` cho mọi request có `seq` và gửi snapshot mỗi 100 ms, độc lập với nhịp gửi của client. Với ghép trận, client gửi `FIND_MATCH`. Khi đủ ít nhất hai người cùng chế độ, server ghép ở tick kế tiếp, gửi `MATCH_FOUND`, `ROOM_STATE` rồi `GAME_START` mà không cần `READY`.
 
 ### 8.4. Reconnect
 
 Khi TCP đứt, server giữ chỗ người chơi 10 giây. Client mở socket mới và gửi `HELLO` kèm `resumeToken`. Nếu phòng đang `PLAYING`, server trả `WELCOME` (có `lastSeq`), `ROOM_STATE` và một snapshot đầy đủ có hình học. Nếu trận đã `FINISHED`, server phát lại `GAME_OVER` (và `JOURNEY_COMPLETE` nếu có). Token lạ, hết hạn hoặc đang được socket khác dùng thì nhận `RESUME_FAILED`.
+
+![Trình tự mất kết nối và kết nối lại](images/reconnect.png)
+
+*Hình 4. Trình tự mất kết nối và kết nối lại.* Client phát hiện mất kết nối khi đọc hoặc ghi socket bị lỗi, hoặc khi 7 giây không nhận được message nào. Client hiện đếm ngược 10 giây rồi tự mở socket mới sau 1,2 giây. Quá 10 giây mà chưa quay lại thì game loop loại người chơi khỏi trận.
 
 ### 8.5. Error handling
 
@@ -373,11 +378,49 @@ Công thức: `(baseline − optimized) / baseline × 100`. Cột p95 là trung 
 | Staging Unity | Kiểm tra bản sao project qua ngày 25/10 | Chỉ kiểm tra việc đồng bộ file |
 | Build | Windows player và server JAR tạo thành công | Chưa nghiệm thu trên máy sạch |
 
-### 11.3. Ảnh minh họa
+### 11.3. Ảnh chạy thực tế
+
+Các ảnh dưới đây chụp từ bản build Windows kết nối tới Java server chạy ở chế độ `optimized`.
+
+[[ẢNH: Cửa sổ server. Chạy server (scripts/run_server.ps1) và thêm bot (python scripts/bots.py --find QUICK --count 2). Chụp cửa sổ PowerShell có dòng "Bomb Me Baby server on TCP port 7777" và "[SyncMode] active = OPTIMIZED".]]
+
+*Hình 5.* Java server lắng nghe trên cổng TCP 7777 ở chế độ đồng bộ `OPTIMIZED`.
+
+[[ẢNH: Sảnh phòng riêng. Mở 2 cửa sổ game. Người A bấm Tạo phòng riêng, người B nhập mã phòng, cả hai bấm Sẵn sàng. Chụp màn hình người A khi thấy mã phòng 6 ký tự và 2 người trong danh sách.]]
+
+*Hình 6.* Sảnh phòng riêng: mã phòng do server cấp và trạng thái sẵn sàng của từng người được đồng bộ qua `ROOM_STATE`.
+
+[[ẢNH: Tìm trận. Mở 2 cửa sổ, chọn cùng một chế độ rồi bấm Tìm trận ở một cửa sổ trước. Chụp lúc màn hình hiện trạng thái hàng chờ, trước khi cửa sổ thứ hai bấm Tìm trận.]]
+
+*Hình 7.* Ghép trận ngẫu nhiên: client hiển thị trạng thái hàng chờ theo message `MATCHMAKING` từ server.
+
+[[ẢNH: Hai client cùng một trận. Đặt 2 cửa sổ game cạnh nhau, vào cùng một trận Đấu nhanh. Chụp toàn màn hình (Win + Shift + S) để thấy cả hai cửa sổ có cùng vị trí nhân vật, HP và đồng hồ.]]
+
+*Hình 8.* Hai client trong cùng một trận: vì server quyết định trạng thái, hai màn hình hiển thị cùng vị trí, HP và thời gian còn lại.
+
+[[ẢNH: HUD và bảng debug. Trong trận, nhấn F3. Chụp màn hình thấy HUD (HP, Size, hồi chiêu, minimap) và bảng F3 có địa chỉ server, chế độ đồng bộ và RTT.]]
+
+*Hình 9.* HUD và bảng debug F3: client hiển thị địa chỉ server, chế độ đồng bộ và RTT đo bằng `PING`/`PONG`.
+
+[[ẢNH: Bụi ẩn nấp. 2 cửa sổ cạnh nhau. Người A đứng trong bụi, người B đứng ngoài bụi cách vài bước. Chụp toàn màn hình: màn hình A vẫn thấy B, màn hình B không thấy A.]]
+
+*Hình 10.* Đồng bộ chọn lọc: người chơi trong bụi không xuất hiện trên màn hình đối thủ ở ngoài, vì server không gửi tọa độ của họ cho người đó.
+
+[[ẢNH: Mất kết nối. Trong trận có 2 cửa sổ, tắt hẳn cửa sổ B (Alt + F4). Chụp màn hình A ngay khi hiện thông báo "... mất kết nối — giữ chỗ 10 giây". Nếu chơi qua LAN, có thể tắt Wi-Fi máy B vài giây để chụp banner đếm ngược reconnect trên màn hình B.]]
+
+*Hình 11.* Xử lý mất kết nối: server giữ chỗ người chơi 10 giây và thông báo cho những người còn lại.
+
+[[ẢNH: Hành trình Tim Lửa. Tạo phòng chế độ Hành trình với 2 người, chờ khoảng 10 giây để Mảnh Tim Lửa xuất hiện. Nhặt mảnh, mang tới bệ đá rồi chụp lúc thanh Khóa Lửa đang chạy.]]
+
+*Hình 12.* Chế độ Hành trình Tim Lửa: người chơi mang mảnh lên bệ đá và phải giữ đủ thời gian để thắng chương.
+
+[[ẢNH: Kết quả trận. Chơi Đấu nhanh với 2 người, để cả hai còn sống tới khi hết 3 phút. Chụp bảng xếp hạng cuối trận (điểm hạ, sát thương, HP).]]
+
+*Hình 13.* Bảng xếp hạng Đấu nhanh khi hết giờ, do server tính và gửi trong `GAME_OVER`.
 
 ![Bản đồ crossroads dựng từ snapshot của Java server](validation/crossroads.png)
 
-*Hình 2. Bản đồ crossroads.* Camera Unity dựng bản đồ từ snapshot của server khi chạy harness kiểm tra. Ảnh dùng tài nguyên thật của dự án nhưng không có HUD và không phải ảnh của một trận người thật. Ảnh hai bản đồ còn lại ở `docs/validation/`.
+*Hình 14. Bản đồ crossroads.* Camera Unity dựng bản đồ từ snapshot của server khi chạy harness kiểm tra ngày 22/10. Ảnh dùng tài nguyên thật của dự án nhưng không có HUD.
 
 ---
 
@@ -395,7 +438,7 @@ Công thức: `(baseline − optimized) / baseline × 100`. Cột p95 là trung 
 
 **Hệ thống hoạt động tốt khi** số người mỗi phòng vừa phải, người chơi phân tán trên bản đồ và mạng tin cậy. **Hệ thống còn hạn chế khi** người chơi tập trung một chỗ (lọc ít tác dụng), khi mất gói nhiều (TCP chặn đầu hàng làm giật hình), hoặc khi số kết nối vượt xa 64.
 
-**Lợi ích phụ.** Optimized chặn map hack ngay từ dữ liệu gửi đi: client không nhận được tọa độ người trong bụi, nên không thể hiển thị chúng dù bị sửa đổi.
+**Lợi ích phụ.** Optimized chặn map hack ngay từ dữ liệu gửi đi: client không nhận được tọa độ người trong bụi, nên không thể hiển thị chúng dù bị sửa đổi (Hình 10).
 
 **Hạn chế của phép đo.** Phép đo chạy trên loopback với client giả lập, không đo FPS Unity. Seed sinh vật phẩm của server không cố định nên cảnh ở hai chế độ không giống hệt nhau. Baseline luôn chạy trước optimized nên warm-up JVM có thể ảnh hưởng processingMicros.
 
@@ -429,6 +472,35 @@ Bản prototype ban đầu (commit `aaed786`, 12/10) gửi snapshot đầy đủ
 
 Nhóm không tuyên bố phát minh ra TCP, snapshot hay interest management. Đóng góp là triển khai các cơ chế này trong một game cụ thể, đặt cạnh một baseline chạy lại được và đo bằng số liệu thật.
 
+### 13.4. So sánh với các game hiện có trên thị trường
+
+Nhóm so sánh với hai game đặt bom nhiều người đã phát hành, rồi so phần kỹ thuật mạng với các giải pháp mà nhà phát triển game thương mại đã công bố. Thông tin về sản phẩm khác lấy từ trang chính thức hoặc bài viết được trích dẫn. Chi tiết nào nhà phát triển không công bố thì ghi là không công bố, không suy đoán.
+
+| Tiêu chí | Super Bomberman R Online (Konami) | Bombergrounds: Reborn (Gigantic Duck Games) | Bomb Me Baby |
+| --- | --- | --- | --- |
+| Quy mô trận | Tối đa 64 người, bắt đầu trên 16 sân đấu [11] | Battle royale 10 người, chế độ 3v3 [13] | 2–10 người mỗi phòng |
+| Phòng riêng | Có, thuộc gói Premium Pack trả phí [11] | Trang Steam không nêu [13] | Có, miễn phí, vào bằng mã 6 ký tự |
+| Nền tảng | PS4, PS5, Switch, Xbox, PC [11] | Windows, macOS, chơi chéo nền tảng [13] | Windows |
+| Tình trạng | Đóng máy chủ ngày 1/12/2022 [12] | Phát hành 6/10/2022, miễn phí [13] | Đồ án, chạy trong LAN |
+| Đồng bộ trạng thái, chống lộ vị trí | Không công bố | Không công bố | Công bố đầy đủ protocol, mã nguồn và số đo (mục 8, 11) |
+
+Hai game trên hơn hẳn Bomb Me Baby về quy mô, số nền tảng và nội dung. Nhà phát triển không công bố cách đồng bộ trạng thái hay có ẩn vị trí ở server không, nên nhóm không so được phần này bằng số liệu và không kết luận rằng họ không làm. Cơ chế bụi của Bomb Me Baby giống bụi trong Brawl Stars, nơi người chơi nấp trong bụi để chờ đối thủ tới gần [14]. Supercell cũng không công bố việc ẩn đó được thực hiện ở server hay chỉ ở phần hiển thị của client.
+
+| Kỹ thuật | Giải pháp đã công bố | Bomb Me Baby | Đánh giá |
+| --- | --- | --- | --- |
+| Ẩn vị trí đối thủ ở server | VALORANT tính sẵn tầm nhìn giữa các ô bản đồ (PVS), chỉ gửi vị trí khi đối thủ có thể được thấy, và gửi sớm một khoảng lớn hơn ping để đối thủ không hiện ra đột ngột [10] | Lọc theo bán kính nhìn 26 đơn vị và bụi, tính lại ở mỗi snapshot, chưa gửi sớm | Cùng ý tưởng nhưng đơn giản hơn; đối thủ có thể hiện ra đột ngột khi bước ra khỏi bụi |
+| Bù trễ khi xử lý va chạm | Source engine: server dùng độ trễ của người chơi để tua lại thời gian khi xử lý lệnh [15] | Chưa có | Kém hơn; ổn trên LAN nhưng bất lợi khi ping cao |
+| Giao thức vận chuyển | Fiedler khuyên dùng UDP cho game thời gian thực vì với TCP, một gói mất làm mọi dữ liệu mới hơn phải chờ gói đó được gửi lại [16] | TCP, JSON theo dòng | Đánh đổi có chủ đích: dễ debug, không mất event vòng đời trận; giật hình khi mạng mất gói |
+
+**Điểm cải tiến của Bomb Me Baby:**
+
+1. **Ẩn vị trí ngay từ dữ liệu gửi đi trong một game đặt bom quy mô nhỏ.** Kỹ thuật kiểu fog of war đã được công bố ở game bắn súng lớn [10]. Nhóm áp dụng nó cho thể loại đặt bom có bụi ẩn nấp và đo được thêm lợi ích về băng thông: giảm 62–78% so với gửi đầy đủ (mục 11.1).
+2. **Phòng riêng miễn phí đi cùng ghép trận ngẫu nhiên trên cùng một server.** Ở Super Bomberman R Online, tạo phòng riêng là tính năng của gói Premium Pack trả phí [11].
+3. **Không phụ thuộc máy chủ của nhà phát hành.** Server là một file JAR chạy được trên bất kỳ máy nào trong LAN. Super Bomberman R Online không còn chơi được từ khi Konami đóng máy chủ [12].
+4. **Thiết kế mạng công khai và kiểm chứng được.** Protocol, mã nguồn, dữ liệu đo và kịch bản đo lại đều công khai (Phụ lục), trong khi các game thương mại trong bảng không công bố phần này.
+
+**Những điểm còn kém các game thương mại:** quy mô người chơi, nội dung và số nền tảng; chưa dùng UDP và chưa có bù trễ; lọc tầm nhìn còn thô (chỉ theo bán kính và bụi, không gửi sớm); chưa có tài khoản, máy chủ nhiều vùng hay chống gian lận phía client. Các hướng khắc phục nằm ở mục 15.
+
 ---
 
 ## 14. Limitations
@@ -450,10 +522,11 @@ Nhóm không tuyên bố phát minh ra TCP, snapshot hay interest management. Đ
 4. Thêm tài khoản, lưu kết quả trận vào database, bảng xếp hạng toàn cục.
 5. Thêm TLS, rate limit và client-side prediction đầy đủ.
 6. Thử Java NIO hoặc mô hình event loop khi số kết nối lớn, dựa trên kết quả profiling.
+7. Kiểm tra phiên bản khi kết nối. Hiện `HELLO` chưa có trường phiên bản, nên client cũ vẫn kết nối được vào server mới và có thể đọc sai message khi protocol thay đổi. Hướng làm: thêm trường `version` vào `HELLO`; server trả `ERROR VERSION_MISMATCH` nếu phiên bản không tương thích; client báo người chơi tải bản mới trên trang phát hành.
 
 ## 16. Conclusion
 
-Nhóm đã xây dựng một game đấu trường nhiều người qua TCP, trong đó Java server giữ quyền quyết định luật chơi, phục vụ đồng thời nhiều phòng, hỗ trợ hai chế độ chơi, ba bản đồ, phòng mã và ghép trận, và chịu được request trùng, timeout và mất kết nối tạm thời. Đóng góp chính là đồng bộ trạng thái chọn lọc theo từng người xem. Trên loopback, cơ chế này giảm 62–78% băng thông mỗi client so với baseline mà không làm tăng độ trễ một cách đo được, đồng thời ngăn client biết vị trí đối thủ đang ẩn. Kiểm thử tự động giúp phát hiện và sửa các lỗi về thứ tự snapshot, phục hồi kết quả và một race condition trong watchdog. Kết quả chưa bao gồm đánh giá trên mạng thật và trải nghiệm của người chơi thật. Đó là hướng tiếp theo.
+Nhóm đã xây dựng một game đấu trường nhiều người qua TCP, trong đó Java server giữ quyền quyết định luật chơi, phục vụ đồng thời nhiều phòng, hỗ trợ hai chế độ chơi, ba bản đồ, phòng mã và ghép trận, và chịu được request trùng, timeout và mất kết nối tạm thời. Đóng góp chính là đồng bộ trạng thái chọn lọc theo từng người xem. Trên loopback, cơ chế này giảm 62–78% băng thông mỗi client so với baseline mà không làm tăng độ trễ một cách đo được, đồng thời ngăn client biết vị trí đối thủ đang ẩn. So với các game đặt bom đã phát hành, hệ thống nhỏ hơn nhiều về quy mô, nhưng có phòng riêng miễn phí, chạy được trong LAN mà không cần máy chủ của nhà phát hành, và công khai toàn bộ thiết kế mạng cùng số đo (mục 13.4). Kiểm thử tự động giúp phát hiện và sửa các lỗi về thứ tự snapshot, phục hồi kết quả và một race condition trong watchdog. Kết quả chưa bao gồm đánh giá trên mạng thật và trải nghiệm của người chơi thật. Đó là hướng tiếp theo.
 
 ## 17. References
 
@@ -466,6 +539,13 @@ Nhóm đã xây dựng một game đấu trường nhiều người qua TCP, tro
 7. Kenney, *Nature Kit, Platformer Kit, UI Pack, Particle Pack, Sci-fi Sounds, Interface Sounds, Impact Sounds, RPG Audio, UI Audio, Music Jingles*, CC0 1.0. https://kenney.nl/assets
 8. ambientCG, *Grass004, PavingStones070, Gravel024, Lava004*, CC0 1.0. https://ambientcg.com
 9. OpenGameArt.org: SpiderDave, *A New Day* (CC0); AndyGun11, *Assembly Not Required* (CC-BY 4.0); HydroGene, *JRPG Epic Rock Battle Theme #1* (CC0); Spring/Spring Enterprises, *Fanfares* (CC-BY 4.0). https://opengameart.org
+10. P. Chamberlain, *Demolishing Wallhacks with VALORANT's Fog of War*, Riot Games, 14/04/2020. https://www.riotgames.com/en/news/demolishing-wallhacks-valorants-fog-war
+11. Konami, *Super Bomberman R Online* (trang sản phẩm). https://www.konami.com/games/eu/es/products/bomberman_r_online/
+12. Gematsu, *Super Bomberman R Online to end service on December 1*, 2022. https://www.gematsu.com/2022/05/super-bomberman-r-online-to-end-service-on-december-1-new-bomberman-projects-underway
+13. Gigantic Duck Games, *Bombergrounds: Reborn*, Steam. https://store.steampowered.com/app/1104450/
+14. Game8, *Brawl Stars – Battle Tips and Strategies: How to Win in a Match*, cập nhật 20/09/2021. https://game8.co/games/Brawl-Stars/archives/316954
+15. Valve, *Lag Compensation*, Valve Developer Community. https://developer.valvesoftware.com/wiki/Lag_Compensation
+16. G. Fiedler, *UDP vs. TCP*, Gaffer On Games, 2008. https://gafferongames.com/post/udp_vs_tcp/
 
 ## 18. Appendix
 
