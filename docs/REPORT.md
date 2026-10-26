@@ -19,7 +19,7 @@ Trong game hành động nhiều người, mọi máy phải thấy cùng một 
 
 Nhóm xây dựng **Bomb Me Baby**, một game đấu trường PvP 2.5D gồm Java server và Unity client giao tiếp qua TCP. Server giữ quyền quyết định toàn bộ luật chơi (server-authoritative). Client chỉ gửi ý định điều khiển và hiển thị trạng thái nhận về. Giao thức là JSON theo dòng, có số thứ tự `seq` để chống request trùng, heartbeat, timeout và cơ chế reconnect bằng resume token. Server mô phỏng ở 20 Hz và gửi snapshot ở 10 Hz. Đóng góp chính là cơ chế **đồng bộ trạng thái chọn lọc**: hình học bản đồ chỉ gửi một lần, vật phẩm và đối thủ chỉ được gửi khi người xem được phép thấy. Ngoài ra, hệ thống phục hồi phiên chơi sau mất kết nối mà vẫn giữ đúng thứ tự vòng đời trận, và dùng thứ tự khóa cố định cùng hàng đợi ghi riêng cho từng client để một client chậm không làm chậm cả phòng.
 
-Trên loopback với 2, 4 và 8 client giả lập (18 lượt × 30 giây, không có lỗi kết nối), chế độ chọn lọc giảm **62,0–77,8%** số byte mỗi client nhận trong một giây so với baseline gửi đầy đủ, trong khi RTT không tăng một cách đo được. Bộ 115 test JUnit bao phủ kết nối, reconnect, ghép trận và luật chơi ở cả hai chế độ đồng bộ.
+Trên loopback với 2, 4 và 8 client giả lập (18 lượt × 30 giây, không có lỗi kết nối), chế độ chọn lọc giảm **62,0–77,8%** số byte mỗi client nhận trong một giây so với baseline gửi đầy đủ, trong khi RTT không tăng một cách đo được. Bộ 116 test JUnit bao phủ kết nối, reconnect, ghép trận và luật chơi ở cả hai chế độ đồng bộ.
 
 ## 2. Keywords
 
@@ -61,7 +61,6 @@ Thiết kế và triển khai một hệ thống client/server cho game đấu t
 1. Đồng bộ trạng thái chọn lọc theo từng người xem, có baseline để so sánh trên cùng luật chơi.
 2. Cơ chế phục hồi phiên chơi giữ đúng thứ tự vòng đời trận (resume token, `seq`, định danh phòng và vòng, phát lại kết quả).
 3. Mô hình concurrency có thứ tự khóa cố định và hàng đợi ghi riêng cho từng client, để một client chậm không làm chậm cả phòng.
-
 ---
 
 ## 4. Background / Related Work
@@ -215,13 +214,13 @@ Nguyên tắc chung là server luôn đúng. Client chỉ đoán trước vị t
 
 - **Giao thức:** TCP, kết nối giữ suốt phiên chơi, mặc định cổng 7777.
 - **Message format:** mỗi message là một JSON object trên một dòng UTF-8, kết thúc bằng LF hoặc CRLF, tối đa 2048 ký tự.
-- **Thiết lập:** client mở socket rồi gửi `HELLO`. Server trả `WELCOME` kèm `playerId` và `resumeToken`.
+- **Thiết lập:** client mở socket rồi gửi `HELLO` kèm `protocolVersion`. Nếu phiên bản khớp, server trả `WELCOME` kèm `playerId` và `resumeToken`; nếu thiếu hoặc lệch, server trả `ERROR VERSION_MISMATCH` và không tạo phiên.
 - **Đóng kết nối:** client gửi `LEAVE_ROOM` rồi đóng socket, hoặc server đóng khi timeout, frame quá lớn hay hàng đợi đầy.
 
 ### 8.2. Message format
 
 ```json
-{"type":"HELLO","name":"Bom A","resumeToken":""}
+{"type":"HELLO","protocolVersion":1,"name":"Bom A","resumeToken":""}
 {"type":"WELCOME","playerId":"...","resumeToken":"...","syncMode":"OPTIMIZED","demoMap":""}
 {"type":"CREATE_ROOM","seq":1,"mode":"QUICK"}
 {"type":"JOIN_ROOM","seq":2,"code":"ABC123"}
@@ -230,9 +229,10 @@ Nguyên tắc chung là server luôn đúng. Client chỉ đoán trước vị t
 {"type":"ACK","seq":4,"processingMicros":31}
 {"type":"PING","clientTime":1720000000000}
 {"type":"ERROR","code":"DUPLICATE_SEQUENCE"}
+{"type":"ERROR","code":"VERSION_MISMATCH","serverVersion":1}
 ```
 
-Trừ `HELLO` và `PING`, mọi request phải có `seq` lớn hơn mọi `seq` server đã nhận trong cùng phiên. `seq` không reset khi đổi phòng hay reconnect. `ACK` chỉ xác nhận server đã xử lý message, không khẳng định hành động gameplay thành công. Client vẫn phải đọc `ERROR` nếu có. Đặc tả đầy đủ ở `docs/PROTOCOL.md`.
+`protocolVersion` ở client (`BombNetwork.ProtocolVersion`) phải bằng `BombServer.PROTOCOL_VERSION`. Nhóm tăng hằng số này ở cả hai phía mỗi khi đổi protocol hoặc luật chơi theo cách không tương thích, nên một bản build cũ không thể vào server mới rồi đọc sai message. Trừ `HELLO` và `PING`, mọi request phải có `seq` lớn hơn mọi `seq` server đã nhận trong cùng phiên. `seq` không reset khi đổi phòng hay reconnect. `ACK` chỉ xác nhận server đã xử lý message, không khẳng định hành động gameplay thành công. Client vẫn phải đọc `ERROR` nếu có. Đặc tả đầy đủ ở `docs/PROTOCOL.md`.
 
 ### 8.3. Communication sequence
 
@@ -254,6 +254,7 @@ Khi TCP đứt, server giữ chỗ người chơi 10 giây. Client mở socket m
 
 | Tình huống | Cách xử lý |
 | --- | --- |
+| Lệch phiên bản | `protocolVersion` thiếu hoặc khác server → `VERSION_MISMATCH`, không tạo hay khôi phục phiên. Client ngừng tự kết nối lại và hiện thông báo yêu cầu cập nhật bản mới |
 | JSON sai, thiếu trường | Trả `ERROR INVALID_MESSAGE`, giữ kết nối |
 | Request trùng hoặc cũ | `seq` không tăng → `DUPLICATE_SEQUENCE`, không thực hiện lại |
 | Sai trạng thái | `NOT_IN_ROOM`, `ACTION_UNAVAILABLE`, `ROOM_UNAVAILABLE`, `BOMB_COOLDOWN`, `ALREADY_SEARCHING`, `INVALID_MODE` |
@@ -321,7 +322,7 @@ Mô hình 3D, giao diện, hiệu ứng hạt và phần lớn hiệu ứng âm 
 | Phần cứng | 13th Gen Intel Core i9-13900H, RAM 16 GB |
 | Hệ điều hành | Windows 11 Home Single Language (build 26200) |
 | Ngôn ngữ, công cụ | Java 26.0.2 (target Java 17), Maven 3.9.9, Python 3.13.14 |
-| Mã nguồn đo | Commit `c35616f` (bản nộp), đo ngày 25/10/2026 |
+| Mã nguồn đo | Commit `c35616f` (bản ngày 25/10), đo ngày 25/10/2026. Bản cuối chỉ thêm kiểm tra phiên bản ở `HELLO`, chạy một lần lúc kết nối nên không ảnh hưởng số đo |
 | Thư viện | Gson 2.11 [5], JUnit 5 [6]; client giả lập chỉ dùng thư viện chuẩn Python |
 | Mạng | Loopback `127.0.0.1:17777` |
 | Bản đồ, chế độ | `meadow` cố định, Đấu nhanh |
@@ -341,7 +342,7 @@ Mô hình 3D, giao diện, hiệu ứng hạt và phần lớn hiệu ứng âm 
 
 Số byte tính theo JSON UTF-8 cộng newline, không gồm overhead TCP/IP. Fingerprint SHA-256 của mã nguồn Java và `pom.xml` lúc đo là `f6a56e39675794c4dd6fa6bb740986625c2087e5cb1e37ceb9f32fbb9052b087`. Dữ liệu thô nằm trong `experiments/final-2026-10-25/`. Một lần đo trước đó (22/10, máy i7-11800H, bản code trước các thay đổi gameplay 23–25/10) được giữ ở `experiments/final-2026-10-22-v2/` để đối chứng.
 
-**Kiểm thử chức năng:** 115 test JUnit 5 [6] trong 9 lớp test (`ConnectionTest`, `GameRoomTest`, `ServerFixesTest`, `ReviewFixesTest`, `ShardStealMechanicsTest`, `ShardObjectiveTest`, `CompletionRegressionTest`, `RequestedGameplayRulesTest`, `ShardCarrierActionTest`). Bộ test chạy được ở cả hai chế độ đồng bộ. Ngoài ra có smoke test TCP thật (`scripts/network_smoke.py`), bot (`scripts/bots.py`) và harness kiểm tra Unity Play Mode (`Assets/Editor/BombValidation.cs`).
+**Kiểm thử chức năng:** 116 test JUnit 5 [6] trong 9 lớp test (`ConnectionTest`, `GameRoomTest`, `ServerFixesTest`, `ReviewFixesTest`, `ShardStealMechanicsTest`, `ShardObjectiveTest`, `CompletionRegressionTest`, `RequestedGameplayRulesTest`, `ShardCarrierActionTest`). Bộ test chạy được ở cả hai chế độ đồng bộ. Ngoài ra có smoke test TCP thật (`scripts/network_smoke.py`), bot (`scripts/bots.py`) và harness kiểm tra Unity Play Mode (`Assets/Editor/BombValidation.cs`).
 
 ---
 
@@ -372,7 +373,7 @@ Công thức: `(baseline − optimized) / baseline × 100`. Cột p95 là trung 
 
 | Lớp kiểm tra | Kết quả | Giới hạn |
 | --- | --- | --- |
-| JUnit server | 115/115 test qua ở baseline và 115/115 ở optimized (chạy lại ngày 25/10, mã server giống commit `c35616f`) | Chạy trên một máy |
+| JUnit server | 116/116 test qua ở baseline và 116/116 ở optimized (chạy lại ngày 26/10 trên bản cuối, có kiểm tra phiên bản) | Chạy trên một máy |
 | Smoke test TCP | 2 client giả lập qua socket thật | Không có rendering |
 | Unity Play Mode | 111 kiểm tra headless qua ngày 24/10 (`docs/FINAL_VALIDATION.md`). Lần chạy lại ngày 25/10 dừng ở bước kiểm tra bản đồ vì bài kiểm tra chưa cập nhật theo cách hiển thị bản đồ mới (mục 14) | Một Unity client cùng peer TCP, chưa phải hai Unity player; chưa có kết quả cho bản cuối |
 | Staging Unity | Kiểm tra bản sao project qua ngày 25/10 | Chỉ kiểm tra việc đồng bộ file |
@@ -382,23 +383,23 @@ Công thức: `(baseline − optimized) / baseline × 100`. Cột p95 là trung 
 
 Các ảnh dưới đây chụp từ bản build Windows kết nối tới Java server chạy ở chế độ `optimized`.
 
-[[ẢNH: Cửa sổ server. Chạy server (scripts/run_server.ps1) và thêm bot (python scripts/bots.py --find QUICK --count 2). Chụp cửa sổ PowerShell có dòng "Bomb Me Baby server on TCP port 7777" và "[SyncMode] active = OPTIMIZED".]]
+![Cửa sổ Java server](images/hinh05-server.png)
 
 *Hình 5.* Java server lắng nghe trên cổng TCP 7777 ở chế độ đồng bộ `OPTIMIZED`.
 
-[[ẢNH: Sảnh phòng riêng. Mở 2 cửa sổ game. Người A bấm Tạo phòng riêng, người B nhập mã phòng, cả hai bấm Sẵn sàng. Chụp màn hình người A khi thấy mã phòng 6 ký tự và 2 người trong danh sách.]]
+![Sảnh phòng riêng](images/hinh06-phong-rieng.png)
 
 *Hình 6.* Sảnh phòng riêng: mã phòng do server cấp và trạng thái sẵn sàng của từng người được đồng bộ qua `ROOM_STATE`.
 
-[[ẢNH: Tìm trận. Mở 2 cửa sổ, chọn cùng một chế độ rồi bấm Tìm trận ở một cửa sổ trước. Chụp lúc màn hình hiện trạng thái hàng chờ, trước khi cửa sổ thứ hai bấm Tìm trận.]]
+![Màn hình tìm trận](images/hinh07-tim-tran.png)
 
 *Hình 7.* Ghép trận ngẫu nhiên: client hiển thị trạng thái hàng chờ theo message `MATCHMAKING` từ server.
 
-[[ẢNH: Hai client cùng một trận. Đặt 2 cửa sổ game cạnh nhau, vào cùng một trận Đấu nhanh. Chụp toàn màn hình (Win + Shift + S) để thấy cả hai cửa sổ có cùng vị trí nhân vật, HP và đồng hồ.]]
+![Hai client trong cùng một trận](images/hinh08-hai-client.png)
 
 *Hình 8.* Hai client trong cùng một trận: vì server quyết định trạng thái, hai màn hình hiển thị cùng vị trí, HP và thời gian còn lại.
 
-[[ẢNH: HUD và bảng debug. Trong trận, nhấn F3. Chụp màn hình thấy HUD (HP, Size, hồi chiêu, minimap) và bảng F3 có địa chỉ server, chế độ đồng bộ và RTT.]]
+![HUD và bảng debug F3](images/hinh09-hud-f3.png)
 
 *Hình 9.* HUD và bảng debug F3: client hiển thị địa chỉ server, chế độ đồng bộ và RTT đo bằng `PING`/`PONG`.
 
@@ -458,7 +459,6 @@ Bản prototype ban đầu (commit `aaed786`, 12/10) gửi snapshot đầy đủ
 | Phục hồi phiên giữ thứ tự vòng đời | Resume token, `seq` không reset, `roomCode` và `roundIndex` trong snapshot, phát lại kết quả khi reconnect sau trận | `BombServer.java`, `ConnectionTest`, `CompletionRegressionTest` |
 | Concurrency có kiểm soát | Thứ tự khóa cố định, hàng đợi ghi riêng giới hạn 128, watchdog ghi treo, ticket ghép trận có generation | `BombServer.java`, `Matchmaker.java`; regression watchdog hai luồng (mục 9.4) |
 | Bộ công cụ đo lặp lại được | Client giả lập, runner ma trận, fingerprint mã nguồn, giữ lại cả lượt lỗi | `scripts/load_test.py`, `run_benchmark.ps1`, `experiments/` |
-
 ### 13.3. Baseline và Proposed
 
 | Khía cạnh | Baseline | Proposed |
@@ -494,10 +494,11 @@ Hai game trên hơn hẳn Bomb Me Baby về quy mô, số nền tảng và nội
 
 **Điểm cải tiến của Bomb Me Baby:**
 
-1. **Ẩn vị trí ngay từ dữ liệu gửi đi trong một game đặt bom quy mô nhỏ.** Kỹ thuật kiểu fog of war đã được công bố ở game bắn súng lớn [10]. Nhóm áp dụng nó cho thể loại đặt bom có bụi ẩn nấp và đo được thêm lợi ích về băng thông: giảm 62–78% so với gửi đầy đủ (mục 11.1).
-2. **Phòng riêng miễn phí đi cùng ghép trận ngẫu nhiên trên cùng một server.** Ở Super Bomberman R Online, tạo phòng riêng là tính năng của gói Premium Pack trả phí [11].
-3. **Không phụ thuộc máy chủ của nhà phát hành.** Server là một file JAR chạy được trên bất kỳ máy nào trong LAN. Super Bomberman R Online không còn chơi được từ khi Konami đóng máy chủ [12].
-4. **Thiết kế mạng công khai và kiểm chứng được.** Protocol, mã nguồn, dữ liệu đo và kịch bản đo lại đều công khai (Phụ lục), trong khi các game thương mại trong bảng không công bố phần này.
+1. **Game do nhóm tự nghĩ và phát triển, với cách chơi mới.** Bomb Me Baby không làm lại một game có sẵn. Trong Bomberman, người chơi đặt bom trong mê cung và bom nổ sau một khoảng thời gian [17]; còn trong Bomb Me Baby, nhân vật chính là quả bom: giữ Space để gồng lực rồi tự nổ quanh mình, nên muốn hạ đối thủ phải lao vào gần họ. Người chơi lớn lên bằng cách nhặt Energy giống Agar.io [18], nhưng lớn lên để có quả nổ mạnh hơn chứ không để nuốt đối thủ; nổ xong Size về mức gốc và phần đã dùng rơi ra cho người khác nhặt, nên Size vừa là sức mạnh vừa là thứ phải tiêu. Khiên phản 50% sát thương cho phép hạ đối thủ bằng chính quả bom của họ. Chế độ Hành trình Tim Lửa có cốt truyện riêng qua 3 chương, với luật tranh Mảnh Tim Lửa do nhóm tự đặt: người cầm mảnh không gồng bom được, có thanh Khóa Lửa giảm dần khi trúng đòn, và người khác có thể cướp mảnh trên bệ bằng cách đứng yên giữ F trong 3 giây, nên thế trận luôn có thể lật.
+2. **Ẩn vị trí ngay từ dữ liệu gửi đi trong một game đặt bom quy mô nhỏ.** Kỹ thuật kiểu fog of war đã được công bố ở game bắn súng lớn [10]. Nhóm áp dụng nó cho thể loại đặt bom có bụi ẩn nấp và đo được thêm lợi ích về băng thông: giảm 62–78% so với gửi đầy đủ (mục 11.1).
+3. **Phòng riêng miễn phí đi cùng ghép trận ngẫu nhiên trên cùng một server.** Ở Super Bomberman R Online, tạo phòng riêng là tính năng của gói Premium Pack trả phí [11].
+4. **Không phụ thuộc máy chủ của nhà phát hành.** Server là một file JAR chạy được trên bất kỳ máy nào trong LAN. Super Bomberman R Online không còn chơi được từ khi Konami đóng máy chủ [12].
+5. **Thiết kế mạng công khai và kiểm chứng được.** Protocol, mã nguồn, dữ liệu đo và kịch bản đo lại đều công khai (Phụ lục), trong khi các game thương mại trong bảng không công bố phần này.
 
 **Những điểm còn kém các game thương mại:** quy mô người chơi, nội dung và số nền tảng; chưa dùng UDP và chưa có bù trễ; lọc tầm nhìn còn thô (chỉ theo bán kính và bụi, không gửi sớm); chưa có tài khoản, máy chủ nhiều vùng hay chống gian lận phía client. Các hướng khắc phục nằm ở mục 15.
 
@@ -522,11 +523,9 @@ Hai game trên hơn hẳn Bomb Me Baby về quy mô, số nền tảng và nội
 4. Thêm tài khoản, lưu kết quả trận vào database, bảng xếp hạng toàn cục.
 5. Thêm TLS, rate limit và client-side prediction đầy đủ.
 6. Thử Java NIO hoặc mô hình event loop khi số kết nối lớn, dựa trên kết quả profiling.
-7. Kiểm tra phiên bản khi kết nối. Hiện `HELLO` chưa có trường phiên bản, nên client cũ vẫn kết nối được vào server mới và có thể đọc sai message khi protocol thay đổi. Hướng làm: thêm trường `version` vào `HELLO`; server trả `ERROR VERSION_MISMATCH` nếu phiên bản không tương thích; client báo người chơi tải bản mới trên trang phát hành.
-
 ## 16. Conclusion
 
-Nhóm đã xây dựng một game đấu trường nhiều người qua TCP, trong đó Java server giữ quyền quyết định luật chơi, phục vụ đồng thời nhiều phòng, hỗ trợ hai chế độ chơi, ba bản đồ, phòng mã và ghép trận, và chịu được request trùng, timeout và mất kết nối tạm thời. Đóng góp chính là đồng bộ trạng thái chọn lọc theo từng người xem. Trên loopback, cơ chế này giảm 62–78% băng thông mỗi client so với baseline mà không làm tăng độ trễ một cách đo được, đồng thời ngăn client biết vị trí đối thủ đang ẩn. So với các game đặt bom đã phát hành, hệ thống nhỏ hơn nhiều về quy mô, nhưng có phòng riêng miễn phí, chạy được trong LAN mà không cần máy chủ của nhà phát hành, và công khai toàn bộ thiết kế mạng cùng số đo (mục 13.4). Kiểm thử tự động giúp phát hiện và sửa các lỗi về thứ tự snapshot, phục hồi kết quả và một race condition trong watchdog. Kết quả chưa bao gồm đánh giá trên mạng thật và trải nghiệm của người chơi thật. Đó là hướng tiếp theo.
+Nhóm đã xây dựng một game đấu trường nhiều người qua TCP, trong đó Java server giữ quyền quyết định luật chơi, phục vụ đồng thời nhiều phòng, hỗ trợ hai chế độ chơi, ba bản đồ, phòng mã và ghép trận, và chịu được request trùng, timeout và mất kết nối tạm thời. Đóng góp chính là đồng bộ trạng thái chọn lọc theo từng người xem. Trên loopback, cơ chế này giảm 62–78% băng thông mỗi client so với baseline mà không làm tăng độ trễ một cách đo được, đồng thời ngăn client biết vị trí đối thủ đang ẩn. So với các game đặt bom đã phát hành, hệ thống nhỏ hơn nhiều về quy mô, nhưng là game do nhóm tự nghĩ với cách chơi mới (người chơi chính là quả bom, chế độ Hành trình Tim Lửa có luật cướp mảnh), có phòng riêng miễn phí, chạy được trong LAN mà không cần máy chủ của nhà phát hành, và công khai toàn bộ thiết kế mạng cùng số đo (mục 13.4). Kiểm thử tự động giúp phát hiện và sửa các lỗi về thứ tự snapshot, phục hồi kết quả và một race condition trong watchdog. Kết quả chưa bao gồm đánh giá trên mạng thật và trải nghiệm của người chơi thật. Đó là hướng tiếp theo.
 
 ## 17. References
 
@@ -546,6 +545,8 @@ Nhóm đã xây dựng một game đấu trường nhiều người qua TCP, tro
 14. Game8, *Brawl Stars – Battle Tips and Strategies: How to Win in a Match*, cập nhật 20/09/2021. https://game8.co/games/Brawl-Stars/archives/316954
 15. Valve, *Lag Compensation*, Valve Developer Community. https://developer.valvesoftware.com/wiki/Lag_Compensation
 16. G. Fiedler, *UDP vs. TCP*, Gaffer On Games, 2008. https://gafferongames.com/post/udp_vs_tcp/
+17. Wikipedia, *Bomberman*. https://en.wikipedia.org/wiki/Bomberman
+18. Wikipedia, *Agar.io*. https://en.wikipedia.org/wiki/Agar.io
 
 ## 18. Appendix
 
@@ -566,7 +567,7 @@ python scripts/summarize_experiments.py --summary experiments/final-2026-10-25/s
 
 ## 19. Thành viên và phân công
 
-Phần việc dưới đây được tổng hợp từ lịch sử commit trên GitHub (`git log`) và `docs/TEAM_PLAN.md`. Tỉ lệ đóng góp do nhóm thống nhất.
+Phần việc dưới đây được tổng hợp từ lịch sử commit trên GitHub (`git log`) và kế hoạch phân công của nhóm. Tỉ lệ đóng góp do nhóm thống nhất.
 
 | STT | MSSV | Họ tên | Vai trò | Đóng góp |
 | --- | --- | --- | --- | ---: |
@@ -580,11 +581,11 @@ Phần việc dưới đây được tổng hợp từ lịch sử commit trên 
 - Lưu yêu cầu đồ án, lập kế hoạch phân công đầu tiên, vẽ concept arena và HUD, phác thảo cốt truyện Ba Mảnh Tim Lửa.
 - Server cho chế độ Hành trình (20–21/10): mảnh Tim Lửa và bệ đá, viết lại luật mang, cướp và phá ấn mảnh trong `ShardObjective.java`, kèm `ShardStealMechanicsTest`; `JOIN_ROOM` kiểm tra chế độ phòng.
 - Unity: menu chọn chế độ, HUD, minimap, lời dẫn đọc từ `story.json`, cooldown bom, màn mở đầu bằng video có ảnh dự phòng, bảng điểm và màn kết quả.
-- Hoàn thiện bản cuối (25/10): bố cục bản đồ (`BombMapLayouts.cs`), chế độ thử cục bộ, bảng xếp hạng Đấu nhanh khi hết giờ, dọn asset không dùng, viết lại README.
+- Hoàn thiện bản cuối (25–26/10): bố cục bản đồ (`BombMapLayouts.cs`), chế độ thử cục bộ, bảng xếp hạng Đấu nhanh khi hết giờ, kiểm tra phiên bản khi kết nối (`VERSION_MISMATCH`) kèm test, dọn asset và tài liệu không dùng, viết lại README.
 
 **Giang Thủy Tiên**
 
-- Đóng góp kỹ thuật chính (15–17/10): cơ chế đồng bộ chọn lọc `SyncMode` baseline và optimized; sửa reconnect, token sai hoặc hết hạn, request trùng, dọn phòng khi mất kết nối; viết `ConnectionTest`, `ServerFixesTest` và tài liệu bàn giao `THANH_VIEN_A_*`.
+- Đóng góp kỹ thuật chính (15–17/10): cơ chế đồng bộ chọn lọc `SyncMode` baseline và optimized; sửa reconnect, token sai hoặc hết hạn, request trùng, dọn phòng khi mất kết nối; viết `ConnectionTest`, `ServerFixesTest` và tài liệu bàn giao cho các thành viên.
 - Chế độ chơi (20/10): `GameMode` Đấu nhanh và Hành trình, tính điểm, `JOURNEY_COMPLETE`; sửa lỗi lộ vị trí trong bụi qua event nổ, Core và snapshot khôi phục; cập nhật `PROTOCOL.md`.
 - Độ bền kết nối (21–22/10): heartbeat và timeout hai phía, hàng đợi ghi và watchdog, banner đếm ngược reconnect trên Unity, harness kiểm tra Unity Play Mode (`BombValidation.cs`), script build.
 - Âm thanh: `BombAudio`, bộ SFX và nhạc cho sảnh và ba bản đồ, chỉnh lại tiếng bom và khiên.
@@ -593,9 +594,9 @@ Phần việc dưới đây được tổng hợp từ lịch sử commit trên 
 **Trần Đỗ Lan Phương**
 
 - Kịch bản và tài liệu (15/10): kịch bản Hành trình Ba Mảnh (`STORY_SCRIPT.md`), cập nhật phân công nhóm.
-- Công cụ đo (15–19/10): `load_test.py` đo RTT, byte, message và thời gian xử lý với N client; `run_benchmark.ps1` chạy ma trận đo; `summarize_experiments.py` tổng hợp kết quả; sửa `network_smoke.py` cho chế độ optimized; chạy 18 lượt đo đầu tiên ngày 19/10 (`EXPERIMENTS.md`).
+- Công cụ đo (15–19/10): `load_test.py` đo RTT, byte, message và thời gian xử lý với N client; `run_benchmark.ps1` chạy ma trận đo; `summarize_experiments.py` tổng hợp kết quả; sửa `network_smoke.py` cho chế độ optimized; chạy 18 lượt đo đầu tiên ngày 19/10.
 - Ghép trận (21/10): `FIND_MATCH` và `CANCEL_MATCH` trên server (`Matchmaker.java`) kèm test trong `ConnectionTest`; nút Tìm trận và trạng thái hàng chờ trên Unity.
 - Bản đồ và giao diện (22/10): nhập asset CC0 của Kenney [7] cho bản đồ, nhân vật, hiệu ứng và nút bấm; dựng lại ba bản đồ bằng asset; làm mới HUD, menu, overlay và VFX.
 - Gameplay và công cụ test (23/10): Khóa Lửa dạng thanh máu trong `ShardObjective.java`, kèm test; bot thêm người chơi (`scripts/bots.py`, `BombDevBots.cs`); công cụ test trong Editor.
-- Mẫu ghi nguồn âm thanh (`AUDIO_CREDITS.md`) và phiếu playtest bản đồ (`PLAYTEST_MAPS.md`).
+- Mẫu ghi nguồn âm thanh (`AUDIO_CREDITS.md`) và phiếu playtest bản đồ.
 - Viết toàn bộ báo cáo.
