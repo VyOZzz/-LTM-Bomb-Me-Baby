@@ -9,6 +9,8 @@ using System.Threading;
 // Socket I/O stays off Unity's main thread. STATE_UPDATE messages are coalesced so a
 // paused client resumes from the newest authoritative state instead of replaying a backlog.
 public sealed class BombNetwork : IDisposable {
+    // Bump on any incompatible protocol or rules change; must match BombServer.PROTOCOL_VERSION.
+    public const int ProtocolVersion = 1;
     const int MaxQueuedMessages = 256;
     const int MaxQueuedWrites = 128;
     // The server closes an inbound-silent connection after 6 s. Waiting slightly longer
@@ -91,7 +93,9 @@ public sealed class BombNetwork : IDisposable {
                     Interlocked.Exchange(ref lastReceivedAt, NowMilliseconds());
 
                     var writer = new StreamWriter(stream, new UTF8Encoding(false)) { AutoFlush = true };
-                    EnqueueRaw(JsonFor(new BombMessage { type = "HELLO", name = name, resumeToken = ResumeToken }));
+                    EnqueueRaw(JsonFor(new BombMessage {
+                        type = "HELLO", protocolVersion = ProtocolVersion, name = name, resumeToken = ResumeToken
+                    }));
                     var output = new Thread(() => WriteLoop(generation, attempt, client, writer)) {
                         IsBackground = true, Name = "Bomb TCP writer"
                     };

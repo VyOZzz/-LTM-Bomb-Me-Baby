@@ -99,6 +99,7 @@ public sealed class BombGame : MonoBehaviour {
     string activeMapId = "", activeMapName = "";
     float activeArenaSize;
     bool editorLocalBackend;
+    bool versionRejected;   // server runs another protocol version; nothing more is accepted
     float editorMatchStartsAt = -1;
     bool soloTest;
     PlayerData soloPlayer;
@@ -420,6 +421,8 @@ public sealed class BombGame : MonoBehaviour {
         ? myId : spectatorTargetId);
 
     void Handle(string line) {
+        // The server may already have queued a NETWORK_ERROR behind the rejection.
+        if (versionRejected) return;
         ServerMessage msg = JsonUtility.FromJson<ServerMessage>(line);
         if (msg == null || string.IsNullOrEmpty(msg.type)) return;
         switch (msg.type) {
@@ -627,6 +630,10 @@ public sealed class BombGame : MonoBehaviour {
                 serverMicros = msg.processingMicros;
                 break;
             case "ERROR":
+                if (msg.code == "VERSION_MISMATCH") {
+                    RejectVersion(msg.serverVersion);
+                    break;
+                }
                 if (msg.code == "RESUME_FAILED") {
                     ExpireReconnect();
                 } else status = ErrorText(msg.code, msg.mode);
@@ -2014,6 +2021,18 @@ public sealed class BombGame : MonoBehaviour {
             else if (!reconnectDeadlines.ContainsKey(player.id))
                 reconnectDeadlines[player.id] = Time.unscaledTime + Mathf.Max(0, player.reconnectRemaining);
         }
+    }
+
+    /// Stop reconnecting: every retry would be rejected again. Only quitting is offered.
+    void RejectVersion(int serverVersion) {
+        versionRejected = true;
+        network.Dispose();
+        gameAudio.StopGameplayLoops();
+        reconnectStartedAt = -1;
+        charging = false;
+        modeMenu.StopSearch();
+        status = "";
+        overlay.OpenVersionMismatch(serverVersion);
     }
 
     void QuitGame() {

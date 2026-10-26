@@ -36,8 +36,16 @@ Client và server phải được cập nhật cùng phiên bản này.
 Ngoại trừ `HELLO` và `PING`, mỗi request client phải có `seq` lớn hơn mọi `seq` server đã chấp nhận trong cùng session. Request trùng/cũ nhận `DUPLICATE_SEQUENCE` và không được thực hiện lại. Sequence không reset khi rời phòng hoặc reconnect.
 
 ```json
-{"type":"HELLO","name":"Bom A","resumeToken":""}
+{"type":"HELLO","protocolVersion":1,"name":"Bom A","resumeToken":""}
 ```
+
+`protocolVersion` phải bằng `BombServer.PROTOCOL_VERSION` (Unity: `BombNetwork.ProtocolVersion`). Nếu khác hoặc thiếu (bản build cũ), server không tạo hay khôi phục session mà trả:
+
+```json
+{"type":"ERROR","code":"VERSION_MISMATCH","serverVersion":1}
+```
+
+Unity ngừng kết nối lại và hiện popup yêu cầu cập nhật phiên bản mới, chỉ còn nút thoát game. Tăng hằng số ở cả hai phía mỗi khi đổi protocol hoặc luật chơi không tương thích.
 
 Server trả token cho session mới:
 
