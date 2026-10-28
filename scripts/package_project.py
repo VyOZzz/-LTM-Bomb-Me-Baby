@@ -56,7 +56,7 @@ def main():
     if not (player / 'BombMeBaby.exe').exists() or not jar.exists():
         parser.error('Build the Windows player and run mvn test package first')
     files = subprocess.check_output(['git', 'ls-files', '-z', '--cached', '--others', '--exclude-standard'], cwd=root).decode('utf-8').split('\0')
-    allowed = ('server/src/', 'scripts/', 'docs/', 'experiments/', 'final-project/',
+    allowed = ('server/src/', 'scripts/', 'docs/', 'experiments/',
         'LTM-Bomb-Me-Baby/Assets/', 'LTM-Bomb-Me-Baby/Packages/', 'LTM-Bomb-Me-Baby/ProjectSettings/')
     for relative in sorted(set(files)):
         if relative not in ('README.md', '.gitignore', 'server/pom.xml') and not relative.startswith(allowed):
@@ -75,15 +75,10 @@ def main():
     (output / 'Playable/Client/server.txt').write_text('127.0.0.1:7777\n', encoding='ascii')
     report = output / 'Report'
     report.mkdir()
-    for filename in ('REPORT.md', 'EXPERIMENTS_FINAL.md', 'AUDIO_CREDITS.md', 'ASSET_CREDITS.md'):
+    for filename in ('AUDIO_CREDITS.md', 'ASSET_CREDITS.md'):
         shutil.copy2(root / 'docs' / filename, report / filename)
     shutil.copytree(root / 'docs/validation', report / 'validation')
     shutil.copytree(root / 'docs/images', report / 'images')
-    experiment_doc = report / 'EXPERIMENTS_FINAL.md'
-    experiment_doc.write_text(experiment_doc.read_text(encoding='utf-8')
-        .replace('../experiments/final-2026-10-22-v2/', 'measurements/')
-        .replace('../experiments/final-2026-10-22/', '../Source/experiments/final-2026-10-22/'), encoding='utf-8')
-    shutil.copytree(root / 'experiments/final-2026-10-22-v2', report / 'measurements')
     repair_report_links(report)
     (output / 'START_HERE.md').write_text('''# Bomb Me Baby — bản review để nhóm kiểm tra
 

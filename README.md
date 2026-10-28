@@ -12,7 +12,7 @@
 
 ## 1.2. Topic
 
-**Chủ đề 2 – Phát triển game mạng** (`final-project/Topics.md`)
+**Chủ đề 2 – Phát triển game mạng**
 
 ## 1.3. Group
 
@@ -159,7 +159,7 @@ Unity Client N ─┘                                                       (tr�
 {"type":"ERROR","code":"VERSION_MISMATCH","serverVersion":1}
 ```
 
-Trừ `HELLO` và `PING`, mọi request phải có `seq` lớn hơn mọi `seq` server đã nhận trong cùng phiên; `seq` không reset khi đổi phòng hay reconnect. `protocolVersion` của client phải bằng `BombServer.PROTOCOL_VERSION`. Đặc tả đầy đủ: [docs/PROTOCOL.md](docs/PROTOCOL.md).
+Trừ `HELLO` và `PING`, mọi request phải có `seq` lớn hơn mọi `seq` server đã nhận trong cùng phiên; `seq` không reset khi đổi phòng hay reconnect. `protocolVersion` của client phải bằng `BombServer.PROTOCOL_VERSION`.
 
 ## 5.4. Communication Sequence
 
@@ -247,12 +247,8 @@ Bản prototype ban đầu (commit `aaed786`, 12/10/2026) gửi snapshot đầy 
 -LTM-Bomb-Me-Baby/
 │
 ├── README.md                      ← file này
-├── final-project/                 ← yêu cầu đồ án: Instruction.md, Topics.md, README.md mẫu, Submission.md
 │
 ├── docs/
-│   ├── REPORT.md                  ← báo cáo đầy đủ (nguồn của file Word nộp Compilatio)
-│   ├── PROTOCOL.md                ← đặc tả protocol
-│   ├── EXPERIMENTS_FINAL.md       ← thiết lập và kết quả thực nghiệm
 │   ├── DEMO_RUNBOOK.md            ← kịch bản demo
 │   ├── images/                    ← sơ đồ kiến trúc, luồng, sequence và ảnh chạy thực tế
 │   └── ...                        ← GDD, nguồn asset và âm thanh
@@ -527,7 +523,7 @@ Trung bình 3 lượt mỗi cấu hình; 18/18 lượt hoàn tất, 0 `ERROR`, 0
 | Byte/snapshot, 8 client | 11 570,5 | 4 362,3 | −62,3% |
 | RTT TB, 8 client (ms) | 0,447 | 0,414 | không khác biệt đáng kể |
 
-Lần đo ngày 22/10 trên máy khác (i7-11800H, Java 21) cho tỉ lệ giảm gần như trùng: 78,1% / 74,3% / 62,1%. Chi tiết và giới hạn phép đo: [docs/EXPERIMENTS_FINAL.md](docs/EXPERIMENTS_FINAL.md).
+Lần đo ngày 22/10 trên máy khác (i7-11800H, Java 21) cho tỉ lệ giảm gần như trùng: 78,1% / 74,3% / 62,1%.
 
 > **Only report measured or reproducible results. Do not fabricate experimental data.**
 
@@ -574,11 +570,10 @@ Các hướng phát triển:
 Báo cáo đầy đủ:
 
 ```text
-docs/REPORT.md                       ← nguồn báo cáo
 Nhom07_BombMeBaby_Report.docx        ← file nộp, nằm trong thư mục Report/ của gói nộp bài
 ```
 
-Báo cáo tuân thủ cấu trúc được quy định trong `final-project/Instruction.md` (mục 8) và phải được kiểm tra bằng **Compilatio**.
+Báo cáo tuân thủ cấu trúc được quy định trong hướng dẫn đồ án (mục 8) và phải được kiểm tra bằng **Compilatio**.
 
 > **Similarity ≤ 20% là yêu cầu đạt của học phần.**
 
@@ -664,7 +659,7 @@ Project source code được nộp thông qua **Google Drive** trong thư mục 
 Nhom07_BombMeBaby_Report.docx
 ```
 
-Gói bàn giao theo `final-project/Submission.md`:
+Gói bàn giao theo hướng dẫn nộp bài:
 
 ```text
 Nhom07_BombMeBaby/
@@ -676,12 +671,12 @@ Nhom07_BombMeBaby/
 
 * Source code: `server/`, `LTM-Bomb-Me-Baby/`, `scripts/`;
 * README: file này;
-* Report: `docs/REPORT.md` và `Nhom07_BombMeBaby_Report.docx`;
+* Report: `Nhom07_BombMeBaby_Report.docx`;
 * Configuration: tham số server và `server.txt` của client (mục 10.4);
 * Database script: không có (không dùng database);
 * Dataset/sample data: `experiments/`;
 * Test cases: `server/src/test/java/bombmebaby/`;
-* Experimental results: `experiments/final-2026-10-25/`, `docs/EXPERIMENTS_FINAL.md`;
+* Experimental results: `experiments/final-2026-10-25/`;
 * Architecture diagrams: `docs/images/`.
 
 ---

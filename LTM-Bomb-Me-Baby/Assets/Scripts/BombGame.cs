@@ -1626,7 +1626,7 @@ public sealed class BombGame : MonoBehaviour {
     }
 
     /// Why the journey winner ranks first when the score table looks level. Shards decide, then
-    /// eliminations, then the final chapter's winner; points are only statistics (docs/PROTOCOL.md).
+    /// eliminations, then the final chapter's winner; points are only statistics.
     string TiebreakText() {
         if (string.IsNullOrEmpty(winnerId) || room?.scores == null) return "";
         ScoreData best = Array.Find(room.scores, score => score.playerId == winnerId);
