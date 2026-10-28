@@ -21,6 +21,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.function.LongSupplier;
 
 /** Newline-delimited JSON over persistent TCP. The server owns every gameplay value. */
 public final class BombServer {
@@ -44,6 +45,8 @@ public final class BombServer {
         int port = args.length > 0 ? Integer.parseInt(args[0]) : 7777;
         String demoMap = GameMap.configuredDemoMapId();
         if (!demoMap.isEmpty()) System.out.println("[Demo] QUICK rooms locked to map = " + demoMap);
+        Long gameSeed = GameRoom.configuredSeed();
+        if (gameSeed != null) System.out.println("[Benchmark] game.seed = " + gameSeed);
         new BombServer().run(port);
     }
 
@@ -150,6 +153,8 @@ public final class BombServer {
         final PrintWriter writer;
         final Object outboundLock = new Object();
         final ArrayDeque<Outbound> outbound = new ArrayDeque<>();
+        final RequestRateLimiter rateLimiter = new RequestRateLimiter();
+        final LongSupplier nanoClock;
         PlayerState player;
         volatile boolean closed;
         volatile long lastReceivedAt = System.currentTimeMillis();
@@ -157,7 +162,12 @@ public final class BombServer {
         Thread outputThread;
 
         Connection(Socket socket) throws IOException {
+            this(socket, System::nanoTime);
+        }
+
+        Connection(Socket socket, LongSupplier nanoClock) throws IOException {
             this.socket = socket;
+            this.nanoClock = nanoClock;
             this.writer = new PrintWriter(socket.getOutputStream(), true, StandardCharsets.UTF_8);
             connections.add(this);
         }
@@ -229,7 +239,10 @@ public final class BombServer {
             startWriter();
             try (socket; BufferedReader input = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8))) {
                 String line;
-                while ((line = readFrame(input)) != null) {
+                while (!closed && (line = readFrame(input)) != null) {
+                    // Count every frame before parsing, including PING, HELLO and malformed JSON.
+                    // Close immediately instead of queuing replies that amplify a flood.
+                    if (!rateLimiter.allow(nanoClock.getAsLong())) { close(); break; }
                     long begin = System.nanoTime();
                     try {
                         JsonObject message = JsonParser.parseString(line).getAsJsonObject();
@@ -290,7 +303,7 @@ public final class BombServer {
                 // a tick cannot send STATE_UPDATE ahead of WELCOME.
                 send(GameRoom.data("type","WELCOME","playerId",player.id,
                     "resumeToken",player.resumeToken,"lastSeq",player.lastSeq,"hasRoom",player.room != null,
-                    "syncMode",syncMode.name(),"demoMap",GameMap.configuredDemoMapId()));
+                    "syncMode",syncMode.name(),"demoMap",GameMap.configuredDemoMapId(),"gameSeed",GameRoom.configuredSeed()));
                 player.connection = this;
                 player.connected = true;
                 GameRoom room = player.room;
@@ -330,7 +343,7 @@ public final class BombServer {
                 player = new PlayerState(name, this);
                 sessions.put(player.resumeToken, player);
                 send(GameRoom.data("type","WELCOME","playerId",player.id,"resumeToken",player.resumeToken,
-                    "syncMode",syncMode.name(),"demoMap",GameMap.configuredDemoMapId()));
+                    "syncMode",syncMode.name(),"demoMap",GameMap.configuredDemoMapId(),"gameSeed",GameRoom.configuredSeed()));
                 return;
             }
             long seq = number(m,"seq",-1);

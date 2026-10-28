@@ -1,0 +1,139 @@
+{
+  "started_at": "2026-10-28T12:39:42",
+  "commit": "353ef09-dirty",
+  "server_source_sha256": "c285bc7317034bd4924bd63129e2f58ab6cd45d4515e16cd28402085975e1247",
+  "server_jar_sha256": "fa2bb1c1340a75e268003f371cbd4f0d1965a5e89bf6cbe5b62bea17e5384671",
+  "python": "3.12.10 (tags/v3.12.10:0cc8128, Apr  8 2025, 12:21:36) [MSC v.1943 64 bit (AMD64)]",
+  "platform": "Windows-11-10.0.22631-SP0",
+  "java_version": "java version \"21.0.10\" 2026-01-20 LTS\nJava(TM) SE Runtime Environment (build 21.0.10+8-LTS-217)\nJava HotSpot(TM) 64-Bit Server VM (build 21.0.10+8-LTS-217, mixed mode, sharing)",
+  "arguments": {
+    "modes": [
+      "optimized",
+      "baseline"
+    ],
+    "clients": [
+      2,
+      4,
+      8
+    ],
+    "repeats": 3,
+    "duration": 30,
+    "seed": 1,
+    "out_dir": "experiments/final-2026-10-28",
+    "port": 17777,
+    "map": "meadow",
+    "java": "java"
+  },
+  "order": "alternate each pair; first pair uses --modes order",
+  "server_lifecycle": "fresh JVM for every trial",
+  "trials": [
+    {
+      "mode": "optimized",
+      "clients": 2,
+      "seed": 1,
+      "status": "passed"
+    },
+    {
+      "mode": "baseline",
+      "clients": 2,
+      "seed": 1,
+      "status": "passed"
+    },
+    {
+      "mode": "baseline",
+      "clients": 2,
+      "seed": 2,
+      "status": "passed"
+    },
+    {
+      "mode": "optimized",
+      "clients": 2,
+      "seed": 2,
+      "status": "passed"
+    },
+    {
+      "mode": "optimized",
+      "clients": 2,
+      "seed": 3,
+      "status": "passed"
+    },
+    {
+      "mode": "baseline",
+      "clients": 2,
+      "seed": 3,
+      "status": "passed"
+    },
+    {
+      "mode": "baseline",
+      "clients": 4,
+      "seed": 1,
+      "status": "passed"
+    },
+    {
+      "mode": "optimized",
+      "clients": 4,
+      "seed": 1,
+      "status": "passed"
+    },
+    {
+      "mode": "optimized",
+      "clients": 4,
+      "seed": 2,
+      "status": "passed"
+    },
+    {
+      "mode": "baseline",
+      "clients": 4,
+      "seed": 2,
+      "status": "passed"
+    },
+    {
+      "mode": "baseline",
+      "clients": 4,
+      "seed": 3,
+      "status": "passed"
+    },
+    {
+      "mode": "optimized",
+      "clients": 4,
+      "seed": 3,
+      "status": "passed"
+    },
+    {
+      "mode": "optimized",
+      "clients": 8,
+      "seed": 1,
+      "status": "passed"
+    },
+    {
+      "mode": "baseline",
+      "clients": 8,
+      "seed": 1,
+      "status": "passed"
+    },
+    {
+      "mode": "baseline",
+      "clients": 8,
+      "seed": 2,
+      "status": "passed"
+    },
+    {
+      "mode": "optimized",
+      "clients": 8,
+      "seed": 2,
+      "status": "passed"
+    },
+    {
+      "mode": "optimized",
+      "clients": 8,
+      "seed": 3,
+      "status": "passed"
+    },
+    {
+      "mode": "baseline",
+      "clients": 8,
+      "seed": 3,
+      "status": "passed"
+    }
+  ]
+}

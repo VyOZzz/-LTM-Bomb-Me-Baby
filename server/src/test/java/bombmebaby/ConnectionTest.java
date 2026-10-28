@@ -85,6 +85,59 @@ class ConnectionTest {
         assertEquals(1, peer.player.lastSeq);
     }
 
+    @Test void rateLimitClosesOnlyFloodingPlayerBeforeApplyingExtraAction() throws Exception {
+        Peer flood = hello(connect(() -> 0L));
+        flood.request("type", "CREATE_ROOM", "seq", 1);
+        Peer healthy = readyOpponent(flood);
+        flood.request("type", "READY", "seq", 2, "ready", true);
+        GameRoom room = flood.player.room;
+        // HELLO + CREATE_ROOM + READY already consumed three slots.
+        for (int i = 0; i < 117; i++) {
+            flood.send("type", "PING", "clientTime", i);
+            assertEquals(i, flood.until("PONG").get("clientTime").getAsInt());
+        }
+        flood.send("type", "MOVE", "seq", 999, "directionX", 1);
+        flood.finished.get(5, TimeUnit.SECONDS);
+        assertTrue(flood.connection.closed);
+        assertFalse(flood.player.connected);
+        assertEquals(2, flood.player.lastSeq, "Over-limit frame must never reach handle()");
+        assertSame(room, flood.player.room, "Normal reconnect reservation is retained");
+        healthy.send("type", "PING", "clientTime", 123);
+        assertEquals(123, healthy.until("PONG").get("clientTime").getAsInt());
+        healthy.request("type", "MOVE", "seq", 3, "directionX", -1);
+        synchronized (room) {
+            assertEquals(-1, healthy.player.dx);
+            assertEquals(GameRoom.Phase.PLAYING, room.phase);
+        }
+        assertTrue(healthy.player.connected);
+    }
+
+    @Test void rateLimitCountsMalformedAndEmptyFramesBeforeHello() throws Exception {
+        Peer peer = connect(() -> 0L);
+        for (int i = 0; i < 120; i++) {
+            peer.writer.println(i % 2 == 0 ? "{" : "");
+            assertEquals("INVALID_MESSAGE", peer.until("ERROR").get("code").getAsString());
+        }
+        peer.send("type", "HELLO", "protocolVersion", BombServer.PROTOCOL_VERSION, "name", "Late");
+        peer.finished.get(5, TimeUnit.SECONDS);
+        assertTrue(peer.connection.closed);
+        assertTrue(server.sessions.isEmpty());
+    }
+
+    @Test void rateLimitAllowsSustainedNormalTrafficAcrossWindows() throws Exception {
+        var clock = new java.util.concurrent.atomic.AtomicLong();
+        Peer peer = hello(connect(clock::get));
+        peer.request("type", "CREATE_ROOM", "seq", 1);
+        for (int i = 0; i < 300; i++) {
+            clock.addAndGet(30_000_000L);
+            peer.send("type", "PING", "clientTime", i);
+            assertEquals(i, peer.until("PONG").get("clientTime").getAsInt());
+        }
+        peer.request("type", "LEAVE_ROOM", "seq", 2);
+        assertTrue(peer.player.connected);
+        assertNull(peer.player.room);
+    }
+
     @Test void heartbeatWatchdogClosesASilentConnection() throws Exception {
         Peer peer = hello();
         peer.connection.lastReceivedAt = System.currentTimeMillis() - GameRules.CONNECTION_TIMEOUT_MS;
@@ -670,7 +723,10 @@ class ConnectionTest {
     }
 
     private Peer hello() throws Exception {
-        Peer peer = connect();
+        return hello(connect());
+    }
+
+    private Peer hello(Peer peer) throws Exception {
         peer.send("type", "HELLO", "protocolVersion", BombServer.PROTOCOL_VERSION, "name", "A");
         JsonObject welcome = peer.until("WELCOME");
         assertEquals("OPTIMIZED", welcome.get("syncMode").getAsString());
@@ -717,10 +773,14 @@ class ConnectionTest {
     }
 
     private Peer connect() throws Exception {
+        return connect(System::nanoTime);
+    }
+
+    private Peer connect(java.util.function.LongSupplier clock) throws Exception {
         try (ServerSocket listener = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
             Socket socket = new Socket(listener.getInetAddress(), listener.getLocalPort());
             socket.setSoTimeout(5000);
-            var connection = server.new Connection(listener.accept());
+            var connection = server.new Connection(listener.accept(), clock);
             Peer peer = new Peer(socket, connection, server.clients.submit(connection));
             peers.add(peer);
             return peer;

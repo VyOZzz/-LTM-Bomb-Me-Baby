@@ -94,7 +94,7 @@ Người chơi điều khiển một quả bóng lăn trên bản đồ, nhặt 
 | Hành trình Tim Lửa | 3 chương trên 3 bản đồ, tranh Mảnh Tim Lửa và giữ bệ 30 giây | Done |
 | Đồng bộ chọn lọc | Snapshot riêng cho từng người xem, chuyển được giữa `BASELINE` và `OPTIMIZED` | Done |
 | Reconnect | Giữ chỗ 10 giây, khôi phục phòng, snapshot đầy đủ hoặc kết quả trận | Done |
-| Heartbeat, timeout, chống quá tải | Đóng kết nối im lặng, ghi treo, frame quá lớn, hàng đợi đầy; tối đa 64 kết nối | Done |
+| Heartbeat, timeout, chống quá tải | Đóng kết nối im lặng, ghi treo, frame quá lớn, hàng đợi đầy; tối đa 64 kết nối; 120 frame/kết nối/giây trượt | Done |
 | Bot và công cụ đo | Bot thêm người chơi, client giả lập đo RTT và băng thông | Done |
 | Tài khoản, lịch sử trận | Không thuộc phạm vi | Not planned |
 
@@ -186,6 +186,7 @@ Trình tự mất kết nối và kết nối lại:
 | Server error | Lỗi khi cập nhật một phòng hoặc khi ghép trận được bắt và ghi log, game loop và các phòng khác vẫn chạy |
 | Database error | Không áp dụng vì hệ thống không dùng database |
 | Quá tải | Từ chối kết nối thứ 65 trở đi |
+| Gửi quá nhanh | Đóng riêng kết nối vượt 120 frame trong một giây trượt, trước parse JSON/thực thi action; tính cả PING, HELLO và frame lỗi |
 | Input cũ | Hướng di chuyển tự về 0 sau 0,5 giây nếu không có `MOVE` mới |
 
 ---
@@ -223,7 +224,7 @@ Bản prototype ban đầu (commit `aaed786`, 12/10/2026) gửi snapshot đầy 
 
 | No. | Contribution | Description | Evidence |
 | --- | ------------ | ----------- | -------- |
-| 1 | Đồng bộ trạng thái chọn lọc | Snapshot riêng cho từng người xem, bỏ hình học tĩnh, lọc vật phẩm và đối thủ theo tầm nhìn và bụi | `SyncMode.java`, `GameRoom.snapshot(...)`; giảm 62,0–77,8% byte nhận mỗi client (mục 14); test `optimizedHidesBushOpponentButShowsSelfAndSameBush` |
+| 1 | Đồng bộ trạng thái chọn lọc | Snapshot riêng cho từng người xem, bỏ hình học tĩnh, lọc vật phẩm và đối thủ theo tầm nhìn và bụi | `SyncMode.java`, `GameRoom.snapshot(...)`; giảm 61,7–79,0% byte nhận mỗi client (mục 14); test `optimizedHidesBushOpponentButShowsSelfAndSameBush` |
 | 2 | Phục hồi phiên giữ thứ tự vòng đời | Resume token, `seq` không reset, phát lại `GAME_OVER` khi reconnect sau trận | `BombServer.java`; `ConnectionTest`, `CompletionRegressionTest` |
 | 3 | Concurrency có kiểm soát | Thứ tự khóa cố định, hàng đợi ghi giới hạn 128, watchdog ghi treo, ticket ghép trận có generation | `BombServer.java`, `Matchmaker.java`; test `watchdogDoesNotMisreadAWriteFinishingBetweenVolatileReads`, `concurrentCancelAndCommitHaveOneOutcomeWithoutDeadlock` |
 | 4 | Bộ công cụ đo lặp lại được | Client giả lập, runner ma trận baseline/optimized, fingerprint mã nguồn, giữ cả lượt đo lỗi | `scripts/load_test.py`, `scripts/run_benchmark.ps1`, `experiments/` |
@@ -236,7 +237,7 @@ Bản prototype ban đầu (commit `aaed786`, 12/10/2026) gửi snapshot đầy 
 | Architecture | Server-authoritative, một snapshot giống nhau cho cả phòng | Server-authoritative, snapshot riêng cho từng người xem |
 | Algorithm | Gửi toàn bộ trạng thái mỗi 100 ms | Lọc theo bán kính nhìn và bụi; hình học tĩnh chỉ gửi một lần |
 | Communication | Hình học, mọi vật phẩm và tọa độ mọi người trong mọi snapshot | Chỉ dữ liệu người xem được phép thấy; event nổ ẩn tọa độ khi không thấy nguồn |
-| Performance (8 client) | 116 644 byte nhận/client/giây | 44 365 byte nhận/client/giây (giảm 62,0%) |
+| Performance (8 client) | 115 693 byte nhận/client/giây | 44 331 byte nhận/client/giây (giảm 61,7%) |
 | Functionality | Client nhận được vị trí đối thủ đang ẩn | Chống map hack ngay từ dữ liệu gửi đi |
 
 ---
@@ -277,10 +278,10 @@ Bản prototype ban đầu (commit `aaed786`, 12/10/2026) gửi snapshot đầy 
 
 ## Hardware
 
-| | Tối thiểu | Máy nhóm dùng để đo (25/10/2026) |
+| | Tối thiểu | Máy dùng để đo (28/10/2026) |
 | --- | --- | --- |
-| CPU | 4 nhân | 13th Gen Intel Core i9-13900H |
-| RAM | 8 GB (16 GB nếu mở Unity Editor) | 16 GB |
+| CPU | 4 nhân | Intel Core i7-11800H |
+| RAM | 8 GB (16 GB nếu mở Unity Editor) | 7,69 GiB Windows nhận diện |
 | Disk | ~1 GB cho bản build; ~10 GB nếu cài Unity Editor | |
 | Mạng | Cùng LAN, hoặc server có IP public/port forwarding | Loopback |
 
@@ -335,6 +336,9 @@ Không cần. Server giữ trạng thái phòng và phiên trong bộ nhớ, kh�
 | Đối số đầu tiên | `7777` | Cổng TCP |
 | `-Dsync.mode` | `baseline` khi chạy trực tiếp; `optimized` khi chạy bằng `scripts/run_server.ps1` | Chế độ đồng bộ |
 | `-Ddemo.map` hoặc biến môi trường `DEMO_MAP` | rỗng (ngẫu nhiên) | Khóa bản đồ Đấu nhanh khi demo: `meadow`, `crossroads`, `crater` |
+| `-Dgame.seed` | không đặt (ngẫu nhiên) | Seed RNG từng phòng để đo cùng spawn/vật phẩm ở hai chế độ; chỉ bật khi benchmark |
+
+Mỗi kết nối nhận tối đa **120 frame trong một giây trượt**. Frame vượt ngưỡng làm đóng riêng kết nối trước khi parse hoặc thực thi; `HELLO`, `PING`, JSON lỗi và dòng rỗng đều tính. Lưu lượng Unity thông thường khoảng 25 MOVE/s + 1 PING/s.
 
 **Client** chỉ định server bằng một trong ba cách:
 
@@ -395,7 +399,7 @@ Chơi qua LAN: chạy server trên một máy, lấy IPv4 bằng `ipconfig`, m�
 
 ```powershell
 cd server
-mvn test "-Dsync.mode=baseline"     # 117 test JUnit
+mvn test "-Dsync.mode=baseline"     # 124 test JUnit
 mvn test "-Dsync.mode=optimized"    # chạy lại toàn bộ test ở chế độ optimized
 cd ..
 python scripts/network_smoke.py     # smoke test qua TCP thật với 2 client giả lập (server phải đang chạy)
@@ -417,62 +421,32 @@ python scripts/network_smoke.py     # smoke test qua TCP thật với 2 client g
 | 8 | Luật chiến đấu | Sát thương 80 HP khi gồng đầy, khiên phản đòn, nổ trả Size thành Energy | Passed (`fullChargeExplosionActuallyRemovesEightyHp`, `shieldReflectsAndDoesNotDamageTarget`, `explosionDropsSpentSizeAsEnergyFragments`) |
 | 9 | Đấu nhanh | Hết giờ xếp hạng theo điểm hạ rồi sát thương; 60 giây cuối lộ vị trí trên minimap | Passed (`quickTimeoutRanksKillsThenDamageAndCrownsTheLeader`, `finalQuickMinuteRevealsEveryPositionForTheMinimapOnly`) |
 | 10 | Hành trình Tim Lửa | Giữ bệ 30 giây để thắng, Khóa Lửa, cướp mảnh, chạy đủ 3 bản đồ | Passed (`placedShardOwnerWinsExactlyAfterThirtyUncontestedSeconds`, `lockRegeneratesGraduallyAfterDelayAndDropsShardWhenEmpty`, `journeyRunsAllThreeMapsAndCompletesWithItsWinner`) |
+| 11 | Rate limit theo kết nối | Đóng riêng client vượt 120 frame/giây trượt; chặn cả frame lỗi trước HELLO; lưu lượng bình thường vẫn qua | Passed (`rateLimitClosesOnlyFloodingPlayerBeforeApplyingExtraAction`, `rateLimitCountsMalformedAndEmptyFramesBeforeHello`, `rateLimitAllowsSustainedNormalTrafficAcrossWindows`) |
 
-Toàn bộ 117 test qua ở cả `baseline` và `optimized` (chạy lại ngày 26/10/2026).
+Toàn bộ 124 test qua khi chạy ở cả `baseline` và `optimized` (28/10/2026). Fixture chỉ định chế độ riêng vẫn dùng chế độ đó. [12 test tiêu biểu và bằng chứng XML](docs/TEST_CASES_FOR_REPORT.md).
 
 ---
 
 # 13. Experimental Setup
 
-## 13.1. Environment
-
-| Mục | Giá trị |
+| Mục | Giá trị thực tế |
 | --- | --- |
-| Phần cứng | 13th Gen Intel Core i9-13900H, RAM 16 GB |
-| Hệ điều hành | Windows 11 Home Single Language (build 26200) |
-| Công cụ | Java 26.0.2 (target Java 17), Maven 3.9.9, Python 3.13.14 |
-| Mã nguồn đo | Commit `c35616f`, đo ngày 25/10/2026 |
+| CPU / RAM | Intel Core i7-11800H @ 2.30 GHz / 7,69 GiB RAM vật lý khả dụng cho Windows |
+| Hệ điều hành | Windows 11, build 22631 |
+| Công cụ | Java 21.0.10 (target Java 17), Maven 3.9.16, Python portable 3.12.10 |
+| Nguồn | Working tree `353ef09-dirty`, đo ngày 28/10/2026; SHA-256 xác định bản server, gồm file mới chưa commit |
 | Mạng | Loopback `127.0.0.1:17777` |
-| Bản đồ, chế độ | `meadow` cố định, Đấu nhanh |
-| Input giả lập | `MOVE` 10 Hz, `PING` 1 Hz, không nổ bom |
+| Map / mode chơi | `meadow`, QUICK |
+| Ma trận | 2 chế độ × 2/4/8 client × 3 lượt × 30 giây = 18 lượt |
+| Input | MOVE 10 Hz, PING 1 Hz, không nổ bom; seed input 1/2/3 |
+| Seed server | `-Dgame.seed=1`, `2`, `3` tương ứng seed input; mỗi phòng có RNG riêng |
+| Thứ tự | Theo cặp cùng số client/seed, đảo thứ tự mỗi cặp; cặp đầu optimized → baseline |
+| JVM | Khởi động mới mỗi lượt, không warm-up riêng |
+| Phạm vi đo | Sau GAME_START, trước teardown; JSON UTF-8 + newline, không gồm overhead TCP/IP |
 
-## 13.2. Dataset
+Dữ liệu 18 lượt nằm trong `experiments/final-2026-10-28/`; metadata ghi thứ tự, seed và hash JAR. Fingerprint nguồn: `c285bc7317034bd4924bd63129e2f58ab6cd45d4515e16cd28402085975e1247`. Mỗi kịch bản 2, 4 hoặc 8 client chạy hai chế độ với ba seed 1/2/3, mỗi lượt 30 giây. Đảo thứ tự từng cặp và khởi động JVM mới mỗi lượt.
 
-Không dùng dataset có sẵn. Dữ liệu được sinh bởi client giả lập `scripts/load_test.py` với seed 1, 2, 3. Dữ liệu thô của 18 lượt đo nằm trong `experiments/final-2026-10-25/`; lần đo đối chứng ngày 22/10 trên máy khác nằm trong `experiments/final-2026-10-22-v2/`.
-
-## 13.3. Test Scenarios
-
-Mỗi kịch bản chạy ở cả `baseline` và `optimized`, mỗi chế độ 3 lượt × 30 giây (tổng 18 lượt). Server được khởi động lại khi đổi chế độ; số đo tính từ sau `GAME_START` đến trước khi đóng kết nối.
-
-### Scenario 1
-
-2 client giả lập trong cùng một trận.
-
-### Scenario 2
-
-4 client giả lập trong cùng một trận.
-
-### Scenario 3
-
-8 client giả lập trong cùng một trận.
-
-## 13.4. Evaluation Metrics
-
-Các metric sử dụng:
-
-* Byte nhận mỗi client mỗi giây (băng thông);
-* Byte mỗi snapshot;
-* Response time: RTT trung bình và p95 đo bằng `PING`/`PONG`;
-* Server processing time: `processingMicros` trong `ACK`;
-* Error rate: số `ERROR` và `CONNECTION_LOST`;
-* Concurrent users: 2, 4 và 8 client.
-
-Số byte tính theo JSON UTF-8 cộng newline, không gồm overhead TCP/IP. Chạy lại toàn bộ:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/run_benchmark.ps1 -Duration 30 -Repeats 3 -Map meadow -OutDir experiments/final-2026-10-25
-python scripts/summarize_experiments.py --summary experiments/final-2026-10-25/summary.csv
-```
+Dữ liệu thô, `summary.csv` và `metadata.json` (thứ tự 18 lượt, hash JAR) nằm trong `experiments/final-2026-10-28/`.
 
 ---
 
@@ -502,41 +476,36 @@ HUD và bảng debug F3 (địa chỉ server, chế độ đồng bộ, RTT):
 
 ## 14.2. Performance Results
 
-Trung bình 3 lượt mỗi cấu hình; 18/18 lượt hoàn tất, 0 `ERROR`, 0 `CONNECTION_LOST`.
+Đo ngày 28/10 sau rate limit; trung bình ba lượt/cấu hình. **18/18 lượt hoàn tất, 0 ERROR, 0 CONNECTION_LOST.** p95 là trung bình p95 từng lượt.
 
-| Scenario | Chế độ | Byte nhận/client/s | Byte/snapshot | RTT TB (ms) | RTT p95 (ms) | processingMicros TB (µs) |
-| ---------- | --- | -------: | -------: | -------: | -------: | -------: |
-| Scenario 1 (2 client) | baseline | 95 981,8 | 9 511,4 | 0,668 | 1,501 | 160,7 |
-| Scenario 1 (2 client) | optimized | 21 316,2 | 2 068,5 | 0,765 | 2,038 | 182,1 |
-| Scenario 2 (4 client) | baseline | 102 304,8 | 10 140,6 | 0,402 | 0,905 | 68,8 |
-| Scenario 2 (4 client) | optimized | 28 005,9 | 2 735,2 | 0,429 | 0,919 | 65,1 |
-| Scenario 3 (8 client) | baseline | 116 644,1 | 11 570,5 | 0,447 | 0,968 | 51,9 |
-| Scenario 3 (8 client) | optimized | 44 364,9 | 4 362,3 | 0,414 | 0,939 | 50,7 |
+| Mode | Client | Byte nhận/client/s | Byte/snapshot | RTT TB (ms) | RTT p95 (ms) | processingMicros TB (µs) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| baseline | 2 | 95 851,1 | 9 497,8 | 0,679 | 1,213 | 170,4 |
+| optimized | 2 | 20 093,6 | 1 946,9 | 0,625 | 1,349 | 157,2 |
+| baseline | 4 | 102 519,8 | 10 162,5 | 0,817 | 1,693 | 119,7 |
+| optimized | 4 | 26 267,4 | 2 562,0 | 0,589 | 1,498 | 101,3 |
+| baseline | 8 | 115 693,0 | 11 460,3 | 1,036 | 4,243 | 150,3 |
+| optimized | 8 | 44 331,2 | 4 354,7 | 0,559 | 1,252 | 91,5 |
 
 ## 14.3. Comparison
 
-| Metric | Baseline | Proposed | Difference |
-| ------ | -------: | -------: | ---------: |
-| Byte nhận/client/s, 2 client | 95 981,8 | 21 316,2 | −77,8% |
-| Byte nhận/client/s, 4 client | 102 304,8 | 28 005,9 | −72,6% |
-| Byte nhận/client/s, 8 client | 116 644,1 | 44 364,9 | −62,0% |
-| Byte/snapshot, 8 client | 11 570,5 | 4 362,3 | −62,3% |
-| RTT TB, 8 client (ms) | 0,447 | 0,414 | không khác biệt đáng kể |
+| Client | Giảm byte nhận/client/s | Giảm byte/snapshot |
+| --- | ---: | ---: |
+| 2 | 79,0% | 79,5% |
+| 4 | 74,4% | 74,8% |
+| 8 | 61,7% | 62,0% |
 
-Lần đo ngày 22/10 trên máy khác (i7-11800H, Java 21) cho tỉ lệ giảm gần như trùng: 78,1% / 74,3% / 62,1%.
-
-> **Only report measured or reproducible results. Do not fabricate experimental data.**
+Chỉ báo cáo kết quả đo được; các lượt 25/10 và 22/10 được lưu riêng trong `experiments/` để đối chứng.
 
 ---
 
 # 15. Discussion
 
-1. **Kết quả có đạt mục tiêu không?** Có. Chế độ chọn lọc giảm 62,0–77,8% byte mỗi client nhận trong một giây, không có lỗi kết nối, và 117 test chức năng đều qua ở cả hai chế độ.
-2. **Vì sao có kết quả như vậy?** Với 2 client, snapshot baseline nặng khoảng 9 500 byte, còn optimized khoảng 2 100 byte. Phần chênh lệch là hình học tĩnh của bản đồ cùng vật phẩm và đối thủ ngoài tầm nhìn, vốn bị gửi lại 10 lần mỗi giây ở baseline. Số message không đổi; cải tiến làm nhỏ từng message chứ không giảm số lần gửi.
-3. **Khi tăng số client thì sao?** Mức giảm nhỏ dần từ 78% xuống 62%. Phần tiết kiệm từ hình học là cố định, còn trạng thái động tăng theo số người; với 8 người trên cùng bản đồ, nhiều người đứng gần nhau hơn nên vẫn phải gửi cho nhau.
-4. **Bottleneck nằm ở đâu?** CPU server chưa phải điểm nghẽn: mỗi request được xử lý trong vài chục micro giây. Trên mạng thật, băng thông uplink của máy chạy server mới là giới hạn: baseline 8 người cần khoảng 0,93 MB/s chỉ cho snapshot, optimized khoảng 0,35 MB/s.
-5. **Ưu điểm của giải pháp:** giảm băng thông mà không làm tăng độ trễ đo được, đồng thời chặn map hack ngay từ dữ liệu gửi đi vì client không nhận tọa độ người trong bụi.
-6. **Hạn chế của giải pháp:** khi người chơi tập trung một chỗ thì việc lọc ít tác dụng; khi mạng mất gói nhiều thì TCP chặn đầu hàng gây giật hình; trên loopback, RTT chủ yếu phản ánh lịch luồng nên kết quả không chứng minh optimized giảm độ trễ.
+1. **Kết quả:** đồng bộ chọn lọc giảm 61,7–79,0% byte nhận/client/s; 124 test chức năng đều qua trong hai cấu hình chạy.
+2. **Nguyên nhân:** ở 2 client, snapshot baseline trung bình 9 498 byte, optimized 1 947 byte. Việc bỏ hình học tĩnh và lọc đối tượng làm nhỏ message; không đổi tần suất tick/snapshot.
+3. **Quy mô:** tiết kiệm ở 2/4/8 client lần lượt 79,0%, 74,4%, 61,7%. Tỷ lệ phụ thuộc phân bố nhân vật/vật phẩm và nội dung snapshot.
+4. **Độ trễ:** RTT chịu lịch luồng và warm-up JVM; chưa có cơ sở kết luận optimized giảm độ trễ trên mạng thật. processingMicros chỉ đo xử lý request, không bao gồm toàn bộ tick hay chi phí serialization.
+5. **Giới hạn:** cùng seed kiểm soát cảnh ban đầu; input/tick theo thời gian thực vẫn khác. Đã đảo thứ tự chạy nhưng chưa warm-up riêng, chưa đo LAN/FPS. Trong optimized, tọa độ đối thủ ẩn được lọc theo luật tầm nhìn; baseline vẫn gửi đầy đủ để so sánh.
 
 ---
 
@@ -546,7 +515,7 @@ Các hạn chế hiện tại:
 
 1. Benchmark chạy trên loopback với client giả lập, chưa đo trên LAN hoặc Internet thật, chưa đo FPS của client.
 2. Dùng TCP thuần: chưa có TLS, đăng nhập hay lưu lịch sử trận; chống gian lận mới ở mức server bỏ qua input bất thường và request trùng.
-3. Chưa có rate limit theo client.
+3. Rate limit hiện theo kết nối TCP; mở socket mới có bộ đếm mới, chưa giới hạn tổng theo IP/tài khoản.
 4. Đồng bộ chọn lọc lọc theo người xem nhưng chưa nén delta từng trường giữa hai snapshot.
 5. Client chỉ dự đoán hình ảnh ngắn hạn, chưa có lag compensation phía server.
 6. Trạng thái nằm trong bộ nhớ; khởi động lại server thì mất mọi phòng.
@@ -560,7 +529,7 @@ Các hướng phát triển:
 1. Gửi delta giữa hai snapshot; cân nhắc UDP cho dữ liệu vị trí và giữ TCP cho event vòng đời trận.
 2. Đo trên LAN hai máy và trên mạng có độ trễ, mất gói nhân tạo, với nhiều client hơn.
 3. Thêm tài khoản, lưu kết quả trận vào database, bảng xếp hạng toàn cục.
-4. Thêm TLS, rate limit và lag compensation phía server.
+4. Thêm TLS, giới hạn tổng lưu lượng theo IP và lag compensation phía server.
 5. Thử Java NIO hoặc mô hình event loop khi số kết nối lớn.
 
 ---
@@ -676,19 +645,21 @@ Nhom07_BombMeBaby/
 * Database script: không có (không dùng database);
 * Dataset/sample data: `experiments/`;
 * Test cases: `server/src/test/java/bombmebaby/`;
-* Experimental results: `experiments/final-2026-10-25/`;
+* Experimental results: `experiments/final-2026-10-28/`;
 * Architecture diagrams: `docs/images/`.
 
 ---
 
 # 23. Final Verification
 
+Cập nhật 28/10: server và benchmark đã kiểm chứng; build Unity mới đang thiếu license, chưa có gói Windows hiện tại được xác nhận. Xem [tiến độ T1–T5](docs/TIEN_TASK_STATUS.md) và [quy trình LAN/máy thứ hai](docs/LAN_VERIFICATION.md). Checklist cũ dưới đây cần được nhóm nghiệm thu lại trước khi nộp.
+
 Before submission:
 
 ```text
-[x] Project can run
+[ ] Project can run               (cần nghiệm thu client bản hiện tại)
 [x] Server can start
-[x] Client can connect
+[ ] Client can connect            (cần build Unity hiện tại; máy build đang thiếu license)
 [x] Network communication works
 [x] Protocol is documented
 [x] Multiple clients tested

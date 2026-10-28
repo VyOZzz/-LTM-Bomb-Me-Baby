@@ -28,7 +28,7 @@ import time
 RAW_FIELDS = ["t_ms", "client", "direction", "type", "bytes", "rtt_ms", "processing_us"]
 SUMMARY_FIELDS = [
     "run_at", "label", "commit", "server_source_sha256", "sync_mode", "map_id", "host", "port", "clients", "duration_s",
-    "move_hz", "ping_hz", "seed",
+    "move_hz", "ping_hz", "seed", "game_seed",
     "recv_msgs_per_client_s", "recv_bytes_per_client_s", "server_out_bytes_s",
     "sent_msgs_per_client_s", "sent_bytes_per_client_s",
     "state_updates_per_client_s", "state_update_avg_bytes",
@@ -48,7 +48,7 @@ class Client:
         self.geometry_in_snapshot = None  # True: baseline snapshots carry obstacles/bushes
         self.send_lock = threading.Lock()
         self.send("HELLO", protocolVersion=1, name=f"Load {index}", resumeToken="")
-        self.until("WELCOME")
+        self.welcome = self.until("WELCOME")
 
     def send(self, kind, **data):
         with self.send_lock:
@@ -201,7 +201,7 @@ def summarize(rows, args, elapsed, raw_file, sync_mode, map_id):
         "label": args.label, "commit": git_commit(), "server_source_sha256": server_source_hash(), "sync_mode": sync_mode, "map_id": map_id,
         "host": args.host, "port": args.port,
         "clients": args.clients, "duration_s": round(elapsed, 2), "move_hz": args.move_hz,
-        "ping_hz": args.ping_hz, "seed": args.seed,
+        "ping_hz": args.ping_hz, "seed": args.seed, "game_seed": args.game_seed,
         "recv_msgs_per_client_s": fmt(len(recv) / per_client),
         "recv_bytes_per_client_s": fmt(sum(r[4] for r in recv) / per_client, 1),
         "server_out_bytes_s": fmt(sum(r[4] for r in recv) / elapsed, 1),
@@ -227,6 +227,7 @@ def main():
     parser.add_argument("--move-hz", type=float, default=10)
     parser.add_argument("--ping-hz", type=float, default=1)
     parser.add_argument("--seed", type=int, default=1, help="random seed for movement")
+    parser.add_argument("--expect-game-seed", type=int, help="require the server's advertised room RNG seed")
     parser.add_argument("--label", default="baseline", help="name of this experiment, e.g. baseline")
     parser.add_argument("--out-dir", default="experiments")
     args = parser.parse_args()
@@ -241,11 +242,19 @@ def main():
                 parser.error("Existing CSV uses an older schema; choose a new --out-dir")
 
     recorder = Recorder()
-    clients = [Client(i, args.host, args.port, recorder) for i in range(args.clients)]
+    clients = []
     stop = threading.Event()
     threads = []
     game = {}
     try:
+        for i in range(args.clients):
+            clients.append(Client(i, args.host, args.port, recorder))
+        seeds = {c.welcome.get("gameSeed") for c in clients}
+        if len(seeds) != 1:
+            raise RuntimeError(f"Inconsistent server seeds: {seeds}")
+        args.game_seed = seeds.pop()
+        if args.expect_game_seed is not None and args.game_seed != args.expect_game_seed:
+            raise RuntimeError(f"Expected game seed {args.expect_game_seed}, got {args.game_seed}")
         clients[0].send("CREATE_ROOM")
         code = clients[0].until("ROOM_STATE")["room"]["code"]
         for c in clients[1:]:
