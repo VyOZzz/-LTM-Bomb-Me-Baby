@@ -375,7 +375,7 @@ Công thức: `(baseline − optimized) / baseline × 100`. Cột p95 là trung 
 | --- | --- | --- |
 | JUnit server | 117/117 test qua ở baseline và 117/117 ở optimized (chạy lại ngày 26/10 trên bản cuối, có kiểm tra phiên bản và đếm ngược ghép trận) | Chạy trên một máy |
 | Smoke test TCP | 2 client giả lập qua socket thật | Không có rendering |
-| Unity Play Mode | 111 kiểm tra headless qua ngày 24/10 (`docs/FINAL_VALIDATION.md`). Lần chạy lại ngày 25/10 dừng ở bước kiểm tra bản đồ vì bài kiểm tra chưa cập nhật theo cách hiển thị bản đồ mới (mục 14) | Một Unity client cùng peer TCP, chưa phải hai Unity player; chưa có kết quả cho bản cuối |
+| Unity Play Mode | 111 kiểm tra headless qua ngày 24/10 (`Assets/Editor/BombValidation.cs`). Lần chạy lại ngày 25/10 dừng ở bước kiểm tra bản đồ vì bài kiểm tra chưa cập nhật theo cách hiển thị bản đồ mới (mục 14) | Một Unity client cùng peer TCP, chưa phải hai Unity player; chưa có kết quả cho bản cuối |
 | Staging Unity | Kiểm tra bản sao project qua ngày 25/10 | Chỉ kiểm tra việc đồng bộ file |
 | Build | Windows player và server JAR tạo thành công | Chưa nghiệm thu trên máy sạch |
 
@@ -553,7 +553,7 @@ Nhóm đã xây dựng một game đấu trường nhiều người qua TCP, tro
 - **A. Protocol đầy đủ:** `docs/PROTOCOL.md`.
 - **B. Cấu hình server:** đối số đầu tiên là cổng (mặc định 7777); `-Dsync.mode=baseline|optimized`; `-Ddemo.map=meadow|crossroads|crater` hoặc biến môi trường `DEMO_MAP`.
 - **C. Dữ liệu thực nghiệm:** `docs/EXPERIMENTS_FINAL.md`, `experiments/final-2026-10-25/summary.csv` và 18 file raw. Lần đo đối chứng 22/10 ở `experiments/final-2026-10-22-v2/`. Lượt lỗi trước khi sửa watchdog được giữ nguyên ở `experiments/final-2026-10-22/`.
-- **D. Kiểm thử:** `server/src/test/java/bombmebaby/`, `docs/FINAL_VALIDATION.md`.
+- **D. Kiểm thử:** `server/src/test/java/bombmebaby/`, `scripts/validation/`, `LTM-Bomb-Me-Baby/Assets/Editor/BombValidation.cs`.
 - **E. Chạy lại thực nghiệm:**
 
 ```powershell
@@ -561,7 +561,7 @@ powershell -ExecutionPolicy Bypass -File scripts/run_benchmark.ps1 -Duration 30 
 python scripts/summarize_experiments.py --summary experiments/final-2026-10-25/summary.csv
 ```
 
-- **F. Sử dụng AI:** nhóm dùng công cụ AI để hỗ trợ giải thích, gợi ý, debug và cải thiện diễn đạt theo mục 11 của `final-project/Instruction.md`. Ảnh concept trong `docs/concepts/` do AI tạo và không phải ảnh chụp game. Nhóm chịu trách nhiệm về mã nguồn, số liệu và nội dung báo cáo.
+- **F. Sử dụng AI:** nhóm dùng công cụ AI để hỗ trợ giải thích, gợi ý, debug và cải thiện diễn đạt theo mục 11 của `final-project/Instruction.md`. Nhóm chịu trách nhiệm về mã nguồn, số liệu và nội dung báo cáo.
 
 ---
 
@@ -589,11 +589,11 @@ Phần việc dưới đây được tổng hợp từ lịch sử commit trên 
 - Chế độ chơi (20/10): `GameMode` Đấu nhanh và Hành trình, tính điểm, `JOURNEY_COMPLETE`; sửa lỗi lộ vị trí trong bụi qua event nổ, Core và snapshot khôi phục; cập nhật `PROTOCOL.md`.
 - Độ bền kết nối (21–22/10): heartbeat và timeout hai phía, hàng đợi ghi và watchdog, banner đếm ngược reconnect trên Unity, harness kiểm tra Unity Play Mode (`BombValidation.cs`), script build.
 - Âm thanh: `BombAudio`, bộ SFX và nhạc cho sảnh và ba bản đồ, chỉnh lại tiếng bom và khiên.
-- Sửa lỗi bản cuối (23–24/10): luồng trận, phá ấn, quan sát sau khi bị loại, ổn định ghép trận (ticket có generation), script đóng gói `package_project.py`; tổng hợp `EXPERIMENTS_FINAL.md`, `FINAL_VALIDATION.md` và bản nháp báo cáo.
+- Sửa lỗi bản cuối (23–24/10): luồng trận, phá ấn, quan sát sau khi bị loại, ổn định ghép trận (ticket có generation), script đóng gói `package_project.py`; tổng hợp `EXPERIMENTS_FINAL.md`, kết quả kiểm thử và bản nháp báo cáo.
 
 **Trần Đỗ Lan Phương**
 
-- Kịch bản và tài liệu (15/10): kịch bản Hành trình Ba Mảnh (`STORY_SCRIPT.md`), cập nhật phân công nhóm.
+- Kịch bản và tài liệu (15/10): kịch bản cốt truyện Hành trình Ba Mảnh, cập nhật phân công nhóm.
 - Công cụ đo (15–19/10): `load_test.py` đo RTT, byte, message và thời gian xử lý với N client; `run_benchmark.ps1` chạy ma trận đo; `summarize_experiments.py` tổng hợp kết quả; sửa `network_smoke.py` cho chế độ optimized; chạy 18 lượt đo đầu tiên ngày 19/10.
 - Ghép trận (21/10): `FIND_MATCH` và `CANCEL_MATCH` trên server (`Matchmaker.java`) kèm test trong `ConnectionTest`; nút Tìm trận và trạng thái hàng chờ trên Unity.
 - Bản đồ và giao diện (22/10): nhập asset CC0 của Kenney [7] cho bản đồ, nhân vật, hiệu ứng và nút bấm; dựng lại ba bản đồ bằng asset; làm mới HUD, menu, overlay và VFX.

@@ -253,10 +253,9 @@ Bản prototype ban đầu (commit `aaed786`, 12/10/2026) gửi snapshot đầy 
 │   ├── REPORT.md                  ← báo cáo đầy đủ (nguồn của file Word nộp Compilatio)
 │   ├── PROTOCOL.md                ← đặc tả protocol
 │   ├── EXPERIMENTS_FINAL.md       ← thiết lập và kết quả thực nghiệm
-│   ├── FINAL_VALIDATION.md        ← kết quả kiểm thử server và Unity
 │   ├── DEMO_RUNBOOK.md            ← kịch bản demo
 │   ├── images/                    ← sơ đồ kiến trúc, luồng, sequence và ảnh chạy thực tế
-│   └── ...                        ← GDD, kịch bản cốt truyện, nguồn asset và âm thanh
+│   └── ...                        ← GDD, nguồn asset và âm thanh
 │
 ├── experiments/                   ← dữ liệu đo thô (CSV) và bảng tổng hợp
 │

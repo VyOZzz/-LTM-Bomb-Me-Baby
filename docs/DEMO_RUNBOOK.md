@@ -1,6 +1,6 @@
 # Runbook demo — Bomb Me Baby
 
-Cập nhật 24/10/2026. Bản Windows và server JAR đã build; [FINAL_VALIDATION.md](FINAL_VALIDATION.md) ghi phạm vi kiểm tra tự động. Cần chạy checklist bằng người thật trên build này trước nộp; mốc 13/10 bên dưới chỉ là lịch sử.
+Cập nhật 24/10/2026. Bản Windows và server JAR đã build. Cần chạy checklist bằng người thật trên build này trước nộp; mốc 13/10 bên dưới chỉ là lịch sử.
 
 ## Chuẩn bị
 
