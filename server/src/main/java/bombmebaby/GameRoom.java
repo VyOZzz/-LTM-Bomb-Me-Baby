@@ -69,7 +69,7 @@ final class GameRoom {
     final List<Pickup> orbs = new ArrayList<>();
     final List<Pickup> cores = new ArrayList<>();
     final Map<String,ScoreState> journeyScores = new LinkedHashMap<>();
-    final Random random = new Random();
+    final Random random;
     List<GameMap.Obstacle> obstacles;
     List<GameMap.Bush> bushes;
     GameMap map;
@@ -102,10 +102,21 @@ final class GameRoom {
     }
 
     GameRoom(String code, SyncMode syncMode, GameMode mode) {
+        this(code, syncMode, mode, configuredSeed());
+    }
+
+    GameRoom(String code, SyncMode syncMode, GameMode mode, Long seed) {
         this.code = code;
         this.syncMode = syncMode;
         this.mode = mode;
+        this.random = seed == null ? new Random() : new Random(seed);
         applyMap(mode == GameMode.JOURNEY ? GameMap.byId(JOURNEY_MAPS.get(0)) : GameMap.random(random, null));
+    }
+
+    /** Opt-in reproducible room RNG for benchmarks; normal games stay random. */
+    static Long configuredSeed() {
+        String value = System.getProperty("game.seed", "").trim();
+        return value.isEmpty() ? null : Long.valueOf(value);
     }
 
     synchronized boolean join(PlayerState player) {

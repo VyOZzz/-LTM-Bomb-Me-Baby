@@ -11,6 +11,30 @@ import org.junit.jupiter.api.Test;
 
 /** Room regressions; production TCP/session behavior is tested in ConnectionTest. */
 class ServerFixesTest {
+    @Test void benchmarkSeedReproducesSpawnsAndOrbsAcrossSyncModes() {
+        for (int count : new int[] {2, 4, 8}) {
+            for (long seed : new long[] {1, 2, 3}) {
+                GameRoom baseline = new GameRoom("SEED01", SyncMode.BASELINE, GameMode.QUICK, seed);
+                GameRoom optimized = new GameRoom("SEED02", SyncMode.OPTIMIZED, GameMode.QUICK, seed);
+                for (GameRoom room : List.of(baseline, optimized)) {
+                    for (int i = 0; i < count; i++) room.join(new PlayerState("P" + i, null));
+                    assertTrue(room.startMatched(100_000));
+                }
+                assertEquals(baseline.map.id, optimized.map.id);
+                assertEquals(baseline.orbs, optimized.orbs);
+                for (int i = 0; i < count; i++) {
+                    assertEquals(baseline.players.get(i).x, optimized.players.get(i).x);
+                    assertEquals(baseline.players.get(i).z, optimized.players.get(i).z);
+                }
+                for (long now = 100_500; now <= 103_000; now += 500) {
+                    baseline.update(now, 0);
+                    optimized.update(now, 0);
+                    assertEquals(baseline.orbs, optimized.orbs);
+                }
+            }
+        }
+    }
+
     private GameRoom startedRoom(SyncMode mode) {
         GameRoom room = new GameRoom("FIX001", mode);
         room.map = GameMap.all().get(0);

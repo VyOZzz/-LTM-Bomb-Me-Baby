@@ -9,7 +9,7 @@
 | Giảng viên | Thầy Ngô Văn Quyền |
 | Thành viên | Phạm Văn Vỹ (trưởng nhóm), Giang Thủy Tiên, Trần Đỗ Lan Phương. MSSV và phần việc xem [mục 19](#19-thành-viên-và-phân-công) |
 | Mã nguồn | https://github.com/VyOZzz/-LTM-Bomb-Me-Baby |
-| Ngày cập nhật | 26/10/2026 |
+| Ngày cập nhật | 28/10/2026 |
 
 ---
 
@@ -19,7 +19,7 @@ Trong game hành động nhiều người, mọi máy phải thấy cùng một 
 
 Nhóm xây dựng **Bomb Me Baby**, một game đấu trường PvP 2.5D gồm Java server và Unity client giao tiếp qua TCP. Server giữ quyền quyết định toàn bộ luật chơi (server-authoritative). Client chỉ gửi ý định điều khiển và hiển thị trạng thái nhận về. Giao thức là JSON theo dòng, có số thứ tự `seq` để chống request trùng, heartbeat, timeout và cơ chế reconnect bằng resume token. Server mô phỏng ở 20 Hz và gửi snapshot ở 10 Hz. Đóng góp chính là cơ chế **đồng bộ trạng thái chọn lọc**: hình học bản đồ chỉ gửi một lần, vật phẩm và đối thủ chỉ được gửi khi người xem được phép thấy. Ngoài ra, hệ thống phục hồi phiên chơi sau mất kết nối mà vẫn giữ đúng thứ tự vòng đời trận, và dùng thứ tự khóa cố định cùng hàng đợi ghi riêng cho từng client để một client chậm không làm chậm cả phòng.
 
-Trên loopback với 2, 4 và 8 client giả lập (18 lượt × 30 giây, không có lỗi kết nối), chế độ chọn lọc giảm **62,0–77,8%** số byte mỗi client nhận trong một giây so với baseline gửi đầy đủ, trong khi RTT không tăng một cách đo được. Bộ 117 test JUnit bao phủ kết nối, reconnect, ghép trận và luật chơi ở cả hai chế độ đồng bộ.
+Trên loopback với 2, 4 và 8 client giả lập (18 lượt × 30 giây, không có lỗi kết nối), chế độ chọn lọc giảm **61,7–79,0%** số byte mỗi client nhận trong một giây so với baseline gửi đầy đủ, RTT được ghi nhận riêng và chưa cho phép kết luận về độ trễ trên mạng thật. Bộ 124 test JUnit bao phủ kết nối, reconnect, ghép trận và luật chơi ở cả hai chế độ đồng bộ.
 
 ## 2. Keywords
 
@@ -170,7 +170,8 @@ Với mỗi người xem `v` trong phòng, ở mỗi chu kỳ snapshot:
 | Network layer phía server | `BombServer.java` | Lắng nghe cổng, đọc frame, kiểm tra `seq`, điều phối request, quản lý phiên |
 | Processing | `GameRoom.java`, `ShardObjective.java`, `GameRules.java` | Mô phỏng trận, luật chiến đấu, mục tiêu Hành trình |
 | Service | `Matchmaker.java` | Hàng đợi tìm trận theo chế độ: đủ 4 người thì vào ngay, nhóm 2–3 người vào sau 15 giây đếm ngược |
-| Đồng bộ | `SyncMode.java` | Chọn `BASELINE` hoặc `OPTIMIZED` |
+| Đồng bộ | `RequestRateLimiter.java` | 21 | Cửa sổ trượt giới hạn frame theo kết nối |
+| `SyncMode.java` | Chọn `BASELINE` hoặc `OPTIMIZED` |
 | Database | Không có | Trạng thái nằm trong bộ nhớ (xem mục 6.4) |
 
 ### 7.3. Luồng xử lý từ client tới server
@@ -215,7 +216,7 @@ Nguyên tắc chung là server luôn đúng. Client chỉ đoán trước vị t
 - **Giao thức:** TCP, kết nối giữ suốt phiên chơi, mặc định cổng 7777.
 - **Message format:** mỗi message là một JSON object trên một dòng UTF-8, kết thúc bằng LF hoặc CRLF, tối đa 2048 ký tự.
 - **Thiết lập:** client mở socket rồi gửi `HELLO` kèm `protocolVersion`. Nếu phiên bản khớp, server trả `WELCOME` kèm `playerId` và `resumeToken`; nếu thiếu hoặc lệch, server trả `ERROR VERSION_MISMATCH` và không tạo phiên.
-- **Đóng kết nối:** client gửi `LEAVE_ROOM` rồi đóng socket, hoặc server đóng khi timeout, frame quá lớn hay hàng đợi đầy.
+- **Đóng kết nối:** client gửi `LEAVE_ROOM` rồi đóng socket, hoặc server đóng khi timeout, frame quá lớn, quá 120 frame/giây trượt hay hàng đợi đầy.
 
 ### 8.2. Message format
 
@@ -274,10 +275,10 @@ Khi TCP đứt, server giữ chỗ người chơi 10 giây. Client mở socket m
 
 | Module | Số dòng | Nội dung chính |
 | --- | ---: | --- |
-| `BombServer.java` | 448 | Accept loop, đọc frame, kiểm tra `seq`, phiên và resume token, game loop, watchdog |
-| `GameRoom.java` | 938 | Trạng thái phòng, va chạm, nổ bom, nhặt đồ, xếp hạng, tạo snapshot theo người xem |
+| `BombServer.java` | 469 | Accept loop, đọc frame, kiểm tra `seq`, phiên và resume token, game loop, watchdog |
+| `GameRoom.java` | 949 | Trạng thái phòng, va chạm, nổ bom, nhặt đồ, xếp hạng, tạo snapshot theo người xem |
 | `ShardObjective.java` | 306 | Mảnh Tim Lửa, bệ đá, phá ấn, cướp mảnh, thời gian chương |
-| `Matchmaker.java` | 93 | Hàng đợi theo chế độ, ticket có generation |
+| `Matchmaker.java` | 108 | Hàng đợi theo chế độ, ticket có generation |
 | `GameRules.java`, `GameMap.java` | 178 | Hằng số luật chơi, bố cục ba bản đồ |
 | `SyncMode.java` | 46 | Chuyển giữa baseline và optimized |
 | `BombNetwork.cs` | 276 | Socket client, luồng ghi nền, inbox, heartbeat, reconnect |
@@ -285,7 +286,7 @@ Khi TCP đứt, server giữ chỗ người chơi 10 giây. Client mở socket m
 | `BombGame.cs` | 2058 | Xử lý message, nội suy, điều khiển cảnh và camera |
 | HUD, menu, bản đồ, VFX, âm thanh | khoảng 3 000 | `BombHud`, `BombModeMenu`, `BombMapView`, `BombVfx`, `BombAudio`… |
 
-Server có tổng cộng 2 055 dòng Java. Client có khoảng 6 500 dòng C# trong `Assets/Scripts`.
+Server có tổng cộng 2 125 dòng Java (28/10  kể cả chú thích và dòng trống). Client có khoảng 6 500 dòng C# trong `Assets/Scripts`.
 
 ### 9.2. Cấu trúc dữ liệu
 
@@ -300,6 +301,8 @@ Server có tổng cộng 2 055 dòng Java. Client có khoảng 6 500 dòng C# tr
 - **I/O ngoài khóa:** luồng ghi lấy message ra khỏi hàng đợi rồi mới ghi socket, không giữ khóa room. Một client mạng chậm chỉ làm đầy hàng đợi của chính nó, rồi bị đóng khi đầy 128, không làm chậm cả phòng.
 - **Tạo và dọn phòng:** đăng ký phòng và thêm chủ phòng diễn ra dưới cùng khóa room. Cleanup cũng kiểm tra và xóa dưới khóa, nên không xuất hiện phòng có chủ nhưng mất khỏi registry.
 - **Ghép trận:** mỗi ticket có `generation`. Ticket chỉ được chốt khi generation còn khớp, nên người vừa hủy tìm trận không bị kéo vào phòng.
+
+**Rate limit (28/10).** `RequestRateLimiter` giữ vòng đệm 120 timestamp dùng đồng hồ đơn điệu. Luồng đọc kiểm tra mọi frame trước parse JSON; quá 120 frame trong một giây thì đóng riêng socket, không đưa thêm action vào khóa phòng. PING, HELLO, JSON lỗi và dòng rỗng đều tính. Dọn session/reconnect vẫn theo luồng hiện có; mở socket mới có bộ đếm mới. Chi tiết: [PROTOCOL.md](PROTOCOL.md).
 
 ### 9.4. Một lỗi concurrency đã tìm thấy và sửa
 
@@ -317,18 +320,20 @@ Mô hình 3D, giao diện, hiệu ứng hạt và phần lớn hiệu ứng âm 
 
 ## 10. Experimental Setup
 
-| Mục | Giá trị |
+| Mục | Giá trị thực tế |
 | --- | --- |
-| Phần cứng | 13th Gen Intel Core i9-13900H, RAM 16 GB |
-| Hệ điều hành | Windows 11 Home Single Language (build 26200) |
-| Ngôn ngữ, công cụ | Java 26.0.2 (target Java 17), Maven 3.9.9, Python 3.13.14 |
-| Mã nguồn đo | Commit `c35616f` (bản ngày 25/10), đo ngày 25/10/2026. Bản cuối chỉ thêm kiểm tra phiên bản ở `HELLO` và đếm ngược khi ghép trận; cả hai xảy ra trước `GAME_START`, còn benchmark vào trận bằng phòng riêng, nên không ảnh hưởng số đo |
-| Thư viện | Gson 2.11 [5], JUnit 5 [6]; client giả lập chỉ dùng thư viện chuẩn Python |
+| CPU / RAM | Intel Core i7-11800H @ 2.30 GHz / 7,69 GiB RAM vật lý khả dụng cho Windows |
+| Hệ điều hành | Windows 11, build 22631 |
+| Công cụ | Java 21.0.10 (target Java 17), Maven 3.9.16, Python portable 3.12.10 |
+| Nguồn | Working tree `353ef09-dirty`, đo ngày 28/10/2026; SHA-256 xác định bản server, gồm file mới chưa commit |
 | Mạng | Loopback `127.0.0.1:17777` |
-| Bản đồ, chế độ | `meadow` cố định, Đấu nhanh |
-| Ma trận | baseline/optimized × 2/4/8 client × 3 lượt × 30 giây = 18 lượt |
-| Input giả lập | `MOVE` 10 Hz, `PING` 1 Hz, seed 1/2/3, không nổ bom |
-| Phạm vi đo | Từ sau `GAME_START` đến trước teardown; khởi động lại server khi đổi chế độ |
+| Map / mode chơi | `meadow`, QUICK |
+| Ma trận | 2 chế độ × 2/4/8 client × 3 lượt × 30 giây = 18 lượt |
+| Input | MOVE 10 Hz, PING 1 Hz, không nổ bom; seed input 1/2/3 |
+| Seed server | `-Dgame.seed=1`, `2`, `3` tương ứng seed input; mỗi phòng có RNG riêng |
+| Thứ tự | Theo cặp cùng số client/seed, đảo thứ tự mỗi cặp; cặp đầu optimized → baseline |
+| JVM | Khởi động mới mỗi lượt, không warm-up riêng |
+| Phạm vi đo | Sau GAME_START, trước teardown; JSON UTF-8 + newline, không gồm overhead TCP/IP |
 
 **Công cụ đo:** `scripts/load_test.py` mở N kết nối TCP, ghi RTT (từ `PING`/`PONG`), số byte và số message nhận, cùng `processingMicros` trong `ACK`. `scripts/run_benchmark.ps1` chạy toàn bộ ma trận và ghi CSV. `scripts/summarize_experiments.py` tổng hợp bảng kết quả.
 
@@ -340,9 +345,9 @@ Mô hình 3D, giao diện, hiệu ứng hạt và phần lớn hiệu ứng âm 
 - *processingMicros*: thời gian server xử lý một request.
 - *Số lỗi kết nối*: độ ổn định.
 
-Số byte tính theo JSON UTF-8 cộng newline, không gồm overhead TCP/IP. Fingerprint SHA-256 của mã nguồn Java và `pom.xml` lúc đo là `f6a56e39675794c4dd6fa6bb740986625c2087e5cb1e37ceb9f32fbb9052b087`. Dữ liệu thô nằm trong `experiments/final-2026-10-25/`. Một lần đo trước đó (22/10, máy i7-11800H, bản code trước các thay đổi gameplay 23–25/10) được giữ ở `experiments/final-2026-10-22-v2/` để đối chứng.
+Số byte tính theo JSON UTF-8 cộng newline, không gồm overhead TCP/IP. Fingerprint nguồn Java + pom: `c285bc7317034bd4924bd63129e2f58ab6cd45d4515e16cd28402085975e1247`. Hash JAR và thứ tự 18 lượt lưu trong `experiments/final-2026-10-28/metadata.json`; summary/raw cùng thư mục. [Chi tiết phép đo](EXPERIMENTS_FINAL.md). Các lần 25/10 và 22/10 là số liệu lịch sử riêng.
 
-**Kiểm thử chức năng:** 117 test JUnit 5 [6] trong 9 lớp test (`ConnectionTest`, `GameRoomTest`, `ServerFixesTest`, `ReviewFixesTest`, `ShardStealMechanicsTest`, `ShardObjectiveTest`, `CompletionRegressionTest`, `RequestedGameplayRulesTest`, `ShardCarrierActionTest`). Bộ test chạy được ở cả hai chế độ đồng bộ. Ngoài ra có smoke test TCP thật (`scripts/network_smoke.py`), bot (`scripts/bots.py`) và harness kiểm tra Unity Play Mode (`Assets/Editor/BombValidation.cs`).
+**Kiểm thử chức năng:** 124 test JUnit 5 [6] trong 10 lớp test (`ConnectionTest`, `GameRoomTest`, `ServerFixesTest`, `ReviewFixesTest`, `ShardStealMechanicsTest`, `ShardObjectiveTest`, `CompletionRegressionTest`, `RequestedGameplayRulesTest`, `ShardCarrierActionTest`, `RequestRateLimiterTest`). Bộ test chạy được ở cả hai chế độ đồng bộ. Ngoài ra có smoke test TCP thật (`scripts/network_smoke.py`), bot (`scripts/bots.py`) và harness kiểm tra Unity Play Mode (`Assets/Editor/BombValidation.cs`).
 
 ---
 
@@ -350,34 +355,36 @@ Số byte tính theo JSON UTF-8 cộng newline, không gồm overhead TCP/IP. Fi
 
 ### 11.1. Băng thông và độ trễ
 
-Trung bình ba lượt cho mỗi cấu hình (18/18 lượt hoàn tất, tổng số `ERROR` và `CONNECTION_LOST` bằng 0):
+Đo ngày 28/10/2026; trung bình ba lượt/cấu hình, 18/18 lượt hoàn tất, 0 ERROR/CONNECTION_LOST. p95 là trung bình p95 từng lượt.
 
-| Chế độ | Client | Byte nhận/client/s | Byte/snapshot | RTT TB (ms) | RTT p95 (ms) | processingMicros TB (µs) |
+| Mode | Client | Byte nhận/client/s | Byte/snapshot | RTT TB (ms) | RTT p95 (ms) | processingMicros TB (µs) |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| baseline | 2 | 95 981,8 | 9 511,4 | 0,668 | 1,501 | 160,7 |
-| optimized | 2 | 21 316,2 | 2 068,5 | 0,765 | 2,038 | 182,1 |
-| baseline | 4 | 102 304,8 | 10 140,6 | 0,402 | 0,905 | 68,8 |
-| optimized | 4 | 28 005,9 | 2 735,2 | 0,429 | 0,919 | 65,1 |
-| baseline | 8 | 116 644,1 | 11 570,5 | 0,447 | 0,968 | 51,9 |
-| optimized | 8 | 44 364,9 | 4 362,3 | 0,414 | 0,939 | 50,7 |
+| baseline | 2 | 95 851,1 | 9 497,8 | 0,679 | 1,213 | 170,4 |
+| optimized | 2 | 20 093,6 | 1 946,9 | 0,625 | 1,349 | 157,2 |
+| baseline | 4 | 102 519,8 | 10 162,5 | 0,817 | 1,693 | 119,7 |
+| optimized | 4 | 26 267,4 | 2 562,0 | 0,589 | 1,498 | 101,3 |
+| baseline | 8 | 115 693,0 | 11 460,3 | 1,036 | 4,243 | 150,3 |
+| optimized | 8 | 44 331,2 | 4 354,7 | 0,559 | 1,252 | 91,5 |
 
-| Metric | 2 client | 4 client | 8 client |
-| --- | ---: | ---: | ---: |
-| Giảm byte nhận/client/s | **77,8%** | **72,6%** | **62,0%** |
-| Giảm byte/snapshot | 78,3% | 73,0% | 62,3% |
-| Giảm byte nhận/client/s, lần đo 22/10 | 78,1% | 74,3% | 62,1% |
+| Client | Giảm byte nhận/client/s | Giảm byte/snapshot |
+| --- | ---: | ---: |
+| 2 | 79,0% | 79,5% |
+| 4 | 74,4% | 74,8% |
+| 8 | 61,7% | 62,0% |
 
-Công thức: `(baseline − optimized) / baseline × 100`. Cột p95 là trung bình p95 của từng lượt. Dòng cuối là kết quả lần đo 22/10 trên máy khác, đưa vào để so sánh.
+Công thức: `(baseline − optimized) / baseline × 100`. Không gộp với số đo lịch sử.
 
 ### 11.2. Kiểm thử chức năng
 
 | Lớp kiểm tra | Kết quả | Giới hạn |
 | --- | --- | --- |
-| JUnit server | 117/117 test qua ở baseline và 117/117 ở optimized (chạy lại ngày 26/10 trên bản cuối, có kiểm tra phiên bản và đếm ngược ghép trận) | Chạy trên một máy |
+| JUnit server | 124/124 test qua khi chạy baseline và 124/124 khi chạy optimized ngày 28/10, có rate limit và seed server; fixture chỉ định mode riêng giữ mode đó | Chạy trên một máy |
 | Smoke test TCP | 2 client giả lập qua socket thật | Không có rendering |
 | Unity Play Mode | 111 kiểm tra headless qua ngày 24/10 (`Assets/Editor/BombValidation.cs`). Lần chạy lại ngày 25/10 dừng ở bước kiểm tra bản đồ vì bài kiểm tra chưa cập nhật theo cách hiển thị bản đồ mới (mục 14) | Một Unity client cùng peer TCP, chưa phải hai Unity player; chưa có kết quả cho bản cuối |
 | Staging Unity | Kiểm tra bản sao project qua ngày 25/10 | Chỉ kiểm tra việc đồng bộ file |
-| Build | Windows player và server JAR tạo thành công | Chưa nghiệm thu trên máy sạch |
+| Build | Server JAR 28/10 tạo thành công; build Unity 28/10 bị từ chối vì chưa có license Editor hợp lệ | Gói hiện tại chỉ source + server, chưa có Windows player mới hay nghiệm thu máy thứ hai |
+
+12 kịch bản tiêu biểu kèm kết quả kỳ vọng và XML thực tế: [TEST_CASES_FOR_REPORT.md](TEST_CASES_FOR_REPORT.md).
 
 ### 11.3. Ảnh chạy thực tế
 
@@ -427,21 +434,17 @@ Các ảnh dưới đây chụp từ bản build Windows kết nối tới Java 
 
 ## 12. Discussion
 
-**Vì sao băng thông giảm.** Với 2 client, mỗi snapshot baseline nặng khoảng 9 500 byte, còn optimized khoảng 2 100 byte. Phần chênh lệch khoảng 7 400 byte là hình học tĩnh của bản đồ cùng các vật phẩm và đối thủ ngoài tầm nhìn, vốn bị gửi lại 10 lần mỗi giây ở baseline. Số message không đổi vì tần suất snapshot và `ACK` giữ nguyên. Cải tiến làm nhỏ từng message chứ không giảm số lần gửi.
+**Băng thông.** Ở 2 client, snapshot đầy đủ trung bình 9 498 byte so với 1 947 byte khi chọn lọc. Phần tiết kiệm đến từ geometry tĩnh không lặp và các đối tượng ngoài tầm nhìn. Số message/tần suất snapshot giữ nguyên.
 
-**Vì sao mức giảm nhỏ dần khi tăng số người.** Phần tiết kiệm từ hình học là cố định. Phần trạng thái động (người chơi, vật phẩm trong tầm nhìn) tăng theo số người. Với 8 client trên cùng bản đồ, nhiều người đứng gần nhau hơn nên được nhìn thấy và gửi đầy đủ. Vì vậy tỉ lệ tiết kiệm giảm từ 78% xuống 62%. Với số người lớn hơn nữa, cần nén delta để giảm tiếp.
+**Quy mô.** Mức giảm byte nhận/client/s ở 2/4/8 client là 79,0% / 74,4% / 61,7%. Kết quả phụ thuộc vị trí người chơi và vật phẩm; không suy ra cùng mức giảm ở mọi map hoặc khi tất cả đứng gần nhau.
 
-**Tính lặp lại.** Hai lần đo trên hai máy khác nhau (22/10 trên i7-11800H với Java 21, 25/10 trên i9-13900H với Java 26) cho tỉ lệ giảm gần như trùng nhau: 78,1% so với 77,8% ở 2 client, 62,1% so với 62,0% ở 8 client. Điều này phù hợp với việc mức giảm phụ thuộc vào nội dung snapshot chứ không phụ thuộc phần cứng.
+**Độ trễ và chi phí.** Bảng ghi RTT và processingMicros thực đo, nhưng chưa đo CPU, GC hoặc toàn bộ thời gian tick. RTT loopback chịu lịch luồng và warm-up; không dùng chênh lệch nhỏ này để kết luận optimized nhanh hơn trên LAN/Internet. processingMicros chỉ bao phủ xử lý request, không phải chi phí toàn server.
 
-**RTT.** RTT trung bình ở hai chế độ chênh nhau không đáng kể, và p95 ở 2 client của optimized còn cao hơn (2,04 ms so với 1,50 ms) ở cả hai lần đo. Trên loopback, thời gian truyền gần như bằng 0, nên RTT chủ yếu phản ánh lịch luồng và warm-up JVM. Kết quả **không** chứng minh optimized giảm độ trễ. Nó chỉ cho thấy việc lọc theo người xem không làm tăng độ trễ một cách đo được.
+**Kiểm soát thực nghiệm.** Seed cố định làm vị trí spawn và vật phẩm ban đầu giống nhau giữa hai chế độ; JUnit đối chiếu trực tiếp với 2/4/8 người và seed 1/2/3. Lịch luồng, thời điểm input và tick vẫn khác nên không tuyên bố toàn bộ quỹ đạo giống hệt. Player ID, resume token và mã phòng vẫn ngẫu nhiên.
 
-**Bottleneck.** Ở quy mô đã đo, server xử lý một request trong vài chục micro giây, nên CPU server chưa phải điểm nghẽn. Trên mạng thật, băng thông uplink của máy chạy server mới là giới hạn: baseline 8 người cần khoảng 0,93 MB/s chỉ cho snapshot, optimized cần khoảng 0,35 MB/s.
+Đã đảo thứ tự mỗi cặp: 5 cặp optimized trước, 4 cặp baseline trước. Mỗi lượt dùng JVM mới để tránh nối tiếp trạng thái warm-up; chưa có warm-up riêng, chưa đo CPU/GC, không cô lập ứng dụng nền. Chưa đo LAN/Internet, packet loss, FPS Unity hoặc tải Hành trình. RTT loopback không chứng minh cải thiện độ trễ trên mạng thật.
 
-**Hệ thống hoạt động tốt khi** số người mỗi phòng vừa phải, người chơi phân tán trên bản đồ và mạng tin cậy. **Hệ thống còn hạn chế khi** người chơi tập trung một chỗ (lọc ít tác dụng), khi mất gói nhiều (TCP chặn đầu hàng làm giật hình), hoặc khi số kết nối vượt xa 64.
-
-**Lợi ích phụ.** Optimized chặn map hack ngay từ dữ liệu gửi đi: client không nhận được tọa độ người trong bụi, nên không thể hiển thị chúng dù bị sửa đổi (Hình 10).
-
-**Hạn chế của phép đo.** Phép đo chạy trên loopback với client giả lập, không đo FPS Unity. Seed sinh vật phẩm của server không cố định nên cảnh ở hai chế độ không giống hệt nhau. Baseline luôn chạy trước optimized nên warm-up JVM có thể ảnh hưởng processingMicros.
+**Rate limit.** Hai chế độ đều giới hạn 120 frame/kết nối/giây trượt. Benchmark 11 request/s không chạm ngưỡng. Test TCP riêng kiểm chứng client flood bị đóng trước khi thực thi frame vượt ngưỡng và client khác vẫn gửi/nhận được; đây là bằng chứng chức năng, chưa phải phép đo chống DDoS.
 
 ---
 
@@ -455,7 +458,7 @@ Bản prototype ban đầu (commit `aaed786`, 12/10) gửi snapshot đầy đủ
 
 | Đóng góp | Mô tả | Bằng chứng |
 | --- | --- | --- |
-| Đồng bộ trạng thái chọn lọc | Snapshot riêng cho từng người xem: bỏ hình học tĩnh, lọc vật phẩm và đối thủ theo tầm nhìn và bụi, bỏ tọa độ trong event nổ không thấy | `SyncMode.java`, `GameRoom.snapshot(...)`; giảm 62–78% byte (mục 11.1); test chống lộ vị trí trong bụi |
+| Đồng bộ trạng thái chọn lọc | Snapshot riêng cho từng người xem: bỏ hình học tĩnh, lọc vật phẩm và đối thủ theo tầm nhìn và bụi, bỏ tọa độ trong event nổ không thấy | `SyncMode.java`, `GameRoom.snapshot(...)`; giảm 61,7–79,0% byte (mục 11.1); test chống lộ vị trí trong bụi |
 | Phục hồi phiên giữ thứ tự vòng đời | Resume token, `seq` không reset, `roomCode` và `roundIndex` trong snapshot, phát lại kết quả khi reconnect sau trận | `BombServer.java`, `ConnectionTest`, `CompletionRegressionTest` |
 | Concurrency có kiểm soát | Thứ tự khóa cố định, hàng đợi ghi riêng giới hạn 128, watchdog ghi treo, ticket ghép trận có generation | `BombServer.java`, `Matchmaker.java`; regression watchdog hai luồng (mục 9.4) |
 | Bộ công cụ đo lặp lại được | Client giả lập, runner ma trận, fingerprint mã nguồn, giữ lại cả lượt lỗi | `scripts/load_test.py`, `run_benchmark.ps1`, `experiments/` |
@@ -468,7 +471,7 @@ Bản prototype ban đầu (commit `aaed786`, 12/10) gửi snapshot đầy đủ
 | Vật phẩm | Gửi toàn bộ | Chỉ gửi trong tầm nhìn |
 | Snapshot | Giống nhau cho cả phòng | Riêng cho từng người xem |
 | Chống map hack | Không | Có, ngay từ dữ liệu gửi đi |
-| Băng thông (8 client) | 116 644 B/client/s | 44 365 B/client/s |
+| Băng thông (8 client) | 115 693 B/client/s | 44 331 B/client/s |
 
 Nhóm không tuyên bố phát minh ra TCP, snapshot hay interest management. Đóng góp là triển khai các cơ chế này trong một game cụ thể, đặt cạnh một baseline chạy lại được và đo bằng số liệu thật.
 
@@ -495,7 +498,7 @@ Hai game trên hơn hẳn Bomb Me Baby về quy mô, số nền tảng và nội
 **Điểm cải tiến của Bomb Me Baby:**
 
 1. **Game do nhóm tự nghĩ và phát triển, với cách chơi mới.** Bomb Me Baby không làm lại một game có sẵn. Trong Bomberman, người chơi đặt bom trong mê cung và bom nổ sau một khoảng thời gian [17]; còn trong Bomb Me Baby, nhân vật chính là quả bom: giữ Space để gồng lực rồi tự nổ quanh mình, nên muốn hạ đối thủ phải lao vào gần họ. Người chơi lớn lên bằng cách nhặt Energy giống Agar.io [18], nhưng lớn lên để có quả nổ mạnh hơn chứ không để nuốt đối thủ; nổ xong Size về mức gốc và phần đã dùng rơi ra cho người khác nhặt, nên Size vừa là sức mạnh vừa là thứ phải tiêu. Khiên phản 50% sát thương cho phép hạ đối thủ bằng chính quả bom của họ. Chế độ Hành trình Tim Lửa có cốt truyện riêng qua 3 chương, với luật tranh Mảnh Tim Lửa do nhóm tự đặt: người cầm mảnh không gồng bom được, có thanh Khóa Lửa giảm dần khi trúng đòn, và người khác có thể cướp mảnh trên bệ bằng cách đứng yên giữ F trong 3 giây, nên thế trận luôn có thể lật.
-2. **Ẩn vị trí ngay từ dữ liệu gửi đi trong một game đặt bom quy mô nhỏ.** Kỹ thuật kiểu fog of war đã được công bố ở game bắn súng lớn [10]. Nhóm áp dụng nó cho thể loại đặt bom có bụi ẩn nấp và đo được thêm lợi ích về băng thông: giảm 62–78% so với gửi đầy đủ (mục 11.1).
+2. **Ẩn vị trí ngay từ dữ liệu gửi đi trong một game đặt bom quy mô nhỏ.** Kỹ thuật kiểu fog of war đã được công bố ở game bắn súng lớn [10]. Nhóm áp dụng nó cho thể loại đặt bom có bụi ẩn nấp và đo được thêm lợi ích về băng thông: giảm 61,7–79,0% so với gửi đầy đủ (mục 11.1).
 3. **Phòng riêng miễn phí đi cùng ghép trận ngẫu nhiên trên cùng một server.** Ở Super Bomberman R Online, tạo phòng riêng là tính năng của gói Premium Pack trả phí [11].
 4. **Không phụ thuộc máy chủ của nhà phát hành.** Server là một file JAR chạy được trên bất kỳ máy nào trong LAN. Super Bomberman R Online không còn chơi được từ khi Konami đóng máy chủ [12].
 5. **Thiết kế mạng công khai và kiểm chứng được.** Protocol, mã nguồn, dữ liệu đo và kịch bản đo lại đều công khai (Phụ lục), trong khi các game thương mại trong bảng không công bố phần này.
@@ -508,7 +511,7 @@ Hai game trên hơn hẳn Bomb Me Baby về quy mô, số nền tảng và nội
 
 1. Benchmark chạy trên loopback với client giả lập, chưa đo trên LAN hoặc Internet thật, chưa đo FPS và GC của client.
 2. Dùng TCP thuần: chưa có TLS, đăng nhập hay lưu lịch sử trận. Chống gian lận mới ở mức server bỏ qua input bất thường và request trùng.
-3. Chưa có rate limit theo client. Một client gửi rất nhanh vẫn có thể tốn CPU server.
+3. Rate limit hiện theo kết nối TCP (120 frame/giây trượt), chưa có quota tổng theo IP/tài khoản; mở socket mới có bộ đếm mới.
 4. Đồng bộ chọn lọc lọc theo người xem nhưng chưa nén delta từng trường giữa hai snapshot.
 5. Client chỉ dự đoán hình ảnh ngắn hạn, chưa có lag compensation phía server.
 6. Trạng thái nằm trong bộ nhớ, khởi động lại server thì mất mọi phòng.
@@ -519,13 +522,13 @@ Hai game trên hơn hẳn Bomb Me Baby về quy mô, số nền tảng và nội
 
 1. Gửi delta giữa hai snapshot, cân nhắc UDP cho dữ liệu vị trí và giữ TCP cho event vòng đời.
 2. Đo trên LAN hai máy và trên mạng có độ trễ, mất gói nhân tạo, với nhiều client hơn.
-3. Cố định seed sinh vật phẩm để hai chế độ chạy trên cảnh giống hệt nhau.
+3. Bổ sung replay input theo tick để kiểm soát cả lịch di chuyển; seed spawn/vật phẩm đã được cố định trong benchmark 28/10.
 4. Thêm tài khoản, lưu kết quả trận vào database, bảng xếp hạng toàn cục.
-5. Thêm TLS, rate limit và client-side prediction đầy đủ.
+5. Thêm TLS, quota tổng theo IP và client-side prediction đầy đủ.
 6. Thử Java NIO hoặc mô hình event loop khi số kết nối lớn, dựa trên kết quả profiling.
 ## 16. Conclusion
 
-Nhóm đã xây dựng một game đấu trường nhiều người qua TCP, trong đó Java server giữ quyền quyết định luật chơi, phục vụ đồng thời nhiều phòng, hỗ trợ hai chế độ chơi, ba bản đồ, phòng mã và ghép trận, và chịu được request trùng, timeout và mất kết nối tạm thời. Đóng góp chính là đồng bộ trạng thái chọn lọc theo từng người xem. Trên loopback, cơ chế này giảm 62–78% băng thông mỗi client so với baseline mà không làm tăng độ trễ một cách đo được, đồng thời ngăn client biết vị trí đối thủ đang ẩn. So với các game đặt bom đã phát hành, hệ thống nhỏ hơn nhiều về quy mô, nhưng là game do nhóm tự nghĩ với cách chơi mới (người chơi chính là quả bom, chế độ Hành trình Tim Lửa có luật cướp mảnh), có phòng riêng miễn phí, chạy được trong LAN mà không cần máy chủ của nhà phát hành, và công khai toàn bộ thiết kế mạng cùng số đo (mục 13.4). Kiểm thử tự động giúp phát hiện và sửa các lỗi về thứ tự snapshot, phục hồi kết quả và một race condition trong watchdog. Kết quả chưa bao gồm đánh giá trên mạng thật và trải nghiệm của người chơi thật. Đó là hướng tiếp theo.
+Nhóm đã xây dựng một game đấu trường nhiều người qua TCP, trong đó Java server giữ quyền quyết định luật chơi, phục vụ đồng thời nhiều phòng, hỗ trợ hai chế độ chơi, ba bản đồ, phòng mã và ghép trận, và chịu được request trùng, timeout và mất kết nối tạm thời. Đóng góp chính là đồng bộ trạng thái chọn lọc theo từng người xem. Trên loopback, cơ chế này giảm 61,7–79,0% băng thông mỗi client so với baseline trong kịch bản đã đo; kết quả loopback chưa cho phép kết luận về độ trễ trên mạng thật, đồng thời ngăn client biết vị trí đối thủ đang ẩn. So với các game đặt bom đã phát hành, hệ thống nhỏ hơn nhiều về quy mô, nhưng là game do nhóm tự nghĩ với cách chơi mới (người chơi chính là quả bom, chế độ Hành trình Tim Lửa có luật cướp mảnh), có phòng riêng miễn phí, chạy được trong LAN mà không cần máy chủ của nhà phát hành, và công khai toàn bộ thiết kế mạng cùng số đo (mục 13.4). Kiểm thử tự động giúp phát hiện và sửa các lỗi về thứ tự snapshot, phục hồi kết quả và một race condition trong watchdog. Kết quả chưa bao gồm đánh giá trên mạng thật và trải nghiệm của người chơi thật. Đó là hướng tiếp theo.
 
 ## 17. References
 

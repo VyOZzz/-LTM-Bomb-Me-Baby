@@ -1,0 +1,2 @@
+exit_code=0
+PASS (baseline): room 7F4150, map crater, 2 clients, state sync, movement, explosion

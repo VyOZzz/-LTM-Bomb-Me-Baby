@@ -1,6 +1,14 @@
 # TCP JSON protocol
 
-Cập nhật 24/10/2026. Mỗi message là một JSON object trên một dòng UTF-8. TCP được giữ xuyên suốt phiên chơi. Client phải gửi `HELLO` đầu tiên. Server đọc tối đa 2048 ký tự UTF-16 mỗi frame; vượt giới hạn sẽ đóng socket ngay cả khi chưa có newline. Tối đa 64 connection đồng thời.
+Cập nhật 28/10/2026. Mỗi message là một JSON object trên một dòng UTF-8. TCP được giữ xuyên suốt phiên chơi. Client phải gửi `HELLO` đầu tiên. Server đọc tối đa 2048 ký tự UTF-16 mỗi frame; vượt giới hạn sẽ đóng socket ngay cả khi chưa có newline. Tối đa 64 connection đồng thời.
+
+## Giới hạn tốc độ theo kết nối (28/10/2026)
+
+Mỗi kết nối TCP được nhận tối đa **120 frame trong cửa sổ trượt 1 giây** (`RequestRateLimiter`). Frame thứ 121 khi 120 frame trước chưa hết hạn làm server **đóng riêng kết nối đó**, trước khi parse JSON, cập nhật `seq` hoặc thực thi action. Không bảo đảm có `ERROR`/`ACK` cuối cùng khi socket bị đóng. Mọi frame đều tính, kể cả `HELLO`, `PING`, JSON lỗi và dòng rỗng; áp dụng cả trước khi tạo session. Bộ đếm dùng `System.nanoTime()` và bộ nhớ cố định.
+
+Lưu lượng Unity thông thường là MOVE khoảng 25 Hz và PING khoảng 1 Hz, còn dư cho action. Dọn session và giữ chỗ reconnect dùng cơ chế hiện có; người chơi khác có bộ đếm độc lập. Đây là giới hạn theo **kết nối**, không phải quota theo IP/tài khoản: mở socket mới có cửa sổ mới.
+
+`WELCOME.gameSeed` chỉ xuất hiện khi bật `-Dgame.seed=<long>` trên server (Gson bỏ trường null khi không bật). Đây là seed RNG của phòng để benchmark kiểm tra cấu hình; không dùng cho player ID/resume token. Bình thường không đặt tham số này. Hai chế độ cùng seed và thứ tự vào phòng sẽ có cùng vị trí spawn/vật phẩm ban đầu; lịch luồng và thời điểm input vẫn có thể khác.
 
 ## Ghép trận, người chờ lượt sau và audio (24/10)
 

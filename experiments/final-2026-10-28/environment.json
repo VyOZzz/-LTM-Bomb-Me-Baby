@@ -1,0 +1,13 @@
+{
+  "cpu": "11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz",
+  "physical_memory_bytes": 8260169728,
+  "windows_build": "22631",
+  "java": "21.0.10",
+  "maven": "3.9.16",
+  "python": "3.12.10",
+  "network": "loopback",
+  "cpu_source": "HKLM HARDWARE DESCRIPTION System CentralProcessor 0",
+  "memory_source": "Win32 GlobalMemoryStatusEx",
+  "first_trial": "2026-10-28T12:40:15",
+  "last_trial": "2026-10-28T12:49:33"
+}

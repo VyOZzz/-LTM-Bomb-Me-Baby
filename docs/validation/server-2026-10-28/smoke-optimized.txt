@@ -1,0 +1,2 @@
+exit_code=0
+PASS (optimized): room A12C86, map meadow, 2 clients, state sync, movement, explosion

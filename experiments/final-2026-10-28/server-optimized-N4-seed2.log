@@ -1,0 +1,4 @@
+[Demo] QUICK rooms locked to map = meadow
+[Benchmark] game.seed = 2
+[SyncMode] active = OPTIMIZED
+Bomb Me Baby server on TCP port 17777
