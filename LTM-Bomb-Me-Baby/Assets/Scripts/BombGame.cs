@@ -567,6 +567,8 @@ public sealed class BombGame : MonoBehaviour {
             case "PLAYER_ELIMINATED":
                 reconnectDeadlines.Remove(msg.playerId);
                 EventEffect(msg.type, msg.playerId);
+                // Play before hiding: the sound needs the avatar's last visible position.
+                if (msg.playerId != myId) PlayPlayerSound(msg.type, msg.playerId);
                 // The round-ending kill may have no later snapshot, so update and hide it now.
                 if (avatars.TryGetValue(msg.playerId, out Avatar eliminated) && eliminated.state != null) {
                     eliminated.state.alive = false;
@@ -576,7 +578,6 @@ public sealed class BombGame : MonoBehaviour {
                     charging = false;
                     gameAudio.StopGameplayLoops();
                 }
-                else PlayPlayerSound(msg.type, msg.playerId);
                 ShowStoryEvent(msg);
                 break;
             case "GAME_OVER":

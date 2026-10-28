@@ -75,7 +75,9 @@ public static class BombValidation {
                 var msg = JsonUtility.FromJson<ServerMessage>(packet);
                 if (msg.type == "STATE_UPDATE") {
                     Assert(Field<string>("phase") == "PLAYING", "Map plays: " + msg.mapId);
-                    Assert(GameObject.Find("Runtime Map - " + msg.mapId) != null, "Map geometry: " + msg.mapId);
+                    // Authored scene maps replace the runtime-built map when the scene has one for this id.
+                    GameObject map = GameObject.Find("Runtime Map - " + msg.mapId) ?? GameObject.Find("Environment/Map Preview - " + msg.mapId);
+                    Assert(map != null && map.activeInHierarchy, "Map geometry: " + msg.mapId);
                     Assert(Field<PlayerData[]>("latestPlayers").Length == 2, "Both player states reach Unity");
                     Assert(Field<RoomData>("room").chapterIndex == msg.chapterIndex, "HUD chapter follows server");
                 }
