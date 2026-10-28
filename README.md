@@ -423,7 +423,7 @@ python scripts/network_smoke.py     # smoke test qua TCP thật với 2 client g
 | 10 | Hành trình Tim Lửa | Giữ bệ 30 giây để thắng, Khóa Lửa, cướp mảnh, chạy đủ 3 bản đồ | Passed (`placedShardOwnerWinsExactlyAfterThirtyUncontestedSeconds`, `lockRegeneratesGraduallyAfterDelayAndDropsShardWhenEmpty`, `journeyRunsAllThreeMapsAndCompletesWithItsWinner`) |
 | 11 | Rate limit theo kết nối | Đóng riêng client vượt 120 frame/giây trượt; chặn cả frame lỗi trước HELLO; lưu lượng bình thường vẫn qua | Passed (`rateLimitClosesOnlyFloodingPlayerBeforeApplyingExtraAction`, `rateLimitCountsMalformedAndEmptyFramesBeforeHello`, `rateLimitAllowsSustainedNormalTrafficAcrossWindows`) |
 
-Toàn bộ 124 test qua khi chạy ở cả `baseline` và `optimized` (28/10/2026). Fixture chỉ định chế độ riêng vẫn dùng chế độ đó. [12 test tiêu biểu và bằng chứng XML](docs/TEST_CASES_FOR_REPORT.md).
+Toàn bộ 124 test qua khi chạy ở cả `baseline` và `optimized` (28/10/2026). Fixture chỉ định chế độ riêng vẫn dùng chế độ đó. Kết quả JUnit dạng XML lưu ở `docs/validation/server-2026-10-28/`; 12 test tiêu biểu được trình bày trong mục 11.2 của báo cáo.
 
 ---
 
@@ -652,7 +652,7 @@ Nhom07_BombMeBaby/
 
 # 23. Final Verification
 
-Cập nhật 28/10: server và benchmark đã kiểm chứng; build Unity mới đang thiếu license, chưa có gói Windows hiện tại được xác nhận. Xem [tiến độ T1–T5](docs/TIEN_TASK_STATUS.md) và [quy trình LAN/máy thứ hai](docs/LAN_VERIFICATION.md). Checklist cũ dưới đây cần được nhóm nghiệm thu lại trước khi nộp.
+Cập nhật 28/10: server và benchmark đã kiểm chứng; build Unity mới đang thiếu license, chưa có gói Windows hiện tại được xác nhận. Checklist cũ dưới đây cần được nhóm nghiệm thu lại trước khi nộp.
 
 Before submission:
 

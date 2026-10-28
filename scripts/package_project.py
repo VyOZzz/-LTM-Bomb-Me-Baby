@@ -86,7 +86,7 @@ def main():
         (output / 'Playable/Client/server.txt').write_text('127.0.0.1:7777\n', encoding='ascii')
     report = output / 'Report'
     report.mkdir()
-    for filename in ('TEST_CASES_FOR_REPORT.md', 'LAN_VERIFICATION.md', 'AUDIO_CREDITS.md', 'ASSET_CREDITS.md'):
+    for filename in ('AUDIO_CREDITS.md', 'ASSET_CREDITS.md'):
         shutil.copy2(root / 'docs' / filename, report / filename)
     shutil.copytree(root / 'docs/validation', report / 'validation')
     shutil.copytree(root / 'docs/images', report / 'images')
@@ -98,7 +98,7 @@ def main():
 
 '''
     if args.source_only:
-        introduction += '''**Gói source + server, chưa kèm Windows player.** Cần build client từ source tương ứng trước khi bàn giao bản chơi hoàn chỉnh. Xem Source/docs/TIEN_TASK_STATUS.md để biết kết quả kiểm tra và phần còn thiếu của lần chuẩn bị này.
+        introduction += '''**Gói source + server, chưa kèm Windows player.** Cần build client từ source tương ứng trước khi bàn giao bản chơi hoàn chỉnh.
 
 1. Máy chạy server cần Java 17+. Mở `Playable/Server/StartServer.cmd`.
 2. Muốn chơi: kích hoạt Unity Editor 6000.3.6f1 hợp lệ, build từ `Source/` theo `Source/README.md`, rồi dùng cả thư mục client được tạo.
@@ -116,7 +116,7 @@ def main():
 `Source/README.md` có lệnh build/test và cách kết nối LAN. Gửi nguyên thư mục Client, không chỉ EXE.
 
 '''
-    introduction += '''Report chứa bản Markdown và bằng chứng, chưa có kết quả Compilatio hay kiểm tra trên máy thứ hai. Xem `Report/LAN_VERIFICATION.md` để đo LAN và nghiệm thu gói. File Word chỉ được kèm khi chỉ định --report-docx; nhóm cần hoàn thiện tỷ lệ đóng góp và xác nhận bản nộp. Gói này chưa được nộp lên dịch vụ nào.
+    introduction += '''Report chứa bằng chứng kiểm thử và số đo, chưa có kết quả Compilatio hay kiểm tra trên máy thứ hai. File Word chỉ được kèm khi chỉ định --report-docx; nhóm cần hoàn thiện tỷ lệ đóng góp và xác nhận bản nộp. Gói này chưa được nộp lên dịch vụ nào.
 
 Kiểm tra toàn vẹn sau khi giải nén: `python Source/scripts/verify_package.py .` từ thư mục chứa START_HERE.md. MANIFEST.json ghi SHA-256 của mọi file được đóng gói.
 '''
