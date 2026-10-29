@@ -20,9 +20,9 @@ Nhóm 07.
 
 | No. | Student ID | Full Name | Email | Main Responsibility | Contribution |
 | --- | ---------- | --------- | ----- | ------------------- | -----------: |
-| 1 | B23DCCN954 | Phạm Văn Vỹ (trưởng nhóm) | ... | Prototype server và client ban đầu; Unity client (menu, HUD, minimap, lời dẫn, màn kết quả); luật Mảnh Tim Lửa; kiểm tra phiên bản; hoàn thiện gameplay bản cuối | ...% |
-| 2 | B23DCCN814 | Giang Thủy Tiên | ... | Đồng bộ chọn lọc (novelty); reconnect, heartbeat, timeout, hàng đợi ghi; chế độ Đấu nhanh và Hành trình; test JUnit, kiểm tra Unity; âm thanh | ...% |
-| 3 | B23DCCN667 | Trần Đỗ Lan Phương | ... | Ghép trận `FIND_MATCH`; công cụ đo và thực nghiệm baseline/optimized; bản đồ và giao diện bằng asset; Khóa Lửa; bot test; viết báo cáo | ...% |
+| 1 | B23DCCN954 | Phạm Văn Vỹ (trưởng nhóm) | ... | Prototype server và client ban đầu; Unity client (menu, HUD, minimap, lời dẫn, màn kết quả); luật Mảnh Tim Lửa; kiểm tra phiên bản; hoàn thiện gameplay bản cuối | 34% |
+| 2 | B23DCCN814 | Giang Thủy Tiên | ... | Đồng bộ chọn lọc (novelty); reconnect, heartbeat, timeout, hàng đợi ghi; chế độ Đấu nhanh và Hành trình; test JUnit, kiểm tra Unity; âm thanh | 33% |
+| 3 | B23DCCN667 | Trần Đỗ Lan Phương | ... | Ghép trận `FIND_MATCH`; công cụ đo và thực nghiệm baseline/optimized; bản đồ và giao diện bằng asset; Khóa Lửa; bot test; viết báo cáo | 33% |
 | | | | | **Total** | **100%** |
 
 ## 1.4. Instructor
@@ -423,7 +423,7 @@ python scripts/network_smoke.py     # smoke test qua TCP thật với 2 client g
 | 10 | Hành trình Tim Lửa | Giữ bệ 30 giây để thắng, Khóa Lửa, cướp mảnh, chạy đủ 3 bản đồ | Passed (`placedShardOwnerWinsExactlyAfterThirtyUncontestedSeconds`, `lockRegeneratesGraduallyAfterDelayAndDropsShardWhenEmpty`, `journeyRunsAllThreeMapsAndCompletesWithItsWinner`) |
 | 11 | Rate limit theo kết nối | Đóng riêng client vượt 120 frame/giây trượt; chặn cả frame lỗi trước HELLO; lưu lượng bình thường vẫn qua | Passed (`rateLimitClosesOnlyFloodingPlayerBeforeApplyingExtraAction`, `rateLimitCountsMalformedAndEmptyFramesBeforeHello`, `rateLimitAllowsSustainedNormalTrafficAcrossWindows`) |
 
-Toàn bộ 124 test qua khi chạy ở cả `baseline` và `optimized` (28/10/2026). Fixture chỉ định chế độ riêng vẫn dùng chế độ đó. Kết quả JUnit dạng XML lưu ở `docs/validation/server-2026-10-28/`; 12 test tiêu biểu được trình bày trong mục 11.2 của báo cáo.
+Toàn bộ 124 test qua khi chạy ở cả `baseline` và `optimized` (28/10/2026). Fixture chỉ định chế độ riêng vẫn dùng chế độ đó. Kết quả JUnit dạng XML lưu ở `docs/validation/server-2026-10-28/`; 12 test tiêu biểu được trình bày trong mục 4.4 của báo cáo.
 
 ---
 
@@ -550,7 +550,7 @@ Báo cáo tuân thủ cấu trúc được quy định trong hướng dẫn đ�
 
 # 19. References
 
-Các tài liệu tham khảo được sử dụng (danh sách đầy đủ ở mục 17 của báo cáo):
+Các tài liệu tham khảo được sử dụng (danh sách đầy đủ ở phần Tài liệu tham khảo của báo cáo):
 
 1. W. Eddy (ed.), *Transmission Control Protocol (TCP)*, RFC 9293, IETF, 2022. https://www.rfc-editor.org/rfc/rfc9293.html
 2. Oracle, *Java SE 17 API Specification – package java.net*. https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/net/package-summary.html
@@ -570,9 +570,9 @@ Các tài liệu được trích dẫn trong nội dung báo cáo khi sử dụn
 
 | Student | Main Contribution | Percentage |
 | --------- | ----------------- | ---------: |
-| Phạm Văn Vỹ | Prototype server và Unity client ban đầu; menu, HUD, minimap, lời dẫn, màn kết quả; luật Mảnh Tim Lửa; bố cục bản đồ, bảng xếp hạng Đấu nhanh, kiểm tra phiên bản, ghép trận có đếm ngược | ...% |
-| Giang Thủy Tiên | Đồng bộ chọn lọc `SyncMode`; reconnect, heartbeat, timeout, hàng đợi ghi, watchdog; chế độ Đấu nhanh và Hành trình; test JUnit, harness kiểm tra Unity; âm thanh | ...% |
-| Trần Đỗ Lan Phương | Ghép trận `FIND_MATCH`/`CANCEL_MATCH`; công cụ đo và thực nghiệm; bản đồ, giao diện và VFX bằng asset; Khóa Lửa; bot test; viết báo cáo | ...% |
+| Phạm Văn Vỹ | Prototype server và Unity client ban đầu; menu, HUD, minimap, lời dẫn, màn kết quả; luật Mảnh Tim Lửa; bố cục bản đồ, bảng xếp hạng Đấu nhanh, kiểm tra phiên bản, ghép trận có đếm ngược | 34% |
+| Giang Thủy Tiên | Đồng bộ chọn lọc `SyncMode`; reconnect, heartbeat, timeout, hàng đợi ghi, watchdog; chế độ Đấu nhanh và Hành trình; test JUnit, harness kiểm tra Unity; âm thanh | 33% |
+| Trần Đỗ Lan Phương | Ghép trận `FIND_MATCH`/`CANCEL_MATCH`; công cụ đo và thực nghiệm; bản đồ, giao diện và VFX bằng asset; Khóa Lửa; bot test; viết báo cáo | 33% |
 | **Total** | | **100%** |
 
 Chi tiết từng phần việc: mục 19 của báo cáo.
