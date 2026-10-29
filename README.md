@@ -1,61 +1,61 @@
-# 💣 Bomb Me Baby – NETWORK PROGRAMMING – FINAL PROJECT
+# 💣 Bomb Me Baby – LẬP TRÌNH MẠNG – BÀI TẬP LỚN
 
-> **Academic Year 2026–2027**
+> **Năm học 2026–2027**
 
 ---
 
-# 1. Project Information
+# 1. Thông tin dự án
 
-## 1.1. Project Name
+## 1.1. Tên dự án
 
 **Bomb Me Baby** – game đấu trường PvP 2.5D nhiều người chơi qua mạng TCP, server quyết định luật chơi và đồng bộ trạng thái chọn lọc.
 
-## 1.2. Topic
+## 1.2. Chủ đề
 
 **Chủ đề 2 – Phát triển game mạng**
 
-## 1.3. Group
+## 1.3. Nhóm
 
 Nhóm 07.
 
-| No. | Student ID | Full Name | Email | Main Responsibility | Contribution |
+| STT | MSSV | Họ và tên | Email | Phụ trách chính | Đóng góp |
 | --- | ---------- | --------- | ----- | ------------------- | -----------: |
 | 1 | B23DCCN954 | Phạm Văn Vỹ (trưởng nhóm) | ... | Prototype server và client ban đầu; Unity client (menu, HUD, minimap, lời dẫn, màn kết quả); luật Mảnh Tim Lửa; kiểm tra phiên bản; hoàn thiện gameplay bản cuối | 34% |
 | 2 | B23DCCN814 | Giang Thủy Tiên | ... | Đồng bộ chọn lọc (novelty); reconnect, heartbeat, timeout, hàng đợi ghi; chế độ Đấu nhanh và Hành trình; test JUnit, kiểm tra Unity; âm thanh | 33% |
 | 3 | B23DCCN667 | Trần Đỗ Lan Phương | ... | Ghép trận `FIND_MATCH`; công cụ đo và thực nghiệm baseline/optimized; bản đồ và giao diện bằng asset; Khóa Lửa; bot test; viết báo cáo | 33% |
-| | | | | **Total** | **100%** |
+| | | | | **Tổng** | **100%** |
 
-## 1.4. Instructor
+## 1.4. Giảng viên hướng dẫn
 
 **Thầy Ngô Văn Quyền**
 
-Repository: https://github.com/VyOZzz/-LTM-Bomb-Me-Baby
+Kho mã nguồn: https://github.com/VyOZzz/-LTM-Bomb-Me-Baby
 
 ---
 
-# 2. Project Summary
+# 2. Tóm tắt dự án
 
-## 2.1. Problem
+## 2.1. Vấn đề
 
 Trong game hành động nhiều người, mọi máy phải thấy cùng một trận đấu dù độ trễ mỗi máy khác nhau và kết nối có thể đứt bất kỳ lúc nào. Bài toán là xây dựng một hệ thống client/server cho game đấu trường 2–10 người, trong đó server giữ trạng thái chính thức, phục vụ đồng thời nhiều phòng và nhiều kết nối, chịu được request trùng, client im lặng và mất kết nối tạm thời, đồng thời giảm được lượng dữ liệu đồng bộ so với cách gửi toàn bộ trạng thái.
 
-## 2.2. Motivation
+## 2.2. Động lực
 
 1. **Nhất quán và chống gian lận.** Nếu client tự quyết định HP hoặc người thắng, mỗi máy có thể ra một kết quả khác nhau và người chơi có thể sửa client để gian lận.
 2. **Băng thông.** Bản đồ có nhiều đá và bụi không đổi trong suốt trận. Gửi lại chúng trong mọi snapshot là lãng phí, và lượng dữ liệu tăng theo số người chơi.
 3. **Lộ thông tin.** Game có bụi để ẩn nấp. Nếu snapshot vẫn chứa tọa độ người trong bụi thì client bị sửa có thể nhìn xuyên bụi (map hack).
 
-## 2.3. Objectives
+## 2.3. Mục tiêu
 
-Project hướng tới các mục tiêu:
+Dự án hướng tới các mục tiêu:
 
 1. Xây dựng server TCP giữ trạng thái chính thức của trận, phục vụ nhiều phòng và nhiều client đồng thời.
 2. Thiết kế protocol JSON rõ ràng, có `seq` chống request trùng, heartbeat, timeout, reconnect và kiểm tra phiên bản.
 3. Đề xuất cơ chế đồng bộ trạng thái chọn lọc và đo mức giảm băng thông so với baseline gửi toàn bộ.
 
-## 2.4. Scope
+## 2.4. Phạm vi
 
-### In scope
+### Trong phạm vi
 
 * Hai chế độ chơi: Đấu nhanh và Hành trình Tim Lửa; ba bản đồ.
 * Phòng riêng bằng mã 6 ký tự, ghép trận ngẫu nhiên, tối đa 10 người mỗi phòng.
@@ -63,7 +63,7 @@ Project hướng tới các mục tiêu:
 * Unity client cho Windows; Java server chạy trên mọi máy có Java 17+.
 * Bộ công cụ đo baseline/optimized và bộ test JUnit.
 
-### Out of scope
+### Ngoài phạm vi
 
 * Tài khoản, đăng nhập.
 * Mã hóa TLS.
@@ -72,55 +72,55 @@ Project hướng tới các mục tiêu:
 
 ---
 
-# 3. System Overview
+# 3. Tổng quan hệ thống
 
-## 3.1. System Description
+## 3.1. Mô tả hệ thống
 
 Người chơi điều khiển một quả bóng lăn trên bản đồ, nhặt Energy để lớn lên, gồng bom rồi tự kích nổ để hạ đối thủ. Toàn bộ luật chơi do Java server quyết định (server-authoritative). Unity client chỉ gửi ý định điều khiển (hướng di chuyển, gồng bom, kích nổ…) và hiển thị trạng thái server gửi về. Server mô phỏng ở 20 Hz, gửi snapshot ở 10 Hz, và mỗi snapshot được tạo riêng cho từng người xem: đối thủ ở xa hoặc trong bụi không được gửi tọa độ.
 
-## 3.2. Target Users
+## 3.2. Đối tượng người dùng
 
 * Người chơi trên máy Windows muốn chơi cùng bạn bè trong cùng mạng LAN, hoặc qua Internet khi server có IP public.
-* Giảng viên và sinh viên môn Lập trình mạng, dùng project làm ví dụ về server-authoritative game, protocol tự thiết kế và đo đạc đồng bộ trạng thái.
+* Giảng viên và sinh viên môn Lập trình mạng, dùng dự án làm ví dụ về server-authoritative game, protocol tự thiết kế và đo đạc đồng bộ trạng thái.
 
-## 3.3. Main Functions
+## 3.3. Chức năng chính
 
-| Function | Description | Status |
+| Chức năng | Mô tả | Trạng thái |
 | -------- | ----------- | ------ |
-| Kết nối và phiên | `HELLO`/`WELCOME`, cấp `playerId` và resume token, kiểm tra `protocolVersion` | Done |
-| Phòng riêng | Tạo phòng, vào bằng mã 6 ký tự, bắt đầu khi tất cả bấm Sẵn sàng | Done |
-| Ghép trận | Hàng đợi theo chế độ: đủ 4 người thì vào ngay, nhóm 2–3 người vào sau 15 giây đếm ngược | Done |
-| Đấu nhanh | 3 phút, người sống cuối cùng thắng; hết giờ xếp hạng theo điểm hạ và sát thương | Done |
-| Hành trình Tim Lửa | 3 chương trên 3 bản đồ, tranh Mảnh Tim Lửa và giữ bệ 30 giây | Done |
-| Đồng bộ chọn lọc | Snapshot riêng cho từng người xem, chuyển được giữa `BASELINE` và `OPTIMIZED` | Done |
-| Reconnect | Giữ chỗ 10 giây, khôi phục phòng, snapshot đầy đủ hoặc kết quả trận | Done |
-| Heartbeat, timeout, chống quá tải | Đóng kết nối im lặng, ghi treo, frame quá lớn, hàng đợi đầy; tối đa 64 kết nối; 120 frame/kết nối/giây trượt | Done |
-| Bot và công cụ đo | Bot thêm người chơi, client giả lập đo RTT và băng thông | Done |
-| Tài khoản, lịch sử trận | Không thuộc phạm vi | Not planned |
+| Kết nối và phiên | `HELLO`/`WELCOME`, cấp `playerId` và resume token, kiểm tra `protocolVersion` | Hoàn thành |
+| Phòng riêng | Tạo phòng, vào bằng mã 6 ký tự, bắt đầu khi tất cả bấm Sẵn sàng | Hoàn thành |
+| Ghép trận | Hàng đợi theo chế độ: đủ 4 người thì vào ngay, nhóm 2–3 người vào sau 15 giây đếm ngược | Hoàn thành |
+| Đấu nhanh | 3 phút, người sống cuối cùng thắng; hết giờ xếp hạng theo điểm hạ và sát thương | Hoàn thành |
+| Hành trình Tim Lửa | 3 chương trên 3 bản đồ, tranh Mảnh Tim Lửa và giữ bệ 30 giây | Hoàn thành |
+| Đồng bộ chọn lọc | Snapshot riêng cho từng người xem, chuyển được giữa `BASELINE` và `OPTIMIZED` | Hoàn thành |
+| Reconnect | Giữ chỗ 10 giây, khôi phục phòng, snapshot đầy đủ hoặc kết quả trận | Hoàn thành |
+| Heartbeat, timeout, chống quá tải | Đóng kết nối im lặng, ghi treo, frame quá lớn, hàng đợi đầy; tối đa 64 kết nối; 120 frame/kết nối/giây trượt | Hoàn thành |
+| Bot và công cụ đo | Bot thêm người chơi, client giả lập đo RTT và băng thông | Hoàn thành |
+| Tài khoản, lịch sử trận | Không thuộc phạm vi | Không thực hiện |
 
 ---
 
-# 4. System Architecture
+# 4. Kiến trúc hệ thống
 
-## 4.1. Architecture Diagram
+## 4.1. Sơ đồ kiến trúc
 
-![System Architecture](docs/images/architecture.png)
+![Kiến trúc hệ thống](docs/images/architecture.png)
 
 Sơ đồ triển khai (deployment diagram) UML. Mỗi máy người chơi chạy Unity client và giữ một kết nối TCP tới máy chủ. Trên máy chủ, luồng đọc của từng `Connection` chuyển request vào `GameRoom` dưới khóa phòng; `GameLoop` cập nhật trạng thái 20 lần mỗi giây, tạo snapshot riêng cho từng người xem theo `SyncMode` rồi đưa vào hàng đợi ghi của từng kết nối.
 
-## 4.2. Components
+## 4.2. Thành phần
 
-| Component | Responsibility |
+| Thành phần | Nhiệm vụ |
 | --------- | -------------- |
 | Client (Unity: `BombGame`, `BombNetwork`) | Đọc input, gửi ý định điều khiển, nhận snapshot, nội suy vị trí đối thủ, hiển thị HUD, camera, âm thanh. Socket TCP chạy trên luồng nền, main thread chỉ đọc inbox |
 | Server (`BombServer`, `Connection`) | Lắng nghe cổng 7777, đọc frame JSON, kiểm tra phiên bản và `seq`, quản lý phiên và resume token |
-| Database | Không có. Trạng thái phòng và phiên nằm trong bộ nhớ vì không có tài khoản hay lịch sử trận |
-| Service (`Matchmaker`, `SyncMode`, `GameRoom`, `ShardObjective`) | Ghép trận theo chế độ; chọn chế độ đồng bộ; mô phỏng trận, luật chiến đấu và mục tiêu Hành trình |
-| Worker (game loop, luồng ghi) | Một luồng game loop chạy mỗi 50 ms; mỗi kết nối có một luồng đọc từ thread pool (64) và một luồng ghi riêng với hàng đợi tối đa 128 message |
+| Cơ sở dữ liệu | Không có. Trạng thái phòng và phiên nằm trong bộ nhớ vì không có tài khoản hay lịch sử trận |
+| Dịch vụ (`Matchmaker`, `SyncMode`, `GameRoom`, `ShardObjective`) | Ghép trận theo chế độ; chọn chế độ đồng bộ; mô phỏng trận, luật chiến đấu và mục tiêu Hành trình |
+| Luồng xử lý (game loop, luồng ghi) | Một luồng game loop chạy mỗi 50 ms; mỗi kết nối có một luồng đọc từ thread pool (64) và một luồng ghi riêng với hàng đợi tối đa 128 message |
 
-## 4.3. Data Flow
+## 4.3. Luồng dữ liệu
 
-![Data Flow](docs/images/flow.png)
+![Luồng dữ liệu](docs/images/flow.png)
 
 1. Client đọc phím, dự đoán ngay vị trí nhân vật của mình và gửi `MOVE` mỗi 40 ms, mỗi request có `seq` tăng dần.
 2. Luồng đọc của server đọc frame (tối đa 2048 ký tự), parse JSON, bỏ request có `seq` không tăng, rồi gọi `GameRoom.action()` dưới khóa phòng. Với `MOVE`, server chỉ ghi lại hướng và trả `ACK`.
@@ -130,9 +130,9 @@ Sơ đồ triển khai (deployment diagram) UML. Mỗi máy người chơi chạ
 
 ---
 
-# 5. Network Communication Design
+# 5. Thiết kế giao tiếp mạng
 
-## 5.1. Communication Model
+## 5.1. Mô hình giao tiếp
 
 ```text
 Unity Client 1 ─┐
@@ -140,11 +140,11 @@ Unity Client 2 ─┼── TCP, kết nối giữ suốt phiên chơi, JSON m�
 Unity Client N ─┘                                                       (trạng thái trong bộ nhớ, không có database)
 ```
 
-## 5.2. Protocol
+## 5.2. Giao thức
 
-**Protocol:** TCP với custom protocol: mỗi message là một JSON object trên một dòng UTF-8, kết thúc bằng LF hoặc CRLF, tối đa 2048 ký tự. Cổng mặc định 7777.
+**Giao thức:** TCP với giao thức tự thiết kế: mỗi message là một JSON object trên một dòng UTF-8, kết thúc bằng LF hoặc CRLF, tối đa 2048 ký tự. Cổng mặc định 7777.
 
-## 5.3. Message Format
+## 5.3. Định dạng message
 
 ```json
 {"type":"HELLO","protocolVersion":1,"name":"Bom A","resumeToken":""}
@@ -161,68 +161,68 @@ Unity Client N ─┘                                                       (tr�
 
 Trừ `HELLO` và `PING`, mọi request phải có `seq` lớn hơn mọi `seq` server đã nhận trong cùng phiên; `seq` không reset khi đổi phòng hay reconnect. `protocolVersion` của client phải bằng `BombServer.PROTOCOL_VERSION`.
 
-## 5.4. Communication Sequence
+## 5.4. Trình tự giao tiếp
 
 Trình tự một trận phòng riêng (sequence diagram UML):
 
-![Communication Sequence](docs/images/sequence.png)
+![Trình tự giao tiếp](docs/images/sequence.png)
 
 Trình tự mất kết nối và kết nối lại:
 
-![Reconnect Sequence](docs/images/reconnect.png)
+![Trình tự kết nối lại](docs/images/reconnect.png)
 
-## 5.5. Error Handling
+## 5.5. Xử lý lỗi
 
 | Tình huống | Cách xử lý |
 | --- | --- |
-| Invalid request (sai thứ tự, sai trạng thái) | `HELLO_REQUIRED`, `NOT_IN_ROOM`, `ACTION_UNAVAILABLE`, `ROOM_UNAVAILABLE`, `BOMB_COOLDOWN`, `ALREADY_SEARCHING`, `INVALID_MODE`; giữ kết nối |
+| Request không hợp lệ (sai thứ tự, sai trạng thái) | `HELLO_REQUIRED`, `NOT_IN_ROOM`, `ACTION_UNAVAILABLE`, `ROOM_UNAVAILABLE`, `BOMB_COOLDOWN`, `ALREADY_SEARCHING`, `INVALID_MODE`; giữ kết nối |
 | Request trùng hoặc cũ | `seq` không tăng → `DUPLICATE_SEQUENCE`, không thực hiện lại |
 | Lệch phiên bản | `protocolVersion` thiếu hoặc khác server → `VERSION_MISMATCH`, không tạo phiên; client ngừng kết nối lại và báo cập nhật bản mới |
-| Invalid data (JSON sai, thiếu trường) | `ERROR INVALID_MESSAGE`, frame sau vẫn được xử lý bình thường |
+| Dữ liệu không hợp lệ (JSON sai, thiếu trường) | `ERROR INVALID_MESSAGE`, frame sau vẫn được xử lý bình thường |
 | Frame quá lớn | Đóng socket khi vượt 2048 ký tự, kể cả khi chưa gặp newline |
-| Timeout | Server đóng kết nối sau 6 giây không nhận message hợp lệ; client tự đóng sau 7 giây rồi thử kết nối lại |
+| Hết thời gian chờ | Server đóng kết nối sau 6 giây không nhận message hợp lệ; client tự đóng sau 7 giây rồi thử kết nối lại |
 | Ghi bị treo, client chậm | Đóng kết nối nếu một lần ghi quá 3 giây hoặc hàng đợi ghi đầy 128 message |
-| Disconnect | Giữ chỗ 10 giây; client gửi lại `HELLO` kèm `resumeToken`; quá hạn thì người chơi bị loại |
-| Server error | Lỗi khi cập nhật một phòng hoặc khi ghép trận được bắt và ghi log, game loop và các phòng khác vẫn chạy |
-| Database error | Không áp dụng vì hệ thống không dùng database |
+| Mất kết nối | Giữ chỗ 10 giây; client gửi lại `HELLO` kèm `resumeToken`; quá hạn thì người chơi bị loại |
+| Lỗi server | Lỗi khi cập nhật một phòng hoặc khi ghép trận được bắt và ghi log, game loop và các phòng khác vẫn chạy |
+| Lỗi cơ sở dữ liệu | Không áp dụng vì hệ thống không dùng database |
 | Quá tải | Từ chối kết nối thứ 65 trở đi |
 | Gửi quá nhanh | Đóng riêng kết nối vượt 120 frame trong một giây trượt, trước parse JSON/thực thi action; tính cả PING, HELLO và frame lỗi |
 | Input cũ | Hướng di chuyển tự về 0 sau 0,5 giây nếu không có `MOVE` mới |
 
 ---
 
-# 6. Technology Stack
+# 6. Công nghệ sử dụng
 
-| Category | Technology |
+| Hạng mục | Công nghệ |
 | ---------- | -------------------- |
-| Language | Java 17 (server), C# (Unity client), Python 3 và PowerShell (script đo, test) |
-| Network | TCP: `java.net.ServerSocket`/`Socket` (server), `System.Net.Sockets.TcpClient` (client) |
-| Database | Không dùng |
+| Ngôn ngữ | Java 17 (server), C# (Unity client), Python 3 và PowerShell (script đo, test) |
+| Mạng | TCP: `java.net.ServerSocket`/`Socket` (server), `System.Net.Sockets.TcpClient` (client) |
+| Cơ sở dữ liệu | Không dùng |
 | Framework, thư viện | Unity 6.3 LTS (`6000.3.6f1`); Gson 2.11 (server); `JsonUtility` của Unity (client); JUnit 5.11 (test) |
-| Build Tool | Maven 3.9 (server), Unity batch build qua `scripts/build_client.ps1` (client) |
+| Công cụ build | Maven 3.9 (server), Unity batch build qua `scripts/build_client.ps1` (client) |
 | IDE | Unity Editor, Visual Studio Code |
-| OS | Windows 10/11 64-bit |
+| Hệ điều hành | Windows 10/11 64-bit |
 
 Tài nguyên đồ họa và âm thanh: asset CC0 của Kenney, ambientCG và OpenGameArt; nguồn và giấy phép trong [docs/ASSET_CREDITS.md](docs/ASSET_CREDITS.md) và [docs/AUDIO_CREDITS.md](docs/AUDIO_CREDITS.md).
 
 ---
 
-# 7. Novelty and Contributions
+# 7. Điểm mới và đóng góp
 
-## 7.1. Baseline
+## 7.1. Phiên bản cơ sở (baseline)
 
 Bản prototype ban đầu (commit `aaed786`, 12/10/2026) gửi snapshot đầy đủ cho mọi người: toàn bộ hình học bản đồ, toàn bộ vật phẩm và tọa độ của mọi người chơi, 10 lần mỗi giây. Bản này chưa có reconnect, chưa chống request trùng và chưa có ghép trận. Chế độ `BASELINE` hiện tại giữ đúng cách gửi đầy đủ này để làm mốc so sánh trên cùng luật chơi.
 
-## 7.2. Proposed Improvement
+## 7.2. Cải tiến đề xuất
 
 * **Đồng bộ trạng thái chọn lọc (`OPTIMIZED`):** hình học tĩnh chỉ gửi một lần ở `GAME_START` hoặc khi reconnect; vật phẩm và đối thủ chỉ được gửi khi người xem được phép thấy (bán kính nhìn 26 đơn vị, bụi); event nổ không có tọa độ với người không thấy nguồn nổ.
 * **Phục hồi phiên giữ đúng thứ tự vòng đời trận:** resume token, `seq` không reset, `roomCode` và `roundIndex` trong snapshot, phát lại kết quả khi reconnect sau trận.
 * **Concurrency có kiểm soát:** thứ tự khóa cố định `player → room → hàng đợi ghi`, hàng đợi ghi riêng cho từng client, watchdog ghi treo, ticket ghép trận có generation.
 * **Game do nhóm tự nghĩ và phát triển:** nhân vật chính là quả bom, gồng lực rồi tự nổ quanh mình; Size vừa là sức mạnh vừa là thứ phải tiêu và rơi lại cho đối thủ; chế độ Hành trình Tim Lửa có luật tranh mảnh riêng (Khóa Lửa, cướp mảnh trên bệ).
 
-## 7.3. Contributions
+## 7.3. Đóng góp
 
-| No. | Contribution | Description | Evidence |
+| STT | Đóng góp | Mô tả | Minh chứng |
 | --- | ------------ | ----------- | -------- |
 | 1 | Đồng bộ trạng thái chọn lọc | Snapshot riêng cho từng người xem, bỏ hình học tĩnh, lọc vật phẩm và đối thủ theo tầm nhìn và bụi | `SyncMode.java`, `GameRoom.snapshot(...)`; giảm 61,7–79,0% byte nhận mỗi client (mục 14); test `optimizedHidesBushOpponentButShowsSelfAndSameBush` |
 | 2 | Phục hồi phiên giữ thứ tự vòng đời | Resume token, `seq` không reset, phát lại `GAME_OVER` khi reconnect sau trận | `BombServer.java`; `ConnectionTest`, `CompletionRegressionTest` |
@@ -230,19 +230,19 @@ Bản prototype ban đầu (commit `aaed786`, 12/10/2026) gửi snapshot đầy 
 | 4 | Bộ công cụ đo lặp lại được | Client giả lập, runner ma trận baseline/optimized, fingerprint mã nguồn, giữ cả lượt đo lỗi | `scripts/load_test.py`, `scripts/run_benchmark.ps1`, `experiments/` |
 | 5 | Game và cơ chế chơi tự thiết kế | Người chơi là quả bom, Size vừa là sức mạnh vừa là thứ phải tiêu, khiên phản đòn, chế độ Hành trình có Khóa Lửa và cướp mảnh | `GameRules.java`, `ShardObjective.java`; `GameRoomTest`, `ShardStealMechanicsTest` |
 
-## 7.4. Baseline vs Proposed
+## 7.4. So sánh baseline và đề xuất
 
-| Aspect | Baseline | Proposed |
+| Khía cạnh | Baseline | Đề xuất |
 | ------------- | -------- | -------- |
-| Architecture | Server-authoritative, một snapshot giống nhau cho cả phòng | Server-authoritative, snapshot riêng cho từng người xem |
-| Algorithm | Gửi toàn bộ trạng thái mỗi 100 ms | Lọc theo bán kính nhìn và bụi; hình học tĩnh chỉ gửi một lần |
-| Communication | Hình học, mọi vật phẩm và tọa độ mọi người trong mọi snapshot | Chỉ dữ liệu người xem được phép thấy; event nổ ẩn tọa độ khi không thấy nguồn |
-| Performance (8 client) | 115 693 byte nhận/client/giây | 44 331 byte nhận/client/giây (giảm 61,7%) |
-| Functionality | Client nhận được vị trí đối thủ đang ẩn | Chống map hack ngay từ dữ liệu gửi đi |
+| Kiến trúc | Server-authoritative, một snapshot giống nhau cho cả phòng | Server-authoritative, snapshot riêng cho từng người xem |
+| Thuật toán | Gửi toàn bộ trạng thái mỗi 100 ms | Lọc theo bán kính nhìn và bụi; hình học tĩnh chỉ gửi một lần |
+| Giao tiếp | Hình học, mọi vật phẩm và tọa độ mọi người trong mọi snapshot | Chỉ dữ liệu người xem được phép thấy; event nổ ẩn tọa độ khi không thấy nguồn |
+| Hiệu năng (8 client) | 115 693 byte nhận/client/giây | 44 331 byte nhận/client/giây (giảm 61,7%) |
+| Chức năng | Client nhận được vị trí đối thủ đang ẩn | Chống map hack ngay từ dữ liệu gửi đi |
 
 ---
 
-# 8. Project Structure
+# 8. Cấu trúc dự án
 
 ```text
 -LTM-Bomb-Me-Baby/
@@ -274,24 +274,24 @@ Bản prototype ban đầu (commit `aaed786`, 12/10/2026) gửi snapshot đầy 
 
 ---
 
-# 9. Requirements
+# 9. Yêu cầu
 
-## Hardware
+## Phần cứng
 
 | | Tối thiểu | Máy dùng để đo (28/10/2026) |
 | --- | --- | --- |
 | CPU | 4 nhân | Intel Core i7-11800H |
 | RAM | 8 GB (16 GB nếu mở Unity Editor) | 7,69 GiB Windows nhận diện |
-| Disk | ~1 GB cho bản build; ~10 GB nếu cài Unity Editor | |
+| Ổ đĩa | ~1 GB cho bản build; ~10 GB nếu cài Unity Editor | |
 | Mạng | Cùng LAN, hoặc server có IP public/port forwarding | Loopback |
 
-## Software
+## Phần mềm
 
-* OS: Windows 10/11 64-bit.
+* Hệ điều hành: Windows 10/11 64-bit.
 * Java: JDK 17 trở lên (chạy server).
 * Maven: 3.9 trở lên (build và test server từ source).
-* Database: không cần.
-* Other dependencies:
+* Cơ sở dữ liệu: không cần.
+* Phụ thuộc khác:
   * Unity Hub và Unity Editor `6000.3.6f1`, chỉ cần khi mở, sửa hoặc build client từ source;
   * Python 3.10 trở lên để chạy bot, smoke test và benchmark (chỉ dùng thư viện chuẩn);
   * Git để clone source.
@@ -300,18 +300,18 @@ Bản prototype ban đầu (commit `aaed786`, 12/10/2026) gửi snapshot đầy 
 
 ---
 
-# 10. Installation
+# 10. Cài đặt
 
-## 10.1. Clone / Download
+## 10.1. Tải mã nguồn
 
 ```bash
 git clone https://github.com/VyOZzz/-LTM-Bomb-Me-Baby.git
 cd -LTM-Bomb-Me-Baby
 ```
 
-hoặc download source code từ Google Drive (thư mục `Nhom07_BombMeBaby_Source/`).
+hoặc tải mã nguồn từ Google Drive (thư mục `Nhom07_BombMeBaby_Source/`).
 
-## 10.2. Install Dependencies
+## 10.2. Cài đặt thư viện phụ thuộc
 
 ```powershell
 java -version      # phải là 17 trở lên
@@ -323,11 +323,11 @@ mvn package        # Maven tự tải Gson và JUnit, build JAR và chạy test
 
 Client không cần cài thêm thư viện. Muốn build client từ source thì cài Unity `6000.3.6f1` qua Unity Hub.
 
-## 10.3. Database Setup
+## 10.3. Thiết lập cơ sở dữ liệu
 
 Không cần. Server giữ trạng thái phòng và phiên trong bộ nhớ, không có database hay schema.
 
-## 10.4. Configuration
+## 10.4. Cấu hình
 
 **Server:**
 
@@ -350,9 +350,9 @@ Mặc định client kết nối `127.0.0.1:7777`.
 
 ---
 
-# 11. Running the Project
+# 11. Chạy dự án
 
-## 11.1. Start Server
+## 11.1. Khởi động server
 
 ```powershell
 # Cách khuyên dùng: tự build JAR rồi chạy ở chế độ optimized
@@ -366,7 +366,7 @@ java -Dsync.mode=optimized -jar target/bomb-me-baby-server-1.0.0.jar 7777
 
 Khi thấy dòng `Bomb Me Baby server on TCP port 7777` là server đã sẵn sàng.
 
-## 11.2. Start Client
+## 11.2. Khởi động client
 
 ```powershell
 # Build bản Windows từ source (kết quả: builds/windows/BombMeBaby.exe)
@@ -381,7 +381,7 @@ Khi gửi bản build cho người khác, phải gửi **cả thư mục** `buil
 
 Trong game: nhập tên → chọn chế độ → **TÌM TRẬN**, **TẠO PHÒNG RIÊNG** hoặc **VÀO PHÒNG BẠN BÈ**.
 
-## 11.3. Start Multiple Clients
+## 11.3. Chạy nhiều client
 
 ```powershell
 # Cùng một máy: mở nhiều cửa sổ, tất cả dùng 127.0.0.1:7777
@@ -395,7 +395,7 @@ python scripts/bots.py --room ABC123 --count 3
 
 Chơi qua LAN: chạy server trên một máy, lấy IPv4 bằng `ipconfig`, mở firewall cho TCP 7777 (PowerShell quyền Administrator: `New-NetFirewallRule -DisplayName "Bomb Me Baby" -Direction Inbound -Protocol TCP -LocalPort 7777 -Action Allow`), các máy khác nhập địa chỉ đó. Kiểm tra kết nối bằng `Test-NetConnection <IP> -Port 7777`.
 
-## 11.4. Run Test
+## 11.4. Chạy test
 
 ```powershell
 cd server
@@ -407,27 +407,27 @@ python scripts/network_smoke.py     # smoke test qua TCP thật với 2 client g
 
 ---
 
-# 12. Main Features
+# 12. Tính năng chính
 
-| No. | Feature | Description | Test |
+| STT | Tính năng | Mô tả | Kiểm thử |
 | --- | ------- | ----------- | ------ |
-| 1 | Kết nối, phiên, phiên bản | `HELLO` bắt buộc trước mọi request; lệch hoặc thiếu `protocolVersion` bị từ chối | Passed (`helloRequiredBeforeRoomActions`, `mismatchedOrMissingProtocolVersionIsRejected`) |
-| 2 | Chống request trùng | Request có `seq` trùng hoặc cũ không làm đổi phòng hay hướng di chuyển | Passed (`duplicateAndOlderRequestsDoNotChangeRoomOrMovement`) |
-| 3 | Phòng riêng | Tạo, vào, rời phòng; chỉ bắt đầu khi đủ 2 người và tất cả sẵn sàng | Passed (`requiresTwoReadyPlayersAndResetsRound`, `leaveRoomClearsMembershipAndAllowsCreatingAnotherRoom`) |
-| 4 | Ghép trận | Đủ 4 người thì vào ngay, 2–3 người vào sau 15 giây đếm ngược; không trộn chế độ, hủy tìm an toàn | Passed (`fullQueueMatchesAtOnceAndModesNeverMix`, `twoSearchingPlayersWaitForCountdownThenStartWithoutReady`, `countdownStartsWhenTheSecondPlayerJoinsAndExtraPlayersKeepWaiting`) |
-| 5 | Reconnect | Khôi phục danh tính, `seq`, phòng và bản đồ; từ chối khi quá hạn | Passed (`resumeRestoresIdentitySequenceRoomAndFullMap`, `resumeAtOrAfterDeadlineIsRejected`) |
-| 6 | Heartbeat, frame, hàng đợi ghi | Đóng kết nối im lặng; frame quá lớn; gộp snapshot nhưng giữ event | Passed (`heartbeatWatchdogClosesASilentConnection`, `oversizedUnterminatedFrameClosesWithoutWaitingForNewline`, `outboundQueueCoalescesSnapshotsButKeepsEvents`) |
-| 7 | Đồng bộ chọn lọc | Ẩn đối thủ ở xa và trong bụi, bỏ hình học tĩnh, snapshot ít byte hơn | Passed (`optimizedHidesBushOpponentButShowsSelfAndSameBush`, `optimizedHidesDistantOpponent`, `optimizedSnapshotUsesFewerUtf8BytesForIdenticalState`) |
-| 8 | Luật chiến đấu | Sát thương 80 HP khi gồng đầy, khiên phản đòn, nổ trả Size thành Energy | Passed (`fullChargeExplosionActuallyRemovesEightyHp`, `shieldReflectsAndDoesNotDamageTarget`, `explosionDropsSpentSizeAsEnergyFragments`) |
-| 9 | Đấu nhanh | Hết giờ xếp hạng theo điểm hạ rồi sát thương; 60 giây cuối lộ vị trí trên minimap | Passed (`quickTimeoutRanksKillsThenDamageAndCrownsTheLeader`, `finalQuickMinuteRevealsEveryPositionForTheMinimapOnly`) |
-| 10 | Hành trình Tim Lửa | Giữ bệ 30 giây để thắng, Khóa Lửa, cướp mảnh, chạy đủ 3 bản đồ | Passed (`placedShardOwnerWinsExactlyAfterThirtyUncontestedSeconds`, `lockRegeneratesGraduallyAfterDelayAndDropsShardWhenEmpty`, `journeyRunsAllThreeMapsAndCompletesWithItsWinner`) |
-| 11 | Rate limit theo kết nối | Đóng riêng client vượt 120 frame/giây trượt; chặn cả frame lỗi trước HELLO; lưu lượng bình thường vẫn qua | Passed (`rateLimitClosesOnlyFloodingPlayerBeforeApplyingExtraAction`, `rateLimitCountsMalformedAndEmptyFramesBeforeHello`, `rateLimitAllowsSustainedNormalTrafficAcrossWindows`) |
+| 1 | Kết nối, phiên, phiên bản | `HELLO` bắt buộc trước mọi request; lệch hoặc thiếu `protocolVersion` bị từ chối | Đạt (`helloRequiredBeforeRoomActions`, `mismatchedOrMissingProtocolVersionIsRejected`) |
+| 2 | Chống request trùng | Request có `seq` trùng hoặc cũ không làm đổi phòng hay hướng di chuyển | Đạt (`duplicateAndOlderRequestsDoNotChangeRoomOrMovement`) |
+| 3 | Phòng riêng | Tạo, vào, rời phòng; chỉ bắt đầu khi đủ 2 người và tất cả sẵn sàng | Đạt (`requiresTwoReadyPlayersAndResetsRound`, `leaveRoomClearsMembershipAndAllowsCreatingAnotherRoom`) |
+| 4 | Ghép trận | Đủ 4 người thì vào ngay, 2–3 người vào sau 15 giây đếm ngược; không trộn chế độ, hủy tìm an toàn | Đạt (`fullQueueMatchesAtOnceAndModesNeverMix`, `twoSearchingPlayersWaitForCountdownThenStartWithoutReady`, `countdownStartsWhenTheSecondPlayerJoinsAndExtraPlayersKeepWaiting`) |
+| 5 | Reconnect | Khôi phục danh tính, `seq`, phòng và bản đồ; từ chối khi quá hạn | Đạt (`resumeRestoresIdentitySequenceRoomAndFullMap`, `resumeAtOrAfterDeadlineIsRejected`) |
+| 6 | Heartbeat, frame, hàng đợi ghi | Đóng kết nối im lặng; frame quá lớn; gộp snapshot nhưng giữ event | Đạt (`heartbeatWatchdogClosesASilentConnection`, `oversizedUnterminatedFrameClosesWithoutWaitingForNewline`, `outboundQueueCoalescesSnapshotsButKeepsEvents`) |
+| 7 | Đồng bộ chọn lọc | Ẩn đối thủ ở xa và trong bụi, bỏ hình học tĩnh, snapshot ít byte hơn | Đạt (`optimizedHidesBushOpponentButShowsSelfAndSameBush`, `optimizedHidesDistantOpponent`, `optimizedSnapshotUsesFewerUtf8BytesForIdenticalState`) |
+| 8 | Luật chiến đấu | Sát thương 80 HP khi gồng đầy, khiên phản đòn, nổ trả Size thành Energy | Đạt (`fullChargeExplosionActuallyRemovesEightyHp`, `shieldReflectsAndDoesNotDamageTarget`, `explosionDropsSpentSizeAsEnergyFragments`) |
+| 9 | Đấu nhanh | Hết giờ xếp hạng theo điểm hạ rồi sát thương; 60 giây cuối lộ vị trí trên minimap | Đạt (`quickTimeoutRanksKillsThenDamageAndCrownsTheLeader`, `finalQuickMinuteRevealsEveryPositionForTheMinimapOnly`) |
+| 10 | Hành trình Tim Lửa | Giữ bệ 30 giây để thắng, Khóa Lửa, cướp mảnh, chạy đủ 3 bản đồ | Đạt (`placedShardOwnerWinsExactlyAfterThirtyUncontestedSeconds`, `lockRegeneratesGraduallyAfterDelayAndDropsShardWhenEmpty`, `journeyRunsAllThreeMapsAndCompletesWithItsWinner`) |
+| 11 | Rate limit theo kết nối | Đóng riêng client vượt 120 frame/giây trượt; chặn cả frame lỗi trước HELLO; lưu lượng bình thường vẫn qua | Đạt (`rateLimitClosesOnlyFloodingPlayerBeforeApplyingExtraAction`, `rateLimitCountsMalformedAndEmptyFramesBeforeHello`, `rateLimitAllowsSustainedNormalTrafficAcrossWindows`) |
 
 Toàn bộ 124 test qua khi chạy ở cả `baseline` và `optimized` (28/10/2026). Fixture chỉ định chế độ riêng vẫn dùng chế độ đó. Kết quả JUnit dạng XML lưu ở `docs/validation/server-2026-10-28/`; 12 test tiêu biểu được trình bày trong mục 4.4 của báo cáo.
 
 ---
 
-# 13. Experimental Setup
+# 13. Thiết lập thực nghiệm
 
 | Mục | Giá trị thực tế |
 | --- | --- |
@@ -436,7 +436,7 @@ Toàn bộ 124 test qua khi chạy ở cả `baseline` và `optimized` (28/10/20
 | Công cụ | Java 21.0.10 (target Java 17), Maven 3.9.16, Python portable 3.12.10 |
 | Nguồn | Working tree `353ef09-dirty`, đo ngày 28/10/2026; SHA-256 xác định bản server, gồm file mới chưa commit |
 | Mạng | Loopback `127.0.0.1:17777` |
-| Map / mode chơi | `meadow`, QUICK |
+| Bản đồ / chế độ chơi | `meadow`, QUICK |
 | Ma trận | 2 chế độ × 2/4/8 client × 3 lượt × 30 giây = 18 lượt |
 | Input | MOVE 10 Hz, PING 1 Hz, không nổ bom; seed input 1/2/3 |
 | Seed server | `-Dgame.seed=1`, `2`, `3` tương ứng seed input; mỗi phòng có RNG riêng |
@@ -450,9 +450,9 @@ Dữ liệu thô, `summary.csv` và `metadata.json` (thứ tự 18 lượt, hash
 
 ---
 
-# 14. Experimental Results
+# 14. Kết quả thực nghiệm
 
-## 14.1. Functional Results
+## 14.1. Kết quả chức năng
 
 Java server chạy ở chế độ `OPTIMIZED`:
 
@@ -474,11 +474,11 @@ HUD và bảng debug F3 (địa chỉ server, chế độ đồng bộ, RTT):
 
 ![Bụi ẩn nấp](docs/images/hinh10-bui.png)
 
-## 14.2. Performance Results
+## 14.2. Kết quả hiệu năng
 
 Đo ngày 28/10 sau rate limit; trung bình ba lượt/cấu hình. **18/18 lượt hoàn tất, 0 ERROR, 0 CONNECTION_LOST.** p95 là trung bình p95 từng lượt.
 
-| Mode | Client | Byte nhận/client/s | Byte/snapshot | RTT TB (ms) | RTT p95 (ms) | processingMicros TB (µs) |
+| Chế độ | Client | Byte nhận/client/s | Byte/snapshot | RTT TB (ms) | RTT p95 (ms) | processingMicros TB (µs) |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | baseline | 2 | 95 851,1 | 9 497,8 | 0,679 | 1,213 | 170,4 |
 | optimized | 2 | 20 093,6 | 1 946,9 | 0,625 | 1,349 | 157,2 |
@@ -487,7 +487,7 @@ HUD và bảng debug F3 (địa chỉ server, chế độ đồng bộ, RTT):
 | baseline | 8 | 115 693,0 | 11 460,3 | 1,036 | 4,243 | 150,3 |
 | optimized | 8 | 44 331,2 | 4 354,7 | 0,559 | 1,252 | 91,5 |
 
-## 14.3. Comparison
+## 14.3. So sánh
 
 | Client | Giảm byte nhận/client/s | Giảm byte/snapshot |
 | --- | ---: | ---: |
@@ -499,7 +499,7 @@ Chỉ báo cáo kết quả đo được; các lượt 25/10 và 22/10 được 
 
 ---
 
-# 15. Discussion
+# 15. Thảo luận
 
 1. **Kết quả:** đồng bộ chọn lọc giảm 61,7–79,0% byte nhận/client/s; 124 test chức năng đều qua trong hai cấu hình chạy.
 2. **Nguyên nhân:** ở 2 client, snapshot baseline trung bình 9 498 byte, optimized 1 947 byte. Việc bỏ hình học tĩnh và lọc đối tượng làm nhỏ message; không đổi tần suất tick/snapshot.
@@ -509,7 +509,7 @@ Chỉ báo cáo kết quả đo được; các lượt 25/10 và 22/10 được 
 
 ---
 
-# 16. Limitations
+# 16. Hạn chế
 
 Các hạn chế hiện tại:
 
@@ -522,7 +522,7 @@ Các hạn chế hiện tại:
 
 ---
 
-# 17. Future Work
+# 17. Hướng phát triển
 
 Các hướng phát triển:
 
@@ -534,7 +534,7 @@ Các hướng phát triển:
 
 ---
 
-# 18. Report
+# 18. Báo cáo
 
 Báo cáo đầy đủ:
 
@@ -548,7 +548,7 @@ Báo cáo tuân thủ cấu trúc được quy định trong hướng dẫn đ�
 
 ---
 
-# 19. References
+# 19. Tài liệu tham khảo
 
 Các tài liệu tham khảo được sử dụng (danh sách đầy đủ ở phần Tài liệu tham khảo của báo cáo):
 
@@ -566,14 +566,14 @@ Các tài liệu được trích dẫn trong nội dung báo cáo khi sử dụn
 
 ---
 
-# 20. Team Contribution
+# 20. Đóng góp của thành viên
 
-| Student | Main Contribution | Percentage |
+| Thành viên | Đóng góp chính | Tỉ lệ |
 | --------- | ----------------- | ---------: |
 | Phạm Văn Vỹ | Prototype server và Unity client ban đầu; menu, HUD, minimap, lời dẫn, màn kết quả; luật Mảnh Tim Lửa; bố cục bản đồ, bảng xếp hạng Đấu nhanh, kiểm tra phiên bản, ghép trận có đếm ngược | 34% |
 | Giang Thủy Tiên | Đồng bộ chọn lọc `SyncMode`; reconnect, heartbeat, timeout, hàng đợi ghi, watchdog; chế độ Đấu nhanh và Hành trình; test JUnit, harness kiểm tra Unity; âm thanh | 33% |
 | Trần Đỗ Lan Phương | Ghép trận `FIND_MATCH`/`CANCEL_MATCH`; công cụ đo và thực nghiệm; bản đồ, giao diện và VFX bằng asset; Khóa Lửa; bot test; viết báo cáo | 33% |
-| **Total** | | **100%** |
+| **Tổng** | | **100%** |
 
 Chi tiết từng phần việc: mục 19 của báo cáo.
 
@@ -581,32 +581,32 @@ Chi tiết từng phần việc: mục 19 của báo cáo.
 
 # 21. Demo
 
-## Demo Environment
+## Môi trường demo
 
-* Server machine: một máy Windows chạy Java server (`scripts/run_server.ps1`, chế độ `optimized`, cổng 7777).
-* Client machine(s): cùng máy server hoặc các máy Windows khác chạy `BombMeBaby.exe`.
-* Network: loopback hoặc cùng LAN/Wi-Fi.
-* Number of clients: 2–4 Unity client; có thể thêm bot bằng `scripts/bots.py`.
+* Máy server: một máy Windows chạy Java server (`scripts/run_server.ps1`, chế độ `optimized`, cổng 7777).
+* Máy client: cùng máy server hoặc các máy Windows khác chạy `BombMeBaby.exe`.
+* Mạng: loopback hoặc cùng LAN/Wi-Fi.
+* Số client: 2–4 Unity client; có thể thêm bot bằng `scripts/bots.py`.
 
-## Demo Steps
+## Các bước demo
 
-### Step 1
+### Bước 1
 
 Chạy server, nhấn **F3** trong game để xác nhận địa chỉ server và chế độ `OPTIMIZED`. Muốn lặp lại cùng một bản đồ thì chạy server với `-DemoMap meadow`.
 
-### Step 2
+### Bước 2
 
 Client thứ nhất tạo phòng riêng, các client khác nhập mã phòng; kiểm tra mọi client thấy cùng mã phòng và danh sách người chơi. Tất cả bấm **SẴN SÀNG** để vào trận (phòng đang chơi sẽ từ chối người vào mới).
 
-### Step 3
+### Bước 3
 
 Trong trận: di chuyển bằng WASD, giữ rồi thả Space để nổ, dùng E (khiên) và Shift (tăng tốc). Đứng trong bụi để thấy đối thủ ở ngoài không nhìn thấy mình.
 
-### Step 4
+### Bước 4
 
 Tắt một client hoặc ngắt mạng dưới 10 giây rồi kết nối lại; kiểm tra người chơi giữ được danh tính, phòng và bản đồ. Quá 10 giây thì người đó bị loại.
 
-### Step 5
+### Bước 5
 
 Chơi Đấu nhanh tới hết 3 phút để xem bảng xếp hạng, rồi tạo phòng **Hành trình Tim Lửa** để demo tranh Mảnh Tim Lửa qua `meadow → crossroads → crater`.
 
@@ -614,15 +614,15 @@ Kịch bản chi tiết: [docs/DEMO_RUNBOOK.md](docs/DEMO_RUNBOOK.md).
 
 ---
 
-# 22. Submission
+# 22. Nộp bài
 
-## Source Code
+## Mã nguồn
 
-Project source code được nộp thông qua **Google Drive** trong thư mục `Nhom07_BombMeBaby_Source/`.
+Mã nguồn dự án được nộp qua **Google Drive** trong thư mục `Nhom07_BombMeBaby_Source/`.
 
-**Submission link sẽ được giảng viên thông báo sau.**
+**Link nộp bài sẽ được giảng viên thông báo sau.**
 
-## Report
+## Báo cáo
 
 ```text
 Nhom07_BombMeBaby_Report.docx
@@ -636,47 +636,47 @@ Nhom07_BombMeBaby/
 └── Report/      ← Nhom07_BombMeBaby_Report.docx đã nộp trên Compilatio
 ```
 
-## Required Contents
+## Nội dung bắt buộc
 
-* Source code: `server/`, `LTM-Bomb-Me-Baby/`, `scripts/`;
+* Mã nguồn: `server/`, `LTM-Bomb-Me-Baby/`, `scripts/`;
 * README: file này;
-* Report: `Nhom07_BombMeBaby_Report.docx`;
-* Configuration: tham số server và `server.txt` của client (mục 10.4);
-* Database script: không có (không dùng database);
-* Dataset/sample data: `experiments/`;
-* Test cases: `server/src/test/java/bombmebaby/`;
-* Experimental results: `experiments/final-2026-10-28/`;
-* Architecture diagrams: `docs/images/`.
+* Báo cáo: `Nhom07_BombMeBaby_Report.docx`;
+* Cấu hình: tham số server và `server.txt` của client (mục 10.4);
+* Script cơ sở dữ liệu: không có (không dùng database);
+* Dữ liệu mẫu: `experiments/`;
+* Test case: `server/src/test/java/bombmebaby/`;
+* Kết quả thực nghiệm: `experiments/final-2026-10-28/`;
+* Sơ đồ kiến trúc: `docs/images/`.
 
 ---
 
-# 23. Final Verification
+# 23. Kiểm tra cuối cùng
 
 Cập nhật 28/10: server và benchmark đã kiểm chứng; build Unity mới đang thiếu license, chưa có gói Windows hiện tại được xác nhận. Checklist cũ dưới đây cần được nhóm nghiệm thu lại trước khi nộp.
 
-Before submission:
+Trước khi nộp:
 
 ```text
-[ ] Project can run               (cần nghiệm thu client bản hiện tại)
-[x] Server can start
-[ ] Client can connect            (cần build Unity hiện tại; máy build đang thiếu license)
-[x] Network communication works
-[x] Protocol is documented
-[x] Multiple clients tested
-[x] Error handling tested
-[x] Experiments completed
-[x] Results are reproducible
-[x] Novelty is clearly stated
-[x] README is complete
-[ ] Report is complete            (còn ảnh Hình 10–13 và tỉ lệ đóng góp)
-[x] References are included
+[ ] Dự án chạy được               (cần nghiệm thu client bản hiện tại)
+[x] Server khởi động được
+[ ] Client kết nối được           (cần build Unity hiện tại; máy build đang thiếu license)
+[x] Giao tiếp mạng hoạt động
+[x] Giao thức đã được mô tả
+[x] Đã test nhiều client
+[x] Đã test xử lý lỗi
+[x] Đã hoàn thành thực nghiệm
+[x] Kết quả lặp lại được
+[x] Điểm mới được nêu rõ
+[x] README đầy đủ
+[ ] Báo cáo đầy đủ                (còn ảnh Hình 10–13 và tỉ lệ đóng góp)
+[x] Có tài liệu tham khảo
 [ ] Compilatio <= 20%
-[ ] Google Drive link is accessible
-[ ] All team members understand the project
+[ ] Link Google Drive truy cập được
+[ ] Mọi thành viên đều hiểu dự án
 ```
 
 ---
 
-# 24. Contact
+# 24. Liên hệ
 
-Các câu hỏi về chọn topic, kiến trúc, cài đặt kỹ thuật, phạm vi project hoặc cấu trúc báo cáo: liên hệ giảng viên học phần, **Thầy Ngô Văn Quyền**.
+Các câu hỏi về chọn chủ đề, kiến trúc, cài đặt kỹ thuật, phạm vi dự án hoặc cấu trúc báo cáo: liên hệ giảng viên học phần, **Thầy Ngô Văn Quyền**.
